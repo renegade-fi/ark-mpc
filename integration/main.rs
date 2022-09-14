@@ -36,14 +36,11 @@ async fn main() {
     // for the second container
     let peer_addr: SocketAddr = {
         let other_host_alias = format!("party{}", if args.party == 1 { 0 } else { 1 });
-        let host = lookup_host(other_host_alias.as_str()).unwrap();
+        let hosts = lookup_host(other_host_alias.as_str()).unwrap();
         
-        println!("Lookup successful for {}... found hosts: {:?}", other_host_alias, host);
+        println!("Lookup successful for {}... found hosts: {:?}", other_host_alias, hosts);
         
-        let host1 = host[0]
-            .to_string();
-
-        format!("{}:{}", host1, args.port2)
+        format!("{}:{}", hosts[0], args.port2)
             .parse()
             .unwrap()
     };
@@ -57,12 +54,11 @@ async fn main() {
         peer_addr 
     );
 
-    net.connect()   
-        .await
+    net.connect().await
         .unwrap();
     
-    println!("Sending party ID to peer...");
     // Send a value over the network
+    println!("Sending party ID to peer...");
     let res = net.broadcast_single_point(base_point_mul(args.party))
         .await
         .unwrap();
@@ -79,6 +75,7 @@ async fn main() {
 }
 
 /// Computes a * G where G is the generator of the Ristretto group
+#[inline]
 fn base_point_mul(a: u64) -> RistrettoPoint {
     constants::RISTRETTO_BASEPOINT_POINT * Scalar::from(a)
 }
