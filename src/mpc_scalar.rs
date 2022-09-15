@@ -1,99 +1,27 @@
 //! Groups the definitions and trait implementations for a scalar value within an MPC network
+#![allow(unused_doc_comments)]
+mod macros;
 
-use std::{rc::Rc, ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}};
+use std::{rc::Rc, ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, iter::Product, borrow::Borrow};
 
 use curve25519_dalek::scalar::Scalar;
 
 use rand_core::{RngCore, CryptoRng};
 use subtle::{ConstantTimeEq};
 
-use crate::network::MPCNetwork;
+use crate::network::MpcNetwork;
 
 #[allow(type_alias_bounds)]
-pub type SharedNetwork<N: MPCNetwork> = Rc<N>;
-
-/**
- * Implementation helper macros
- */
-
-/// Used to implement a funciton type that simple calls down to a Scalar function
-/// i.e. calls a function on the underlying scalar 
-macro_rules! impl_delegated {
-    // Static methods (no &self)
-    ($function_name:ident, $return_type:ty) => {
-        pub fn $function_name($($i:$j)*) -> $return_type {
-            Scalar::$function_name($($i)*)
-        }
-    };
-
-    // Instance methods (&self)
-    ($function_name:ident, self, $return_type:ty) => {
-        pub fn $function_name(&self) -> $return_type {
-            self.value.$function_name()
-        }
-    };
-
-    // Mutable instance methods (&mut self)
-    ($function_name:ident, mut, self, $return_type:ty) => {
-        pub fn $function_name(&mut self) -> $return_type {
-            self.value.$function_name()
-        }
-    }
-}
-
-/// Used to implement a function type that calls an operation on a Scalar (returning another scalar)
-/// and wraps the returned Scalar
-/// Assumed to have a local trait bound of N: MpcNetwork
-macro_rules! impl_delegated_wrapper {
-    // Static methods (no &self)
-    ($function_name:ident) => {
-        pub fn $function_name(network: SharedNetwork<N>) -> MpcScalar<N> {
-            MpcScalar {
-                network: network.clone(),
-                value: Scalar::$function_name()
-            }
-        }
-    };
-
-    // Static method single param
-    ($function_name:ident, $param_name:ident, $param_type:ty) => {
-        pub fn $function_name($param_name: $param_type, network: SharedNetwork<N>) -> MpcScalar<N> {
-            MpcScalar {
-                network: network.clone(),
-                value: Scalar::$function_name($param_name),
-            }
-        }
-    };
-    
-    // Instance methods (including &self)
-    ($function_name:ident, self) => {
-        pub fn $function_name(&self) -> MpcScalar<N> {
-            MpcScalar {
-                network: self.network.clone(),
-                value: self.value.$function_name(),
-            }
-        }
-    };
-
-    // Mutable instance methods (including &mut self)
-    ($function_name:ident, mut, self) => {
-        pub fn $function_name(&mut self) -> MpcScalar<N> {
-            MpcScalar {
-                network: self.network.clone(),
-                value: self.value.$function_name(),
-            }
-        }
-    }
-}
+pub type SharedNetwork<N: MpcNetwork> = Rc<N>;
 
 /// Represents a scalar value allocated in an MPC network
 #[derive(Clone, Debug)]
-pub struct MpcScalar<N: MPCNetwork> {
+pub struct MpcScalar<N: MpcNetwork> {
     network: SharedNetwork<N>,
     value: Scalar,
 }
 
-impl<N: MPCNetwork> MpcScalar<N> {
+impl<N: MpcNetwork> MpcScalar<N> {
     /// Create a scalar from a given u64
     pub fn from_u64(a: u64, network: SharedNetwork<N>) -> Self {
         Self { network, value: Scalar::from(a) }
@@ -110,8 +38,8 @@ impl<N: MPCNetwork> MpcScalar<N> {
     }
 
     // Build a scalar from bytes
-    impl_delegated_wrapper!(from_bytes_mod_order, bytes, [u8; 32]);
-    impl_delegated_wrapper!(from_bytes_mod_order_wide, input, &[u8; 64]);
+    macros::impl_delegated_wrapper!(from_bytes_mod_order, bytes, [u8; 32]);
+    macros::impl_delegated_wrapper!(from_bytes_mod_order_wide, input, &[u8; 64]);
     pub fn from_canonical_bytes(bytes: [u8; 32], network: SharedNetwork<N>) -> Option<MpcScalar<N>> {
         Some(
             MpcScalar {
@@ -120,13 +48,13 @@ impl<N: MPCNetwork> MpcScalar<N> {
             }
         )
     }
-    impl_delegated_wrapper!(from_bits, bytes, [u8; 32]);
+    macros::impl_delegated_wrapper!(from_bits, bytes, [u8; 32]);
     
     // Convert a scalar to bytes
-    impl_delegated!(to_bytes, self, [u8; 32]);
-    impl_delegated!(as_bytes, self, &[u8; 32]);
+    macros::impl_delegated!(to_bytes, self, [u8; 32]);
+    macros::impl_delegated!(as_bytes, self, &[u8; 32]);
     // Compute the multiplicative inverse of the Scalar
-    impl_delegated_wrapper!(invert, self);
+    macros::impl_delegated_wrapper!(invert, self);
     // Invert a batch of scalars and return the product of inverses
     pub fn batch_invert(inputs: &mut [MpcScalar<N>]) -> MpcScalar<N> {
         let mut scalars: Vec<Scalar> = inputs.iter()
@@ -140,32 +68,32 @@ impl<N: MPCNetwork> MpcScalar<N> {
     }
 
     // Reduce the scalar mod l
-    impl_delegated_wrapper!(reduce, self);
+    macros::impl_delegated_wrapper!(reduce, self);
     // Check whether the scalar is canonically represented mod l
-    impl_delegated!(is_canonical, self, bool);
+    macros::impl_delegated!(is_canonical, self, bool);
     // Generate the additive identity
-    impl_delegated_wrapper!(zero);
+    macros::impl_delegated_wrapper!(zero);
     // Generate the multiplicative identity
-    impl_delegated_wrapper!(one);
+    macros::impl_delegated_wrapper!(one);
 }
 
 /**
  * Generic trait implementations
  */
 
-impl<N: MPCNetwork> PartialEq for MpcScalar<N> {
+impl<N: MpcNetwork> PartialEq for MpcScalar<N> {
     fn eq(&self, other: &Self) -> bool {
         self.value.eq(&other.value)
     }
 }
 
-impl<N: MPCNetwork> ConstantTimeEq for MpcScalar<N> {
+impl<N: MpcNetwork> ConstantTimeEq for MpcScalar<N> {
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.value.ct_eq(&other.value)
     } 
 }
 
-impl<N: MPCNetwork> Index<usize> for MpcScalar<N> {
+impl<N: MpcNetwork> Index<usize> for MpcScalar<N> {
     type Output = u8;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -175,73 +103,32 @@ impl<N: MPCNetwork> Index<usize> for MpcScalar<N> {
 
 
 /**
- * Arithmetic ops
+ * Mul and variants for: borrowed, non-borrowed, and Scalar types
  */
+macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *=, MpcScalar<N>);
+macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *=, Scalar);
+macros::impl_arithmetic_scalar!(Mul, mul, *, MpcScalar<N>);
+macros::impl_arithmetic_scalar!(Mul, mul, *, Scalar);
 
-impl<N: MPCNetwork> MulAssign<MpcScalar<N>> for MpcScalar<N> {
-    fn mul_assign(&mut self, rhs: MpcScalar<N>) {
-        self.value *= rhs.value
-    }
-}
+/**
+ * add and variants for: borrowed, non-borrowed, and scalar types
+ */
+macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +=, MpcScalar<N>);
+macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +=, Scalar);
+macros::impl_arithmetic_scalar!(Add, add, +, MpcScalar<N>);
+macros::impl_arithmetic_scalar!(Add, add, +, Scalar);
 
-impl<N: MPCNetwork> Mul<MpcScalar<N>> for MpcScalar<N> {
-    type Output = MpcScalar<N>;
 
-    fn mul(self, rhs: MpcScalar<N>) -> Self::Output {
-        MpcScalar {
-            network: self.network.clone(),
-            value: self.value * rhs.value
-        }
-    }
-}
+/**
+ * Sub and variants for: borrowed, non-borrowed, and scalar types
+ */
+macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -=, MpcScalar<N>);
+macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -=, Scalar);
+macros::impl_arithmetic_scalar!(Sub, sub, -, MpcScalar<N>);
+macros::impl_arithmetic_scalar!(Sub, sub, -, Scalar);
 
-impl<N: MPCNetwork> AddAssign<MpcScalar<N>> for MpcScalar<N> {
-    fn add_assign(&mut self, rhs: MpcScalar<N>) {
-        self.value += rhs.value
-    }
-}
 
-impl<N: MPCNetwork> Add<MpcScalar<N>> for MpcScalar<N> {
-    type Output = MpcScalar<N>;
-
-    fn add(self, rhs: MpcScalar<N>) -> Self::Output {
-        MpcScalar {
-            network: self.network.clone(),
-            value: self.value + rhs.value
-        }
-    }
-}
-
-/// Add with a plain scalar, automatically allocate in the network
-impl<N: MPCNetwork> Add<Scalar> for MpcScalar<N> {
-    type Output = MpcScalar<N>;
-
-    fn add(self, rhs: Scalar) -> Self::Output {
-        MpcScalar {
-            network: self.network.clone(),
-            value: self.value + rhs
-        }
-    }
-}
-
-impl<N: MPCNetwork> SubAssign<MpcScalar<N>> for MpcScalar<N> {
-    fn sub_assign(&mut self, rhs: MpcScalar<N>) {
-        self.value -= rhs.value
-    }
-}
-
-impl<N: MPCNetwork> Sub<MpcScalar<N>> for MpcScalar<N> {
-    type Output = MpcScalar<N>; 
-
-    fn sub(self, rhs: MpcScalar<N>) -> Self::Output {
-        MpcScalar {
-            network: self.network.clone(),
-            value: self.value - rhs.value
-        }
-    }
-}
-
-impl<N: MPCNetwork> Neg for MpcScalar<N> {
+impl<N: MpcNetwork> Neg for MpcScalar<N> {
     type Output = MpcScalar<N>; 
     fn neg(self) -> Self::Output {
         MpcScalar {
@@ -250,6 +137,19 @@ impl<N: MPCNetwork> Neg for MpcScalar<N> {
         }
     }
 }
+
+impl<N: MpcNetwork, T: Borrow<MpcScalar<N>>> Product<T> for MpcScalar<N> {
+    fn product<I: Iterator<Item = T>>(mut iter: I) -> Self {
+        let first_elem = iter.next().unwrap();
+        let network: SharedNetwork<N> = first_elem.borrow()
+            .network
+            .clone();
+            
+        iter.fold(MpcScalar::one(network), |acc, item| acc * item.borrow())
+    }
+}
+
+
 
 #[cfg(test)]
 mod test {

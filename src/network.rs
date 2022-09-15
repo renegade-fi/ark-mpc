@@ -11,34 +11,34 @@ use futures::StreamExt;
 use std::{net::SocketAddr, convert::TryInto, borrow::Borrow};
 use quinn::{Endpoint, RecvStream, SendStream, NewConnection};
 
-use crate::error::{MPCNetworkError, BroadcastError, SetupError};
+use crate::error::{MpcNetworkError, BroadcastError, SetupError};
 
 pub type PartyId = u64;
 
 const BYTES_PER_POINT: usize = 32;
 const MAX_PAYLOAD_SIZE: usize = 1024;
 
-/// MPCNetwork represents the network functionality needed for 2PC execution
+/// MpcNetwork represents the network functionality needed for 2PC execution
 /// Note that only two party computation is implemented here
 #[async_trait]
-pub trait MPCNetwork {
+pub trait MpcNetwork {
     /// Returns the ID of the given party in the MPC computation
     fn party_id(&self) -> u64;
     /// Returns whether the local party is the king of the MPC (party 0)
     fn am_king(&self) -> bool { self.party_id() == 0 }
     /// Both parties broadcast a vector of points to one another
-    async fn broadcast_points(&mut self, points: Vec<RistrettoPoint>) -> Result<Vec<RistrettoPoint>, MPCNetworkError>;
+    async fn broadcast_points(&mut self, points: Vec<RistrettoPoint>) -> Result<Vec<RistrettoPoint>, MpcNetworkError>;
     /// Both parties broadcast a single point to one another
-    async fn broadcast_single_point(&mut self, point: RistrettoPoint) -> Result<RistrettoPoint, MPCNetworkError> {
+    async fn broadcast_single_point(&mut self, point: RistrettoPoint) -> Result<RistrettoPoint, MpcNetworkError> {
         Ok(
            self.broadcast_points(vec![point]).await?[0]
         )
     }
     /// Closes the connections opened in the handshake phase
-    async fn close(&mut self) -> Result<(), MPCNetworkError>;
+    async fn close(&mut self) -> Result<(), MpcNetworkError>;
 }  
 
-/// Implements an MPCNetwork on top of QUIC
+/// Implements an MpcNetwork on top of QUIC
 pub struct QuicTwoPartyNet {
     /// The index of the local party in the participants
     party_id: PartyId,
@@ -66,14 +66,14 @@ impl QuicTwoPartyNet {
     }
 
     /// Establishes connections to the peer
-    pub async fn connect(&mut self) -> Result<(), MPCNetworkError> {
+    pub async fn connect(&mut self) -> Result<(), MpcNetworkError> {
         // Build the client and server configs
         let (client_config, server_config) = config::build_configs()
-            .map_err( |err| MPCNetworkError::ConnectionSetupError(err) )?;
+            .map_err( |err| MpcNetworkError::ConnectionSetupError(err) )?;
 
         // Create a quinn server
         let (mut local_node, mut incoming) = Endpoint::server(server_config, self.local_addr)
-            .map_err( |_| MPCNetworkError::ConnectionSetupError(SetupError::ServerSetupError) )?;
+            .map_err( |_| MpcNetworkError::ConnectionSetupError(SetupError::ServerSetupError) )?;
         local_node.set_default_client_config(client_config);
 
         // The king dials the peer who awaits connection
@@ -85,19 +85,19 @@ impl QuicTwoPartyNet {
             if self.am_king() {
                 local_node.connect(self.peer_addr, config::SERVER_NAME)
                     .map_err(|err| {
-                        MPCNetworkError::ConnectionSetupError(SetupError::ConnectError(err))
+                        MpcNetworkError::ConnectionSetupError(SetupError::ConnectError(err))
                     })?
                     .await
                     .map_err(|err| {
-                        MPCNetworkError::ConnectionSetupError(SetupError::ConnectionError(err)) 
+                        MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err)) 
                     })?
             } else {
                 incoming.next()
                     .await
-                    .ok_or(MPCNetworkError::ConnectionSetupError(SetupError::NoIncomingConnection))?
+                    .ok_or(MpcNetworkError::ConnectionSetupError(SetupError::NoIncomingConnection))?
                     .await
                     .map_err(|err| {
-                        MPCNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
+                        MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                     })?
             
             }
@@ -108,12 +108,12 @@ impl QuicTwoPartyNet {
             if self.am_king() {
                 connection.open_bi()
                     .await
-                    .map_err( |err| MPCNetworkError::ConnectionSetupError(SetupError::ConnectionError(err)) )?
+                    .map_err( |err| MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err)) )?
             } else {
                 bi_streams.next()
                     .await
-                    .ok_or(MPCNetworkError::ConnectionSetupError(SetupError::NoIncomingConnection))?
-                    .map_err( |err| MPCNetworkError::ConnectionSetupError(SetupError::ConnectionError(err)) )?
+                    .ok_or(MpcNetworkError::ConnectionSetupError(SetupError::NoIncomingConnection))?
+                    .map_err( |err| MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err)) )?
             }
         };
         
@@ -128,17 +128,17 @@ impl QuicTwoPartyNet {
 }
 
 #[async_trait]
-impl MPCNetwork for QuicTwoPartyNet {
+impl MpcNetwork for QuicTwoPartyNet {
     fn party_id(&self) -> u64 {
         self.party_id     
     }
 
     async fn broadcast_points(&mut self, points: Vec<RistrettoPoint>) -> Result<
         Vec<RistrettoPoint>,
-        MPCNetworkError  
+        MpcNetworkError  
     > {
         if !self.connected {
-            return Err(MPCNetworkError::NetworkUninitialized)
+            return Err(MpcNetworkError::NetworkUninitialized)
         }
 
         // Map to bytes 
@@ -157,19 +157,19 @@ impl MPCNetwork for QuicTwoPartyNet {
             .unwrap()
             .write_all(payload_final.borrow())
             .await
-            .map_err(|_| MPCNetworkError::SendError)?;
+            .map_err(|_| MpcNetworkError::SendError)?;
         
         let mut read_buffer = [0u8; MAX_PAYLOAD_SIZE];
         let bytes_read = self.recv_stream.as_mut()
             .unwrap()
             .read(&mut read_buffer)
             .await
-            .map_err(|_| MPCNetworkError::RecvError)?
-            .ok_or(MPCNetworkError::RecvError)?;
+            .map_err(|_| MpcNetworkError::RecvError)?
+            .ok_or(MpcNetworkError::RecvError)?;
 
         if bytes_read != payload_length {
             return Err(
-                MPCNetworkError::BroadcastError(BroadcastError::TooFewBytes)
+                MpcNetworkError::BroadcastError(BroadcastError::TooFewBytes)
             )
         }
 
@@ -182,16 +182,16 @@ impl MPCNetwork for QuicTwoPartyNet {
                     .try_into()
                     .expect("unexpected number of bytes per chunk")
                 ).decompress()
-                .ok_or(MPCNetworkError::SerializationError)
+                .ok_or(MpcNetworkError::SerializationError)
             })
-            .collect::<Result<Vec<RistrettoPoint>, MPCNetworkError>>()?;
+            .collect::<Result<Vec<RistrettoPoint>, MpcNetworkError>>()?;
 
         Ok(res)
     }
 
-    async fn close(&mut self) -> Result<(), MPCNetworkError> {
+    async fn close(&mut self) -> Result<(), MpcNetworkError> {
         if !self.connected {
-            return Err(MPCNetworkError::NetworkUninitialized);
+            return Err(MpcNetworkError::NetworkUninitialized);
         }
 
         self.send_stream
@@ -199,7 +199,7 @@ impl MPCNetwork for QuicTwoPartyNet {
             .unwrap()
             .finish()
             .await
-            .map_err(|_| MPCNetworkError::ConnectionTeardownError)
+            .map_err(|_| MpcNetworkError::ConnectionTeardownError)
     }
 }
 
@@ -211,7 +211,7 @@ mod test {
     use rand_core::OsRng;
     use tokio;
 
-    use super::{QuicTwoPartyNet, MPCNetwork};
+    use super::{QuicTwoPartyNet, MpcNetwork};
 
     #[tokio::test]
     async fn test_errors() {

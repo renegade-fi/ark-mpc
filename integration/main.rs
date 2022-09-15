@@ -5,7 +5,7 @@ use colored::Colorize;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants};
 use dns_lookup::lookup_host;
 
-use mpc_ristretto::network::{QuicTwoPartyNet, MPCNetwork};
+use mpc_ristretto::network::{QuicTwoPartyNet, MpcNetwork};
 
 #[derive(Parser, Debug)]
 struct Args {

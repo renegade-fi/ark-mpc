@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use curve25519_dalek::ristretto::RistrettoPoint;
 
-use crate::error::MPCNetworkError;
+use crate::error::MpcNetworkError;
 
-use super::MPCNetwork;
+use super::MpcNetwork;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DummyMpcNetwork {
@@ -17,16 +17,16 @@ impl DummyMpcNetwork {
 }
 
 #[async_trait]
-impl MPCNetwork for DummyMpcNetwork {
+impl MpcNetwork for DummyMpcNetwork {
     /// Always return king
     fn party_id(&self) -> u64 { 0 }
 
     async fn broadcast_points(&mut self, points:Vec<RistrettoPoint>) -> Result<
         Vec<RistrettoPoint>,
-        MPCNetworkError    
+        MpcNetworkError    
     > {
         Ok(points)
     }
 
-    async fn close(&mut self) -> Result<(), MPCNetworkError> { Ok(()) }
+    async fn close(&mut self) -> Result<(), MpcNetworkError> { Ok(()) }
 }

@@ -2,7 +2,7 @@
 use quinn::{ConnectionError, ConnectError};
 
 #[derive(Debug)]
-pub enum MPCNetworkError {
+pub enum MpcNetworkError {
     SendError,
     RecvError,
     ConnectionSetupError(SetupError),
