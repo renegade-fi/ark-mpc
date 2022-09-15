@@ -1,9 +1,11 @@
 //! Groups the definitions and trait implementations for a scalar value within an MPC network
 
-use std::{rc::Rc, ops::Add};
+use std::{rc::Rc, ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}};
 
 use curve25519_dalek::scalar::Scalar;
+
 use rand_core::{RngCore, CryptoRng};
+use subtle::{ConstantTimeEq};
 
 use crate::network::MPCNetwork;
 
@@ -52,6 +54,16 @@ macro_rules! impl_delegated_wrapper {
             }
         }
     };
+
+    // Static method single param
+    ($function_name:ident, $param_name:ident, $param_type:ty) => {
+        pub fn $function_name($param_name: $param_type, network: SharedNetwork<N>) -> MpcScalar<N> {
+            MpcScalar {
+                network: network.clone(),
+                value: Scalar::$function_name($param_name),
+            }
+        }
+    };
     
     // Instance methods (including &self)
     ($function_name:ident, self) => {
@@ -97,8 +109,22 @@ impl<N: MPCNetwork> MpcScalar<N> {
         Self { network, value: Scalar::random(rng) }
     }
 
+    // Build a scalar from bytes
+    impl_delegated_wrapper!(from_bytes_mod_order, bytes, [u8; 32]);
+    impl_delegated_wrapper!(from_bytes_mod_order_wide, input, &[u8; 64]);
+    pub fn from_canonical_bytes(bytes: [u8; 32], network: SharedNetwork<N>) -> Option<MpcScalar<N>> {
+        Some(
+            MpcScalar {
+                network,
+                value: Scalar::from_canonical_bytes(bytes)?,
+            }
+        )
+    }
+    impl_delegated_wrapper!(from_bits, bytes, [u8; 32]);
+    
     // Convert a scalar to bytes
     impl_delegated!(to_bytes, self, [u8; 32]);
+    impl_delegated!(as_bytes, self, &[u8; 32]);
     // Compute the multiplicative inverse of the Scalar
     impl_delegated_wrapper!(invert, self);
     // Invert a batch of scalars and return the product of inverses
@@ -133,11 +159,48 @@ impl<N: MPCNetwork> PartialEq for MpcScalar<N> {
     }
 }
 
+impl<N: MPCNetwork> ConstantTimeEq for MpcScalar<N> {
+    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+        self.value.ct_eq(&other.value)
+    } 
+}
+
+impl<N: MPCNetwork> Index<usize> for MpcScalar<N> {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.value.index(index)
+    }
+}
+
+
 /**
  * Arithmetic ops
  */
 
-/// Add with another MpcScalar
+impl<N: MPCNetwork> MulAssign<MpcScalar<N>> for MpcScalar<N> {
+    fn mul_assign(&mut self, rhs: MpcScalar<N>) {
+        self.value *= rhs.value
+    }
+}
+
+impl<N: MPCNetwork> Mul<MpcScalar<N>> for MpcScalar<N> {
+    type Output = MpcScalar<N>;
+
+    fn mul(self, rhs: MpcScalar<N>) -> Self::Output {
+        MpcScalar {
+            network: self.network.clone(),
+            value: self.value * rhs.value
+        }
+    }
+}
+
+impl<N: MPCNetwork> AddAssign<MpcScalar<N>> for MpcScalar<N> {
+    fn add_assign(&mut self, rhs: MpcScalar<N>) {
+        self.value += rhs.value
+    }
+}
+
 impl<N: MPCNetwork> Add<MpcScalar<N>> for MpcScalar<N> {
     type Output = MpcScalar<N>;
 
@@ -161,6 +224,32 @@ impl<N: MPCNetwork> Add<Scalar> for MpcScalar<N> {
     }
 }
 
+impl<N: MPCNetwork> SubAssign<MpcScalar<N>> for MpcScalar<N> {
+    fn sub_assign(&mut self, rhs: MpcScalar<N>) {
+        self.value -= rhs.value
+    }
+}
+
+impl<N: MPCNetwork> Sub<MpcScalar<N>> for MpcScalar<N> {
+    type Output = MpcScalar<N>; 
+
+    fn sub(self, rhs: MpcScalar<N>) -> Self::Output {
+        MpcScalar {
+            network: self.network.clone(),
+            value: self.value - rhs.value
+        }
+    }
+}
+
+impl<N: MPCNetwork> Neg for MpcScalar<N> {
+    type Output = MpcScalar<N>; 
+    fn neg(self) -> Self::Output {
+        MpcScalar {
+            network: self.network.clone(),
+            value: self.value.neg()
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {

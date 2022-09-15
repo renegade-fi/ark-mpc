@@ -20,6 +20,7 @@ bytes = "1.2"
 clap = { version = "3.2.8", features = ["derive"] }
 colored = { version = "2" }
 curve25519-dalek = "^3"
+digest = "0.10"
 dns-lookup = { version = "1.0" }
 futures = "0.3"
 hyper = "0.14"
@@ -27,6 +28,8 @@ rand_core = "0.5.1"
 rcgen = "0.9"
 rouille = "3.5"
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
+subtle = "2.4.1"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
+typenum = "1.15"
 quinn = { version = "0.8", features = ["tls-rustls", "native-certs"] }
 qp2p = { version = "0.30" }
