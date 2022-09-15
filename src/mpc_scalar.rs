@@ -2,12 +2,13 @@
 #![allow(unused_doc_comments)]
 mod macros;
 
-use std::{rc::Rc, ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, iter::Product, borrow::Borrow};
+use std::{rc::Rc, ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, iter::{Product, Sum}, borrow::Borrow};
 
 use curve25519_dalek::scalar::Scalar;
 
 use rand_core::{RngCore, CryptoRng};
 use subtle::{ConstantTimeEq};
+use zeroize::Zeroize;
 
 use crate::network::MpcNetwork;
 
@@ -35,6 +36,11 @@ impl<N: MpcNetwork> MpcScalar<N> {
     /// Generate a random scalar
     pub fn random<R: RngCore + CryptoRng>(rng: &mut R, network: SharedNetwork<N>) -> Self {
         Self { network, value: Scalar::random(rng) }
+    }
+
+    /// Default-esque implementation
+    pub fn default(network: SharedNetwork<N>) -> Self {
+        Self::zero(network)
     }
 
     // Build a scalar from bytes
@@ -130,6 +136,7 @@ macros::impl_arithmetic_scalar!(Sub, sub, -, Scalar);
 
 impl<N: MpcNetwork> Neg for MpcScalar<N> {
     type Output = MpcScalar<N>; 
+
     fn neg(self) -> Self::Output {
         MpcScalar {
             network: self.network.clone(),
@@ -138,18 +145,49 @@ impl<N: MpcNetwork> Neg for MpcScalar<N> {
     }
 }
 
+impl<'a, N: MpcNetwork> Neg for &'a MpcScalar<N> {
+    type Output = MpcScalar<N>;
+
+    fn neg(self) -> Self::Output {
+        MpcScalar {
+            network: self.network.clone(),
+            value: self.value.neg(),
+        }
+    }
+}
+
+/**
+ * Iterator traits
+ */
+
 impl<N: MpcNetwork, T: Borrow<MpcScalar<N>>> Product<T> for MpcScalar<N> {
     fn product<I: Iterator<Item = T>>(mut iter: I) -> Self {
         let first_elem = iter.next().unwrap();
         let network: SharedNetwork<N> = first_elem.borrow()
             .network
             .clone();
-            
+
         iter.fold(MpcScalar::one(network), |acc, item| acc * item.borrow())
     }
 }
 
+impl<N: MpcNetwork, T: Borrow<MpcScalar<N>>> Sum<T> for MpcScalar<N> {
+    fn sum<I: Iterator<Item = T>>(mut iter: I) -> Self {
+        // This operation is invalid on an empty iterator, unwrap is expected
+        let first_elem = iter.next().unwrap();
+        let network = first_elem.borrow()
+            .network
+            .clone();
 
+        iter.fold(MpcScalar::one(network), |acc, item| acc + item.borrow())
+    } 
+}
+
+impl<N: MpcNetwork> Zeroize for MpcScalar<N> {
+    fn zeroize(&mut self) {
+        self.value.zeroize()
+    }
+}
 
 #[cfg(test)]
 mod test {
