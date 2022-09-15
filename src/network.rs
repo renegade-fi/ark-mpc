@@ -30,7 +30,7 @@ pub trait MpcNetwork {
     /// Both parties broadcast a vector of scalars to one another
     async fn broadcast_scalars(&mut self, scalars: Vec<Scalar>) -> Result<Vec<Scalar>, MpcNetworkError>;
     /// Both parties broadcast a single scalar to one another
-    async fn broasecast_single_scalar(&mut self, scalar: Scalar) -> Result<Scalar, MpcNetworkError> {
+    async fn broadcast_single_scalar(&mut self, scalar: Scalar) -> Result<Scalar, MpcNetworkError> {
         Ok(
             self.broadcast_scalars(vec![scalar]).await?[0]
         )

@@ -1,3 +1,4 @@
+mod network;
 use std::net::SocketAddr;
 
 use clap::Parser;
@@ -5,7 +6,9 @@ use colored::Colorize;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants};
 use dns_lookup::lookup_host;
 
-use mpc_ristretto::network::{QuicTwoPartyNet, MpcNetwork};
+use mpc_ristretto::network::{QuicTwoPartyNet};
+
+use crate::network::{test_send_ristretto, test_send_scalar};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -20,8 +23,13 @@ struct Args {
     port2: u64
 }
 
+#[allow(unused_doc_comments)]
 #[tokio::main]
 async fn main() {
+    /**
+     * Setup
+     */
+
     let args = Args::parse();
 
     // Listen on 0.0.0.0 (all network interfaces) with the given port
@@ -57,25 +65,44 @@ async fn main() {
     net.connect().await
         .unwrap();
     
-    // Send a value over the network
-    println!("Sending party ID to peer...");
-    let res = net.broadcast_single_point(base_point_mul(args.party))
-        .await
-        .unwrap();
+    /**
+     * Test harness
+     */
 
-    let expected = base_point_mul(
-        if args.party == 0 { 1u64 } else { 0u64 }
-    );
+    let mut all_success = true;
 
-    assert_eq!(res, expected);
-    println!(
-        "\n{}", 
-        "Integration tests successful!".green(), 
-    )
+    // Test sending a number across the network encoded as a Ristretto point
+    print!("Running test_send_ristretto... ");
+    let res = test_send_ristretto(args.party, &mut net).await;
+    all_success &= validate_success(res);
+
+    // Test sending a number across the network encoded as a Dalek Scalar
+    print!("Running test_send_scalar... ");
+    let res = test_send_scalar(args.party, &mut net).await;
+    all_success &= validate_success(res);
+
+    if all_success {
+        println!(
+            "\n{}", 
+            "Integration tests successful!".green(), 
+        )
+    }
 }
 
 /// Computes a * G where G is the generator of the Ristretto group
 #[inline]
-fn base_point_mul(a: u64) -> RistrettoPoint {
+pub(crate) fn base_point_mul(a: u64) -> RistrettoPoint {
     constants::RISTRETTO_BASEPOINT_POINT * Scalar::from(a)
+}
+
+/// Prints a success or failure message, returns true if success, false if failure
+#[inline]
+fn validate_success(res: Result<(), String>) -> bool {
+    if res.is_ok() {
+        println!("{}", "Success!".green());
+        true
+    } else {
+        println!("{}\n\t{}", "Failure...".red(), res.err().unwrap());
+        false
+    }
 }
