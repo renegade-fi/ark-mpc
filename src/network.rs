@@ -204,7 +204,7 @@ impl QuicTwoPartyNet {
             }
         };
         
-        // Update MPCNet state
+        // Update MpcNet state
         self.connected = true;
         self.send_stream = Some(send);
         self.recv_stream = Some(recv);

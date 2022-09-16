@@ -20,9 +20,9 @@ use zeroize::Zeroize;
 use crate::{network::MpcNetwork, beaver::{SharedValueSource}, error::MpcNetworkError};
 
 #[allow(type_alias_bounds)]
-pub type SharedNetwork<N: MpcNetwork> = Rc<RefCell<N>>;
+pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
 #[allow(type_alias_bounds)]
-pub type BeaverSource<S: SharedValueSource<Scalar>> = Rc<S>;
+pub type BeaverSource<S: SharedValueSource<Scalar>> = Rc<RefCell<S>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Visibility {
@@ -70,7 +70,7 @@ impl PartialOrd for Visibility {
 
 /// Represents a scalar value allocated in an MPC network
 #[derive(Clone, Debug)]
-pub struct MpcScalar<N: MpcNetwork, S: SharedValueSource<Scalar>> {
+pub struct MpcScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// the underlying value of the scalar allocated in the network
     value: Scalar,
     /// The visibility flag; what amount of information parties have
@@ -81,8 +81,10 @@ pub struct MpcScalar<N: MpcNetwork, S: SharedValueSource<Scalar>> {
     beaver_source: BeaverSource<S>,
 }
 
-/// Static methods
-impl<N: MpcNetwork, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
+/**
+ * Static methods
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// Returns the minimum visibility over a vector of scalars
     pub fn min_visibility(scalars: &[MpcScalar<N, S>]) -> Visibility {
         scalars.iter()
@@ -92,15 +94,23 @@ impl<N: MpcNetwork, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     }
 
     /// Returns the minimum visibility between two scalars
-    pub fn min_visibility_two(a: MpcScalar<N, S>, b: MpcScalar<N, S>) -> Visibility {
-        Self::min_visibility(&[a, b])
+    pub fn min_visibility_two(a: &MpcScalar<N, S>, b: &MpcScalar<N, S>) -> Visibility {
+        if a.visibility.lt(&b.visibility) { a.visibility.clone() } else { b.visibility.clone() }
     }
 }
 
 /**
  * Wrapper type implementations
  */
-impl<N: MpcNetwork, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
+    /**
+     * Helper methods
+     */
+    #[inline]
+    fn is_shared(&self) -> bool {
+        self.visibility == Visibility::Shared
+    }
+
     /**
      * Casting methods
      */
@@ -257,8 +267,28 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
                 .broadcast_single_scalar(self.value)
         )?;
 
+        // Reconstruct the plaintext from the peer's share
         Ok(
-            MpcScalar::from_scalar(received_scalar, self.network.clone(), self.beaver_source)
+            MpcScalar::from_scalar_with_visibility(
+                self.value + received_scalar, 
+                Visibility::Public,
+                self.network.clone(),
+                self.beaver_source
+            )
+        )
+    }
+
+    /// Retreives the next Beaver triplet from the Beaver source and allocates the values within the network
+    fn next_beaver_triplet(&self) -> (MpcScalar<N, S>, MpcScalar<N, S>, MpcScalar<N, S>) {
+        let (a, b, c) = self.beaver_source
+            .as_ref()
+            .borrow_mut()
+            .next_triplet();
+        
+        (
+            MpcScalar::from_scalar_with_visibility(a, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
+            MpcScalar::from_scalar_with_visibility(b, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
+            MpcScalar::from_scalar_with_visibility(c, Visibility::Shared, self.network.clone(), self.beaver_source.clone())
         )
     }
 }
@@ -267,19 +297,19 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
  * Generic trait implementations
  */
 
-impl<N: MpcNetwork, S: SharedValueSource<Scalar>> PartialEq for MpcScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for MpcScalar<N, S> {
     fn eq(&self, other: &Self) -> bool {
         self.value.eq(&other.value)
     }
 }
 
-impl<N: MpcNetwork, S: SharedValueSource<Scalar>> ConstantTimeEq for MpcScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for MpcScalar<N, S> {
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.value.ct_eq(&other.value)
     } 
 }
 
-impl<N: MpcNetwork, S: SharedValueSource<Scalar>> Index<usize> for MpcScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for MpcScalar<N, S> {
     type Output = u8;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -287,14 +317,96 @@ impl<N: MpcNetwork, S: SharedValueSource<Scalar>> Index<usize> for MpcScalar<N, 
     }
 }
 
-
 /**
  * Mul and variants for: borrowed, non-borrowed, and Scalar types
  */
-macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *=, MpcScalar<N, S>);
-macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *=, Scalar);
-macros::impl_arithmetic_scalar!(Mul, mul, *, MpcScalar<N, S>);
+
+// Multiplication with a scalar value is equivalent to a public multiplication, no Beaver
+// trick needed
 macros::impl_arithmetic_scalar!(Mul, mul, *, Scalar);
+macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *=, Scalar);
+
+/// Implementations of MulAssign must panic, there is no clean way for us to pass the error up
+/// I.e. we could implement MulAssign on Result<MpcScalar<N, S>, MpcNetworkError> but this is
+/// not a clean interface
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MulAssign<MpcScalar<N, S>> for MpcScalar<N, S> {
+    fn mul_assign(&mut self, rhs: MpcScalar<N, S>) {
+        *self = (self.borrow() * rhs).unwrap();
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MulAssign<&'a MpcScalar<N, S>> for MpcScalar<N, S> {
+    fn mul_assign(&mut self, rhs: &'a MpcScalar<N, S>) {
+        *self = (self.borrow() * rhs).unwrap();
+    }
+}
+
+// Implementation of mul with the beaver trick
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for &'a MpcScalar<N, S> {
+    type Output = Result<MpcScalar<N, S>, MpcNetworkError>;
+
+    /// Multiplies two (possibly shared) values. The only case in which we need a Beaver trick
+    /// is when both lhs and rhs are Shared. If only one is shared, multiplying by a public value
+    /// directly leads to an additive sharing. If both are public, we do not need an additive share.
+    /// TODO(@joey): What is the correct behavior when one or both of lhs and rhs are private
+    /// 
+    /// See https://securecomputation.org/docs/pragmaticmpc.pdf (Section 3.4) for the identities this
+    /// implementation makes use of.
+    fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
+        if self.is_shared() && rhs.is_shared() {
+            let (a, b, c) = self.next_beaver_triplet();
+
+            // Open the value d = [lhs - a]
+            let lhs_minus_a = (self - &a).open()?;
+            // Open the value e = [rhs - b]
+            let rhs_minus_b = (rhs - &b).open()?;
+
+            // Identity: [a * b] = de + d[b] + e[a] + [c]
+            // All multiplications here are between a public and shared value or
+            // two public values, so the recursion will not hit this case
+            Ok(
+                (&lhs_minus_a * &rhs_minus_b)? + 
+                (&lhs_minus_a * &b)? + 
+                (&rhs_minus_b * &a)? + 
+                c
+            )
+        } else {
+            // Directly multiply
+            Ok(
+                MpcScalar {
+                    visibility: MpcScalar::min_visibility_two(self, rhs),
+                    network: self.network.clone(),
+                    beaver_source: self.beaver_source.clone(),
+                    value: self.value * rhs.value
+                }
+            )
+        }
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for MpcScalar<N, S> {
+    type Output = Result<MpcScalar<N, S>, MpcNetworkError>;
+
+    fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>> for &'a MpcScalar<N, S> {
+    type Output = Result<MpcScalar<N, S>, MpcNetworkError>;
+
+    fn mul(self, rhs: MpcScalar<N, S>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>> for MpcScalar<N, S> {
+    type Output = Result<MpcScalar<N, S>, MpcNetworkError>;
+
+    fn mul(self, rhs: MpcScalar<N, S>) -> Self::Output {
+        &self * &rhs
+    }
+}
 
 /**
  * add and variants for: borrowed, non-borrowed, and scalar types
@@ -304,7 +416,6 @@ macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +=, Scalar);
 macros::impl_arithmetic_scalar!(Add, add, +, MpcScalar<N, S>);
 macros::impl_arithmetic_scalar!(Add, add, +, Scalar);
 
-
 /**
  * Sub and variants for: borrowed, non-borrowed, and scalar types
  */
@@ -313,8 +424,7 @@ macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -=, Scalar);
 macros::impl_arithmetic_scalar!(Sub, sub, -, MpcScalar<N, S>);
 macros::impl_arithmetic_scalar!(Sub, sub, -, Scalar);
 
-
-impl<N: MpcNetwork, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S> {
     type Output = MpcScalar<N, S>; 
 
     fn neg(self) -> Self::Output {
@@ -327,7 +437,7 @@ impl<N: MpcNetwork, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S> {
     }
 }
 
-impl<'a, N: MpcNetwork, S: SharedValueSource<Scalar>> Neg for &'a MpcScalar<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a MpcScalar<N, S> {
     type Output = MpcScalar<N, S>;
 
     fn neg(self) -> Self::Output {
@@ -345,7 +455,7 @@ impl<'a, N: MpcNetwork, S: SharedValueSource<Scalar>> Neg for &'a MpcScalar<N, S
  */
 
 impl<N, S, T> Product<T> for MpcScalar<N, S> where
-    N: MpcNetwork,
+    N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
     T: Borrow<MpcScalar<N, S>>
 {
@@ -358,12 +468,12 @@ impl<N, S, T> Product<T> for MpcScalar<N, S> where
             .beaver_source
             .clone();
 
-        iter.fold(MpcScalar::one(network, beaver_source), |acc, item| acc * item.borrow())
+        iter.fold(MpcScalar::one(network, beaver_source), |acc, item| (acc * item.borrow()).unwrap())
     }
 }
 
 impl<N, S, T> Sum<T> for MpcScalar<N, S> where
-    N: MpcNetwork,
+    N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
     T: Borrow<MpcScalar<N, S>>
 {
@@ -381,7 +491,7 @@ impl<N, S, T> Sum<T> for MpcScalar<N, S> where
     } 
 }
 
-impl<N: MpcNetwork, S: SharedValueSource<Scalar>> Zeroize for MpcScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Zeroize for MpcScalar<N, S> {
     fn zeroize(&mut self) {
         self.value.zeroize()
     }
@@ -400,7 +510,7 @@ mod test {
     #[test]
     fn test_zero() {
         let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
-        let beaver_source = Rc::new(DummySharedScalarSource::new());
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
 
         let expected = MpcScalar::from_scalar(
             Scalar::zero(), network.clone(), beaver_source.clone()
