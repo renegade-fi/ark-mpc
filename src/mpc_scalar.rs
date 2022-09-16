@@ -238,21 +238,47 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// From a privately held value, construct an additive secret share and distribute this
     /// to the counterparty. The local party samples a random value R which is given to the peer
     /// The local party then holds a - R where a is the underlying value.
-    /// Returns the share held by the local party
-    pub fn share_secret(self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
-        // Sample a random additive complement
-        let mut rng = OsRng{};
-        let random_share = Scalar::from(rng.next_u64());
+    /// This method is called by both parties, only one of which transmits, the peer will simply
+    /// await the sent share
+    pub fn share_secret(&self, party_id: u64) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        let my_party_id = self.network
+            .as_ref()
+            .borrow()
+            .party_id();
 
-        // Broadcast the counterparty's share
-        block_on(
-            self.network
-                .as_ref()
-                .borrow_mut()
-                .send_single_scalar(random_share)
-        )?;
+        if my_party_id == party_id {
+            // Sender party
+            // Sample a random additive complement
+            let mut rng = OsRng{};
+            let random_share = Scalar::from(rng.next_u64());
 
-        Ok( self - random_share )
+            // Broadcast the counterparty's share
+            block_on(
+                self.network
+                    .as_ref()
+                    .borrow_mut()
+                    .send_single_scalar(random_share)
+            )?;
+
+            Ok( self - random_share )
+        } else {
+            // Receiving party
+            let value = block_on(
+                self.network
+                    .as_ref()
+                    .borrow_mut()
+                    .receive_single_scalar()
+            )?;
+
+            Ok(
+                MpcScalar { 
+                    value,
+                    visibility: Visibility::Shared,
+                    network: self.network.clone(),
+                    beaver_source: self.beaver_source.clone(),
+                }
+            )
+        }
     }
 
     /// From a shared value, both parties open their shares and construct the plaintext value.

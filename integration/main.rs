@@ -1,3 +1,4 @@
+mod mpc_scalar;
 mod network;
 use std::net::SocketAddr;
 
@@ -80,6 +81,8 @@ async fn main() {
     print!("Running test_send_scalar... ");
     let res = test_send_scalar(args.party, &mut net).await;
     all_success &= validate_success(res);
+
+    // Test a simple MPC
 
     if all_success {
         println!(
