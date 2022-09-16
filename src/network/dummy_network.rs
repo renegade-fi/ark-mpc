@@ -21,6 +21,18 @@ impl MpcNetwork for DummyMpcNetwork {
     /// Always return king
     fn party_id(&self) -> u64 { 0 }
 
+    async fn send_scalars(&mut self, _: Vec<Scalar>) -> Result<(), MpcNetworkError> {
+        Ok(())
+    }
+
+    async fn receive_scalars(&mut self, num_scalars: usize) -> Result<Vec<Scalar>, MpcNetworkError> {
+        Ok(
+            (0..num_scalars).into_iter()
+                .map(|_| Scalar::default())
+                .collect()
+        )
+    }
+
     async fn broadcast_points(&mut self, points: Vec<RistrettoPoint>) -> Result<
         Vec<RistrettoPoint>,
         MpcNetworkError    
