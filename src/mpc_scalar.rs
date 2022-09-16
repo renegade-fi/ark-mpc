@@ -356,20 +356,28 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
         if self.is_shared() && rhs.is_shared() {
             let (a, b, c) = self.next_beaver_triplet();
 
-            // Open the value d = [lhs - a]
+            // Open the value d = [lhs - a].open()
             let lhs_minus_a = (self - &a).open()?;
-            // Open the value e = [rhs - b]
+            // Open the value e = [rhs - b].open()
             let rhs_minus_b = (rhs - &b).open()?;
 
             // Identity: [a * b] = de + d[b] + e[a] + [c]
             // All multiplications here are between a public and shared value or
             // two public values, so the recursion will not hit this case
-            Ok(
-                (&lhs_minus_a * &rhs_minus_b)? + 
-                (&lhs_minus_a * &b)? + 
+            let mut res = (&lhs_minus_a * &b)? + 
                 (&rhs_minus_b * &a)? + 
-                c
-            )
+                c;
+            
+            // Split into additive shares, the king holds de + res 
+            if self.network
+                .as_ref()
+                .borrow()
+                .am_king() 
+            {
+                res += (&lhs_minus_a * &rhs_minus_b)?
+            }
+
+            Ok(res)
         } else {
             // Directly multiply
             Ok(
@@ -505,7 +513,7 @@ mod test {
 
     use crate::{network::dummy_network::DummyMpcNetwork, beaver::DummySharedScalarSource};
 
-    use super::MpcScalar;
+    use super::{MpcScalar, Visibility};
 
     #[test]
     fn test_zero() {
@@ -519,4 +527,190 @@ mod test {
 
         assert_eq!(zero, expected);
     }
+
+    #[test]
+    fn test_open() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(1u8)]);
+        
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+
+        let expected = MpcScalar::from_scalar(
+            Scalar::from(2u8), network.clone(), beaver_source.clone()
+        );
+        
+        // Dummy network opens to the value we send it, so the mock parties each hold Scalar(1) for a 
+        // shared value of Scalar(2)
+        let my_share = MpcScalar::from_u64_with_visibility(
+            1u64, 
+            Visibility::Shared, 
+            network, 
+            beaver_source
+        );
+
+        assert_eq!(my_share.open().unwrap(), expected);
+    }
+
+    #[test]
+    fn test_add() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(2u8)]);
+
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+
+        // Assume that parties hold a secret share of [4] as individual shares of 2 each
+        let shared_value1 = MpcScalar::from_u64_with_visibility(
+            2u64, 
+            Visibility::Shared, 
+            network.clone(), 
+            beaver_source.clone(),
+        );
+        
+        // Test adding a scalar value first
+        let res = &shared_value1 + Scalar::from(3u64);  // [4] + 3
+        assert_eq!(res.visibility, Visibility::Shared);
+        assert_eq!(
+            res.open().unwrap(),
+            MpcScalar::from_u64(7u64, network.clone(), beaver_source.clone())
+        );
+
+        // Test adding another shared value
+        // Assume now that parties have additive shares of [5]
+        // The peer holds 1, the local party holds 4
+        let shared_value2 = MpcScalar::from_u64_with_visibility(
+            4u64, 
+            Visibility::Shared, 
+            network.clone(), 
+            beaver_source.clone()
+        );
+
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(3u8)]);  // The peer's share of [4] + [5]
+
+        let res = shared_value1 + shared_value2;
+        assert_eq!(res.visibility, Visibility::Shared);
+        assert_eq!(
+            res.open().unwrap(),
+            MpcScalar::from_u64(9, network, beaver_source)
+        )
+    }
+
+    #[test]
+    fn test_sub() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+
+        // Subtract a raw scalar from a shared value
+        // Assume parties hold secret shares 2 and 1 of [3]
+        let shared_value1 = MpcScalar::from_u64_with_visibility(
+            2u64, 
+            Visibility::Shared, 
+            network.clone(), 
+            beaver_source.clone()
+        );
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(1u8)]);
+        
+        let res = &shared_value1 - Scalar::from(2u8);
+        assert_eq!(res.visibility, Visibility::Shared);
+        assert_eq!(
+            res.open().unwrap(),
+            MpcScalar::from_u64(1u64, network.clone(), beaver_source.clone())
+        );
+
+        // Subtract two shared values
+        let shared_value2 = MpcScalar::from_u64_with_visibility(
+            5, 
+            Visibility::Shared, 
+            network.clone(), 
+            beaver_source.clone()
+        );
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(2u8)]);
+        
+        let res = shared_value2 - shared_value1;
+        assert_eq!(res.visibility, Visibility::Shared);
+        assert_eq!(
+            res.open().unwrap(),
+            MpcScalar::from_u64(5, network, beaver_source)
+        )
+    }
+
+    #[test]
+    fn test_mul() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+
+        // Multiply a scalar with a shared value
+        // Assume both parties have a sharing of [11], local party holds 6
+        let shared_value1 = MpcScalar::from_u64_with_visibility(
+            6u64, 
+            Visibility::Shared, 
+            network.clone(), 
+            beaver_source.clone()
+        );
+
+        // Populate the network mock after the multiplication; this implicitly asserts that
+        // no network call was used for multiplying by a scalar (assumed public)
+        let res = &shared_value1 * Scalar::from(2u8);
+        assert_eq!(res.visibility, Visibility::Shared);
+
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(10u8)]);
+        
+        assert_eq!(
+            res.open().unwrap(),
+            MpcScalar::from_u64(22, network.clone(), beaver_source.clone())
+        );
+
+        // Multiply a shared value with a public value
+        let public_value = MpcScalar::from_u64_with_visibility(
+            3u64,
+            Visibility::Public,
+            network.clone(),
+            beaver_source.clone(),
+        );
+
+        // As above, populate the network mock after the multiplication
+        let res = (public_value * &shared_value1).unwrap();
+        assert_eq!(res.visibility, Visibility::Shared);
+
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(15u8)]);
+        assert_eq!(
+            res.open().unwrap(),
+            MpcScalar::from_u64(33u64, network.clone(), beaver_source.clone())
+        );
+
+        // Multiply two shared values, a beaver triplet (a, b, c) will be needed
+        // Populate the network mock with two openings:
+        //      1. [shared1 - a]
+        //      2. [shared2 - b]
+        // Assume that the parties hold [shared2] = [12] where the peer holds 7 and the local holds 5
+        let shared_value2 = MpcScalar::from_u64_with_visibility(
+            5u64, 
+            Visibility::Shared, 
+            network.clone(), 
+            beaver_source.clone()
+        );
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(5u8), Scalar::from(7u8)]);
+        
+        // Populate the network with the peer's res share after the computation
+        let res = (shared_value1 * shared_value2).unwrap();
+        assert_eq!(res.visibility, Visibility::Shared);
+
+        network.borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(0u64)]);
+        
+        assert_eq!(
+            res.open().unwrap(),
+            MpcScalar::from_u64(12 * 11, network, beaver_source)
+        )
+
+
+    }
+
 }
