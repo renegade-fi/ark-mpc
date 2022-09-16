@@ -2,19 +2,25 @@
 #![allow(unused_doc_comments)]
 mod macros;
 
-use std::{rc::Rc, ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, iter::{Product, Sum}, borrow::Borrow, cmp::Ordering};
+use std::{
+    borrow::Borrow, 
+    cell::RefCell,
+    cmp::Ordering, 
+    iter::{Product, Sum}, 
+    rc::Rc, 
+    ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, 
+};
 
 use curve25519_dalek::scalar::Scalar;
-
-
-use rand_core::{RngCore, CryptoRng};
+use futures::executor::block_on;
+use rand_core::{RngCore, CryptoRng, OsRng};
 use subtle::{ConstantTimeEq};
 use zeroize::Zeroize;
 
-use crate::{network::MpcNetwork, beaver::{SharedValueSource}};
+use crate::{network::MpcNetwork, beaver::{SharedValueSource}, error::MpcNetworkError};
 
 #[allow(type_alias_bounds)]
-pub type SharedNetwork<N: MpcNetwork> = Rc<N>;
+pub type SharedNetwork<N: MpcNetwork> = Rc<RefCell<N>>;
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource<Scalar>> = Rc<S>;
 
@@ -91,6 +97,9 @@ impl<N: MpcNetwork, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     }
 }
 
+/**
+ * Wrapper type implementations
+ */
 impl<N: MpcNetwork, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /**
      * Casting methods
@@ -210,6 +219,48 @@ impl<N: MpcNetwork, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     macros::impl_delegated_wrapper!(zero, zero_with_visibility);
     // Generate the multiplicative identity
     macros::impl_delegated_wrapper!(one, one_with_visibility);
+}
+
+/**
+ * Secret sharing implementation
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
+    /// From a privately held value, construct an additive secret share and distribute this
+    /// to the counterparty. The local party samples a random value R which is given to the peer
+    /// The local party then holds a - R where a is the underlying value.
+    /// Returns the share held by the local party
+    pub fn share_secret(self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        // Sample a random additive complement
+        let mut rng = OsRng{};
+        let random_share = Scalar::from(rng.next_u64());
+
+        // Broadcast the counterparty's share
+        block_on(
+            self.network
+                .as_ref()
+                .borrow_mut()
+                .send_single_scalar(random_share)
+        )?;
+
+        Ok( self - random_share )
+    }
+
+    /// From a shared value, both parties open their shares and construct the plaintext value.
+    /// Note that the parties no longer hold valid additive secret shares of the value, this is used
+    /// at the end of a computation
+    pub fn open(self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        // Send my scalar and expect one back
+        let received_scalar = block_on(
+            self.network
+                .as_ref()
+                .borrow_mut()
+                .broadcast_single_scalar(self.value)
+        )?;
+
+        Ok(
+            MpcScalar::from_scalar(received_scalar, self.network.clone(), self.beaver_source)
+        )
+    }
 }
 
 /**
@@ -338,7 +389,7 @@ impl<N: MpcNetwork, S: SharedValueSource<Scalar>> Zeroize for MpcScalar<N, S> {
 
 #[cfg(test)]
 mod test {
-    use std::rc::Rc;
+    use std::{rc::Rc, cell::RefCell};
 
     use curve25519_dalek::scalar::Scalar;
 
@@ -348,7 +399,7 @@ mod test {
 
     #[test]
     fn test_zero() {
-        let network = Rc::new(DummyMpcNetwork::new());
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
         let beaver_source = Rc::new(DummySharedScalarSource::new());
 
         let expected = MpcScalar::from_scalar(
