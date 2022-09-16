@@ -17,6 +17,7 @@ pub trait SharedValueSource<T> {
 
 /// A dummy value source that outputs only ones
 /// Used for testing
+#[derive(Debug)]
 pub(crate) struct DummySharedScalarSource;
 
 #[allow(dead_code)]
