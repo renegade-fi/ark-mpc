@@ -17,7 +17,6 @@ pub type PartyId = u64;
 
 const BYTES_PER_POINT: usize = 32;
 const BYTES_PER_SCALAR: usize = 32;
-const MAX_PAYLOAD_SIZE: usize = 1024;
 
 /**
  * Helpers
@@ -120,6 +119,13 @@ pub trait MpcNetwork {
     async fn close(&mut self) -> Result<(), MpcNetworkError>;
 }  
 
+/// The order in which the local party should read when exchanging values
+#[derive(Clone, Debug)]
+pub enum ReadWriteOrder {
+    ReadFirst,
+    WriteFirst,
+}
+
 /// Implements an MpcNetwork on top of QUIC
 #[derive(Debug)]
 pub struct QuicTwoPartyNet {
@@ -146,6 +152,11 @@ impl QuicTwoPartyNet {
     ) -> Self {
         // Construct the QUIC net
         Self { party_id, local_addr, peer_addr, connected: false, send_stream: None, recv_stream: None }
+    }
+
+    /// Returns the read order for the local peer; king is write first
+    fn read_order(&self) -> ReadWriteOrder {
+        if self.am_king() { ReadWriteOrder::WriteFirst } else { ReadWriteOrder::ReadFirst }
     }
 
     /// Returns an error if the network is not connected
@@ -187,7 +198,6 @@ impl QuicTwoPartyNet {
                     .map_err(|err| {
                         MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                     })?
-            
             }
         };
 
@@ -224,7 +234,7 @@ impl QuicTwoPartyNet {
 
     /// Read exactly `n` bytes from the stream
     async fn read_bytes(&mut self, num_bytes: usize) -> Result<Vec<u8>, MpcNetworkError> {
-        let mut read_buffer = [0u8; MAX_PAYLOAD_SIZE];
+        let mut read_buffer = vec![0u8; num_bytes];
         let bytes_read = self.recv_stream.as_mut()
             .unwrap()
             .read(&mut read_buffer)
@@ -233,20 +243,31 @@ impl QuicTwoPartyNet {
             .ok_or(MpcNetworkError::RecvError)?;
 
         if bytes_read != num_bytes {
-            println!("Expected {} got {} bytes", num_bytes, bytes_read);
             return Err(
                 MpcNetworkError::BroadcastError(BroadcastError::TooFewBytes)
             )
         }
 
-        Ok(read_buffer[..bytes_read].to_vec())
+        Ok(read_buffer.to_vec())
     }
 
     /// Write a stream of bytes to the network, then expect the same back from the connected peer
-    async fn write_then_read_bytes(&mut self, payload: &[u8]) -> Result<Vec<u8>, MpcNetworkError> {
+    async fn write_then_read_bytes(&mut self, order: ReadWriteOrder, payload: &[u8]) -> Result<Vec<u8>, MpcNetworkError> {
         let payload_length = payload.len();
-        self.write_bytes(payload).await?;
-        self.read_bytes(payload_length).await
+
+        Ok(
+            match order {
+                ReadWriteOrder::ReadFirst => {
+                    let bytes_read = self.read_bytes(payload_length).await?;
+                    self.write_bytes(payload).await?;
+                    bytes_read
+                },
+                ReadWriteOrder::WriteFirst => {
+                    self.write_bytes(payload).await?;
+                    self.read_bytes(payload_length).await?
+                }
+            }
+        )
     }
 }
 
@@ -281,7 +302,9 @@ impl MpcNetwork for QuicTwoPartyNet {
 
         // To byte buffer
         let payload = scalars_to_bytes(scalars);
-        let read_buffer = self.write_then_read_bytes(&payload).await?;
+        
+        
+        let read_buffer = self.write_then_read_bytes(self.read_order(), &payload).await?;
         
         bytes_to_scalars(&read_buffer)
     }
@@ -294,7 +317,7 @@ impl MpcNetwork for QuicTwoPartyNet {
 
         // To byte buffer
         let payload = points_to_bytes(points);
-        let read_buffer = self.write_then_read_bytes(&payload).await?;
+        let read_buffer = self.write_then_read_bytes(self.read_order(), &payload).await?;
 
         // Deserialize back to Ristretto points
         bytes_to_points(&read_buffer)
