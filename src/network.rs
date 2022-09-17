@@ -121,6 +121,7 @@ pub trait MpcNetwork {
 }  
 
 /// Implements an MpcNetwork on top of QUIC
+#[derive(Debug)]
 pub struct QuicTwoPartyNet {
     /// The index of the local party in the participants
     party_id: PartyId,
@@ -232,6 +233,7 @@ impl QuicTwoPartyNet {
             .ok_or(MpcNetworkError::RecvError)?;
 
         if bytes_read != num_bytes {
+            println!("Expected {} got {} bytes", num_bytes, bytes_read);
             return Err(
                 MpcNetworkError::BroadcastError(BroadcastError::TooFewBytes)
             )

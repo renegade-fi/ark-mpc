@@ -4,8 +4,10 @@ services:
     build: .
     ports:
       - "8000:8000"
-    command: integration-tests --party 0 --port1 8000 --port2 9000
+    command: cargo test --test integration -- --party 0 --port1 8000 --port2 9000
+    tty: true
   party1:
-    image: integraton-test:latest
+    image: integration-test:latest
     build: .
-    command: integration-tests --party 1 --port1 9000 --port2 8000
+    command: cargo test --test integration -- --party 1 --port1 9000 --port2 8000
+    tty: true

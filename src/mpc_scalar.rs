@@ -116,6 +116,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         self.visibility == Visibility::Public
     }
 
+    #[inline]
+    pub fn value(&self) -> Scalar {
+        self.value
+    }
+
     /**
      * Casting methods
      */

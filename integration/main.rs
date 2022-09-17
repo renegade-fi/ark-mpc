@@ -7,9 +7,23 @@ use colored::Colorize;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants};
 use dns_lookup::lookup_host;
 
-use mpc_ristretto::network::{QuicTwoPartyNet};
+use mpc_ristretto::network::QuicTwoPartyNet;
 
-use crate::{network::{test_send_ristretto, test_send_scalar}, mpc_scalar::test_simple_mpc};
+// Integration test format
+#[derive(Clone, Debug)]
+struct IntegrationTestArgs {
+    party_id: u64,
+    net_ref: Rc<RefCell<QuicTwoPartyNet>>
+}
+
+// Integration test format
+#[derive(Clone)]
+struct IntegrationTest {
+    pub name: &'static str,
+    pub test_fn: fn(&IntegrationTestArgs) -> Result<(), String>,
+}
+
+inventory::collect!(IntegrationTest);
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -70,22 +84,18 @@ async fn main() {
      * Test harness
      */
 
+    let test_args = IntegrationTestArgs {
+        party_id: args.party,
+        net_ref: Rc::new(RefCell::new(net)),
+    };
+
     let mut all_success = true;
 
-    // Test sending a number across the network encoded as a Ristretto point
-    print!("Running test_send_ristretto... ");
-    let res = test_send_ristretto(args.party, &mut net).await;
-    all_success &= validate_success(res);
-
-    // Test sending a number across the network encoded as a Dalek Scalar
-    print!("Running test_send_scalar... ");
-    let res = test_send_scalar(args.party, &mut net).await;
-    all_success &= validate_success(res);
-
-    // Test a simple MPC
-    print!("Running test_simple_mpc... ");
-    let res = test_simple_mpc(args.party, Rc::new(RefCell::new(net))).await;
-    all_success &= validate_success(res);
+    for test in inventory::iter::<IntegrationTest> {
+        print!("Running {}... ", test.name);
+        let res: Result<(), String> = (test.test_fn)(&test_args);
+        all_success &= validate_success(res);
+    }
 
     if all_success {
         println!(

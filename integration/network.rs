@@ -1,36 +1,50 @@
 use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::{network::{QuicTwoPartyNet, MpcNetwork}};
+use futures::executor::block_on;
+use mpc_ristretto::network:: MpcNetwork;
 
-use crate::base_point_mul;
+use crate::{base_point_mul, IntegrationTest, IntegrationTestArgs};
 
-pub(crate) async fn test_send_ristretto(
-    party_id: u64,
-    net: &mut QuicTwoPartyNet,
-) -> Result<(), String> {
+pub(crate) fn test_send_ristretto(test_args: &IntegrationTestArgs) 
+    -> Result<(), String> 
+{
     // Send the party ID over the network; expect the counterparty's ID back
-    let res = net.broadcast_single_point(base_point_mul(party_id))
-        .await
-        .map_err(|err| format!("{:?}", err))?;
+    let res = block_on(
+        test_args.net_ref
+            .borrow_mut()
+            .broadcast_single_point(base_point_mul(test_args.party_id))
+    ).map_err(|err| format!("{:?}", err))?;
 
     let expected = base_point_mul(
-        if party_id == 0 { 1u64 } else { 0u64 }
+        if test_args.party_id == 0 { 1u64 } else { 0u64 }
     );
 
     if res.eq(&expected) { Ok(()) } else { Err("res != expected".to_string()) }
 }
 
-pub(crate) async fn test_send_scalar(
-    party_id: u64,
-    net: &mut QuicTwoPartyNet,
+pub(crate) fn test_send_scalar(
+    test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
     // Send the party ID over the network as a Scalar; expect the counterparty's ID back
-    let res = net.broadcast_single_scalar(Scalar::from(party_id))
-        .await
-        .map_err(|err| format!("{:?}", err))?;
+    let res = block_on(
+        test_args.net_ref
+            .borrow_mut()
+            .broadcast_single_scalar(Scalar::from(test_args.party_id))
+    ).map_err(|err| format!("{:?}", err))?;
 
     let expected = Scalar::from(
-        if party_id == 0 { 1u8 } else { 0u8 }
+        if test_args.party_id == 0 { 1u8 } else { 0u8 }
     );
 
     if res.eq(&expected) { Ok(()) } else { Err("res != expected".to_string()) }
 }
+
+// Take inventory
+inventory::submit!(IntegrationTest{
+    name: "test_send_ristretto",
+    test_fn: test_send_ristretto,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "test_send_scalar",
+    test_fn: test_send_scalar,
+});

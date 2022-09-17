@@ -7,9 +7,10 @@ edition = "2021"
 name = "mpc_ristretto"
 path = "src/lib.rs"
 
-[[bin]]
-name = "integration-tests"
+[[test]]
+name = "integration"
 path = "integration/main.rs"
+harness = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,20 +18,19 @@ path = "integration/main.rs"
 async-std = "1.12"
 async-trait = "0.1"
 bytes = "1.2"
-clap = { version = "3.2.8", features = ["derive"] }
-colored = { version = "2" }
 curve25519-dalek = "^3"
-digest = "0.10"
-dns-lookup = { version = "1.0" }
 futures = "0.3"
-hyper = "0.14"
 rand_core = "0.5.1"
 rcgen = "0.9"
-rouille = "3.5"
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 subtle = "2.4.1"
-tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 typenum = "1.15"
 quinn = { version = "0.8", features = ["tls-rustls", "native-certs"] }
-qp2p = { version = "0.30" }
 zeroize = "1.3"
+
+[dev-dependencies]
+clap = { version = "3.2.8", features = ["derive"] }
+colored = "2"
+dns-lookup = "1.0"
+inventory = "0.3"
+tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
