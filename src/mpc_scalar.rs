@@ -111,6 +111,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         self.visibility == Visibility::Shared
     }
 
+    #[inline]
+    fn is_public(&self) -> bool {
+        self.visibility == Visibility::Public
+    }
+
     /**
      * Casting methods
      */
@@ -350,7 +355,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for MpcSca
 // Multiplication with a scalar value is equivalent to a public multiplication, no Beaver
 // trick needed
 macros::impl_arithmetic_scalar!(Mul, mul, *, Scalar);
-macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *=, Scalar);
 
 /// Implementations of MulAssign must panic, there is no clean way for us to pass the error up
 /// I.e. we could implement MulAssign on Result<MpcScalar<N, S>, MpcNetworkError> but this is
@@ -418,6 +422,8 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
     }
 }
 
+
+
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for MpcScalar<N, S> {
     type Output = Result<MpcScalar<N, S>, MpcNetworkError>;
 
@@ -443,18 +449,68 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>> fo
 }
 
 /**
- * add and variants for: borrowed, non-borrowed, and scalar types
+ * Add and variants for: borrowed, non-borrowed, and scalar types
  */
-macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +=, MpcScalar<N, S>);
-macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +=, Scalar);
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N, S>> for &'a MpcScalar<N, S> {
+    type Output = MpcScalar<N, S>;
+
+    fn add(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
+        // If adding two public values, only the king should add the value
+        if (self.is_public() || rhs.is_public()) &&     // Either value is public
+            !self.network.as_ref().borrow().am_king()   // Not party 0 
+        {
+            return MpcScalar {
+                value: self.value,
+                visibility: MpcScalar::min_visibility_two(self, rhs),
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone(),
+            }
+        }
+
+        MpcScalar {
+            value: self.value + rhs.value,
+            visibility: MpcScalar::min_visibility_two(self, rhs),
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone(), 
+        }
+    }
+}
+
+macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +, MpcScalar<N, S>);
+macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +, Scalar);
 macros::impl_arithmetic_scalar!(Add, add, +, MpcScalar<N, S>);
 macros::impl_arithmetic_scalar!(Add, add, +, Scalar);
 
 /**
  * Sub and variants for: borrowed, non-borrowed, and scalar types
  */
-macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -=, MpcScalar<N, S>);
-macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -=, Scalar);
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcScalar<N, S>> for &'a MpcScalar<N, S> {
+    type Output = MpcScalar<N, S>;
+
+    fn sub(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
+        // If subtracting two public values, only the king modifies their share
+        if (self.is_public() || rhs.is_public()) &&     // Either value is public
+            !self.network.as_ref().borrow().am_king()   // Not party 0
+        {
+            return MpcScalar {
+                value: self.value,
+                visibility: MpcScalar::min_visibility_two(self, rhs),
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone()
+            }
+        }
+
+        MpcScalar {
+            value: self.value - rhs.value,
+            visibility: MpcScalar::min_visibility_two(self, rhs),
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone(), 
+        }
+    }
+}
+
+macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -, MpcScalar<N, S>);
+macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -, Scalar);
 macros::impl_arithmetic_scalar!(Sub, sub, -, MpcScalar<N, S>);
 macros::impl_arithmetic_scalar!(Sub, sub, -, Scalar);
 

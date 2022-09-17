@@ -30,7 +30,7 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
 
 /// Each party inputs their party_id + 1 and the two together compute the square
 /// Party IDs are 0 and 1, so the expected result is (0 + 1 + 1 + 1)^2 = 9
-pub(crate) async fn test_linear_combination(
+pub(crate) async fn test_simple_mpc(
     party_id: u64,
     net_ref: Rc<RefCell<QuicTwoPartyNet>>,
 ) -> Result<(), String> {

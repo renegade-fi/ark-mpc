@@ -1,6 +1,6 @@
 mod mpc_scalar;
 mod network;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, cell::RefCell, rc::Rc};
 
 use clap::Parser;
 use colored::Colorize;
@@ -9,7 +9,7 @@ use dns_lookup::lookup_host;
 
 use mpc_ristretto::network::{QuicTwoPartyNet};
 
-use crate::network::{test_send_ristretto, test_send_scalar};
+use crate::{network::{test_send_ristretto, test_send_scalar}, mpc_scalar::test_simple_mpc};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -83,6 +83,9 @@ async fn main() {
     all_success &= validate_success(res);
 
     // Test a simple MPC
+    print!("Running test_simple_mpc... ");
+    let res = test_simple_mpc(args.party, Rc::new(RefCell::new(net))).await;
+    all_success &= validate_success(res);
 
     if all_success {
         println!(

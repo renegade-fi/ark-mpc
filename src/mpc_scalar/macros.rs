@@ -123,13 +123,13 @@ macro_rules! impl_arithmetic_assign_scalar {
     ($trait:ident, $fn_name:ident, $op:tt, Scalar) => {
         impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<Scalar> for MpcScalar<N, S> {
             fn $fn_name(&mut self, rhs: Scalar) {
-                self.value $op rhs
+                *self = &*self $op MpcScalar::from_scalar(rhs, self.network.clone(), self.beaver_source.clone())
             }
         }
 
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a Scalar> for MpcScalar<N, S> {
             fn $fn_name(&mut self, rhs: &'a Scalar) {
-                self.value $op rhs
+                *self = &*self $op MpcScalar::from_scalar(*rhs, self.network.clone(), self.beaver_source.clone())
             }
         }
     };
@@ -137,15 +137,13 @@ macro_rules! impl_arithmetic_assign_scalar {
     ($trait:ident, $fn_name:ident, $op:tt, $rhs_type:ty) => {
         impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs_type> for MpcScalar<N, S> {
             fn $fn_name(&mut self, rhs: $rhs_type) {
-                self.value $op rhs.value;
-                self.visibility = MpcScalar::min_visibility_two(&self, &rhs)
+                *self = &*self $op rhs
             }
         } 
 
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs_type> for MpcScalar<N, S> {
             fn $fn_name(&mut self, rhs: &'a $rhs_type) {
-                self.value $op rhs.value;
-                self.visibility = MpcScalar::min_visibility_two(&self, &rhs)
+                *self = &*self $op rhs
             }
         }
     };
@@ -230,19 +228,6 @@ macro_rules! impl_arithmetic_scalar {
                     network: self.network.clone(),
                     beaver_source: self.beaver_source.clone(),
                     value: self.value $op rhs.value
-                }
-            }
-        }
-
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs_type> for &'a MpcScalar<N, S> {
-            type Output = MpcScalar<N, S>;
-
-            fn $fn_name(self, rhs: &'a $rhs_type) -> Self::Output {
-                MpcScalar {
-                    visibility: MpcScalar::min_visibility_two(&self, rhs),
-                    network: self.network.clone(),
-                    beaver_source: self.beaver_source.clone(),
-                    value: self.value $op rhs.value,
                 }
             }
         }
