@@ -8,10 +8,10 @@ use std::{
     cmp::Ordering, 
     iter::{Product, Sum}, 
     rc::Rc, 
-    ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, 
+    ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, convert::TryInto, 
 };
 
-use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::scalar::{Scalar};
 use futures::executor::block_on;
 use rand_core::{RngCore, CryptoRng, OsRng};
 use subtle::{ConstantTimeEq};
@@ -82,8 +82,14 @@ pub struct MpcScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
 }
 
 /**
- * Static methods
+ * Static and helper methods
  */
+
+/// Converts a scalar to u64
+pub fn scalar_to_u64(a: &Scalar) -> u64 {
+    u64::from_le_bytes(a.to_bytes()[..8].try_into().unwrap()) as u64
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// Returns the minimum visibility over a vector of scalars
     pub fn min_visibility(scalars: &[MpcScalar<N, S>]) -> Visibility {
@@ -119,6 +125,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     #[inline]
     pub fn value(&self) -> Scalar {
         self.value
+    }
+
+    // TODO(@joey) Remove this method after debugging
+    #[inline]
+    pub fn visibility(&self) -> &Visibility {
+        &self.visibility
     }
 
     /**
@@ -304,6 +316,14 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// Note that the parties no longer hold valid additive secret shares of the value, this is used
     /// at the end of a computation
     pub fn open(&self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        if self.is_public() {
+            return Ok(
+                MpcScalar::from_scalar(
+                    self.value, self.network.clone(), self.beaver_source.clone()
+                )
+            )
+        }
+
         // Send my scalar and expect one back
         let received_scalar = block_on(
             self.network
@@ -383,6 +403,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
         if self.is_shared() && rhs.is_shared() {
             let (a, b, c) = self.next_beaver_triplet();
 
+            // a = 1, b = 3, c = 2
             // Open the value d = [lhs - a].open()
             let lhs_minus_a = (self - &a).open().unwrap();
             // Open the value e = [rhs - b].open()
@@ -401,7 +422,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
                 .borrow()
                 .am_king() 
             {
-                res += &lhs_minus_a * &rhs_minus_b
+                res += &lhs_minus_a * &rhs_minus_b;
             }
 
             res 
@@ -431,20 +452,24 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
     type Output = MpcScalar<N, S>;
 
     fn add(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
-        // If adding two public values, only the king should add the value
-        if (self.is_public() || rhs.is_public()) &&     // Either value is public
-            !self.network.as_ref().borrow().am_king()   // Not party 0 
-        {
-            return MpcScalar {
-                value: self.value,
-                visibility: MpcScalar::min_visibility_two(self, rhs),
-                network: self.network.clone(),
-                beaver_source: self.beaver_source.clone(),
-            }
+        let mut res = Scalar::from(0u8);
+        let am_king = self.network.as_ref().borrow().am_king();
+
+        // Both parties add a value if the value is shared.
+        // The king should add any public values to their share, the peer does not
+        // If the parties have a = a_1 + a_2; to construct an additive share 
+        // when added with a public value b we want a'_1 = a_1 + b and a'_2 = a_2
+        // this implicitly constructs an additive share of b_1 = b, b_2 = 0
+        if !self.is_public() || am_king {
+            res += self.value();
+        } 
+
+        if !rhs.is_public() || am_king {
+            res += rhs.value();
         }
 
         MpcScalar {
-            value: self.value + rhs.value,
+            value: res,
             visibility: MpcScalar::min_visibility_two(self, rhs),
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(), 
@@ -525,8 +550,9 @@ impl<N, S, T> Product<T> for MpcScalar<N, S> where
     S: SharedValueSource<Scalar>,
     T: Borrow<MpcScalar<N, S>>
 {
-    fn product<I: Iterator<Item = T>>(mut iter: I) -> Self {
-        let first_elem = iter.next().unwrap();
+    fn product<I: Iterator<Item = T>>(iter: I) -> Self {
+        let mut peekable = iter.peekable();
+        let first_elem = peekable.peek().unwrap();
         let network: SharedNetwork<N> = first_elem.borrow()
             .network
             .clone();
@@ -534,7 +560,10 @@ impl<N, S, T> Product<T> for MpcScalar<N, S> where
             .beaver_source
             .clone();
 
-        iter.fold(MpcScalar::one(network, beaver_source), |acc, item| (acc * item.borrow()))
+        peekable.fold(
+            MpcScalar::one(network, beaver_source),
+            |acc, item| (acc * item.borrow())
+        )
     }
 }
 
@@ -543,9 +572,10 @@ impl<N, S, T> Sum<T> for MpcScalar<N, S> where
     S: SharedValueSource<Scalar>,
     T: Borrow<MpcScalar<N, S>>
 {
-    fn sum<I: Iterator<Item = T>>(mut iter: I) -> Self {
+    fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
         // This operation is invalid on an empty iterator, unwrap is expected
-        let first_elem = iter.next().unwrap();
+        let mut peekable = iter.peekable();
+        let first_elem = peekable.peek().unwrap();
         let network = first_elem.borrow()
             .network
             .clone();
@@ -553,7 +583,10 @@ impl<N, S, T> Sum<T> for MpcScalar<N, S> where
             .beaver_source
             .clone();
 
-        iter.fold(MpcScalar::one(network, beaver_source), |acc, item| acc + item.borrow())
+        peekable.fold(
+            MpcScalar::zero_with_visibility(Visibility::Shared, network, beaver_source), 
+            |acc, item| acc + item.borrow()
+        )
     } 
 }
 
@@ -732,7 +765,7 @@ mod test {
         );
 
         // As above, populate the network mock after the multiplication
-        let res = (public_value * &shared_value1);
+        let res = public_value * &shared_value1;
         assert_eq!(res.visibility, Visibility::Shared);
 
         network.borrow_mut()
@@ -757,7 +790,7 @@ mod test {
             .add_mock_scalars(vec![Scalar::from(5u8), Scalar::from(7u8)]);
         
         // Populate the network with the peer's res share after the computation
-        let res = (shared_value1 * shared_value2);
+        let res = shared_value1 * shared_value2;
         assert_eq!(res.visibility, Visibility::Shared);
 
         network.borrow_mut()

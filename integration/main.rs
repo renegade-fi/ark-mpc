@@ -1,6 +1,6 @@
 mod mpc_scalar;
 mod network;
-use std::{net::SocketAddr, cell::RefCell, rc::Rc, borrow::Borrow};
+use std::{net::SocketAddr, cell::RefCell, rc::Rc, borrow::Borrow, process::exit};
 
 use clap::Parser;
 use colored::Colorize;
@@ -41,6 +41,9 @@ struct Args {
     /// The test to run
     #[clap(short, long, value_parser)]
     test: Option<String>,
+    /// Whether running in docker or not, used for peer lookup
+    #[clap(long, takes_value=false, value_parser)]
+    docker: bool,
 }
 
 #[allow(unused_doc_comments)]
@@ -59,18 +62,25 @@ async fn main() {
         .parse()
         .unwrap();
     
-    // This assumes the code is executing in a docker compose setup like the one in this repo;
-    // that is, compose will define a network alias party0 for the first container and party1
-    // for the second container
+    // If the code is running in a docker compose setup (set by the --docker flag); attempt
+    // to lookup the peer via DNS. The compose networking interface will add an alias for
+    // party0 for the first peer and party1 for the second.
+    // If not running on docker, dial the peer directly on the loopback interface.
     let peer_addr: SocketAddr = {
-        let other_host_alias = format!("party{}", if args.party == 1 { 0 } else { 1 });
-        let hosts = lookup_host(other_host_alias.as_str()).unwrap();
-        
-        println!("Lookup successful for {}... found hosts: {:?}", other_host_alias, hosts);
-        
-        format!("{}:{}", hosts[0], args.port2)
-            .parse()
-            .unwrap()
+        if args.docker {
+            let other_host_alias = format!("party{}", if args.party == 1 { 0 } else { 1 });
+            let hosts = lookup_host(other_host_alias.as_str()).unwrap();
+            
+            println!("Lookup successful for {}... found hosts: {:?}", other_host_alias, hosts);
+            
+            format!("{}:{}", hosts[0], args.port2)
+                .parse()
+                .unwrap()
+        } else {
+            format!("{}:{}", "127.0.0.1", args.port2)
+                .parse()
+                .unwrap()
+        }
     };
 
     println!("Lookup successful, found peer at {:?}", peer_addr);
@@ -89,6 +99,13 @@ async fn main() {
      * Test harness
      */
 
+    if args.party == 0 {
+        println!(
+            "\n\n{}\n",
+            "Running integration tests...".blue()
+        );
+    }
+
     let test_args = IntegrationTestArgs {
         party_id: args.party,
         net_ref: Rc::new(RefCell::new(net)),
@@ -102,25 +119,37 @@ async fn main() {
             continue;
         }
 
-        print!("Running {}... ", test.name);
+        if args.party == 0{
+            print!("Running {}... ", test.name);
+        }
         let res: Result<(), String> = (test.test_fn)(&test_args);
-        all_success &= validate_success(res);
+        all_success &= validate_success(res, args.party);
     }
 
     // Close the network
-    test_args.net_ref
+    #[allow(clippy::await_holding_refcell_ref, unused_must_use)]
+    if test_args.net_ref
         .as_ref()
         .borrow_mut()
         .close()
         .await
-        .unwrap();
+        .is_err()
+    {
+        println!("Error tearing down connection");
+    }
 
     if all_success {
-        println!(
-            "\n{}", 
-            "Integration tests successful!".green(), 
-        )
+        if args.party == 0 {
+            println!(
+                "\n{}", 
+                "Integration tests successful!".green(), 
+            );
+        }
+
+        exit(0);
     }
+
+    exit(-1);
 }
 
 /// Computes a * G where G is the generator of the Ristretto group
@@ -131,12 +160,18 @@ pub(crate) fn base_point_mul(a: u64) -> RistrettoPoint {
 
 /// Prints a success or failure message, returns true if success, false if failure
 #[inline]
-fn validate_success(res: Result<(), String>) -> bool {
+fn validate_success(res: Result<(), String>, party_id: u64) -> bool {
     if res.is_ok() {
-        println!("{}", "Success!".green());
+        if party_id == 0 {
+            println!("{}", "Success!".green());
+        }
+
         true
     } else {
-        println!("{}\n\t{}", "Failure...".red(), res.err().unwrap());
+        if party_id == 0 {
+            println!("{}\n\t{}", "Failure...".red(), res.err().unwrap());
+        }
+
         false
     }
 }
