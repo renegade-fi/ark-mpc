@@ -1,19 +1,21 @@
 mod mpc_scalar;
 mod network;
-use std::{net::SocketAddr, cell::RefCell, rc::Rc};
+use std::{net::SocketAddr, cell::RefCell, rc::Rc, borrow::Borrow};
 
 use clap::Parser;
 use colored::Colorize;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants};
 use dns_lookup::lookup_host;
 
-use mpc_ristretto::network::QuicTwoPartyNet;
+use mpc_ristretto::network::{QuicTwoPartyNet, MpcNetwork};
+use mpc_scalar::PartyIDBeaverSource;
 
 // Integration test format
 #[derive(Clone, Debug)]
 struct IntegrationTestArgs {
     party_id: u64,
-    net_ref: Rc<RefCell<QuicTwoPartyNet>>
+    net_ref: Rc<RefCell<QuicTwoPartyNet>>,
+    beaver_source: Rc<RefCell<PartyIDBeaverSource>>,
 }
 
 // Integration test format
@@ -35,7 +37,10 @@ struct Args {
     port1: u64,
     /// The port to expect the counterparty on
     #[clap(long="port2", value_parser)]
-    port2: u64
+    port2: u64,
+    /// The test to run
+    #[clap(short, long, value_parser)]
+    test: Option<String>,
 }
 
 #[allow(unused_doc_comments)]
@@ -87,15 +92,28 @@ async fn main() {
     let test_args = IntegrationTestArgs {
         party_id: args.party,
         net_ref: Rc::new(RefCell::new(net)),
+        beaver_source: Rc::new(RefCell::new(PartyIDBeaverSource::new(args.party))),
     };
 
     let mut all_success = true;
 
     for test in inventory::iter::<IntegrationTest> {
+        if args.borrow().test.is_some() && args.borrow().test.as_deref().unwrap() != test.name {
+            continue;
+        }
+
         print!("Running {}... ", test.name);
         let res: Result<(), String> = (test.test_fn)(&test_args);
         all_success &= validate_success(res);
     }
+
+    // Close the network
+    test_args.net_ref
+        .as_ref()
+        .borrow_mut()
+        .close()
+        .await
+        .unwrap();
 
     if all_success {
         println!(
