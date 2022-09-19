@@ -40,7 +40,7 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
 }
 
 /// Party 0 shares a value then opens it, the result should be the initial value
-pub(crate) fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val: u64 = 42;
     let private_val = MpcScalar::from_u64_with_visibility(
         val, 
@@ -65,7 +65,7 @@ pub(crate) fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), Str
 }
 
 /// Tests summing over a sequence of shared values
-pub(crate) fn test_sum(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_sum(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 allocates the first values list, party 1 allocates the second list
     let values: Vec<u64> = if test_args.party_id == 0 { vec![1, 2, 3] } else { vec![4, 5, 6] };
     
@@ -177,7 +177,7 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
 
 /// Each party inputs their party_id + 1 and the two together compute the square
 /// Party IDs are 0 and 1, so the expected result is (0 + 1 + 1 + 1)^2 = 9
-pub(crate) fn test_simple_mpc(
+fn test_simple_mpc(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
     let value = MpcScalar::from_u64_with_visibility(

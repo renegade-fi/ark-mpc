@@ -4,7 +4,7 @@ use mpc_ristretto::network:: MpcNetwork;
 
 use crate::{base_point_mul, IntegrationTest, IntegrationTestArgs};
 
-pub(crate) fn test_send_ristretto(test_args: &IntegrationTestArgs) 
+fn test_send_ristretto(test_args: &IntegrationTestArgs) 
     -> Result<(), String> 
 {
     // Send the party ID over the network; expect the counterparty's ID back
@@ -21,7 +21,7 @@ pub(crate) fn test_send_ristretto(test_args: &IntegrationTestArgs)
     if res.eq(&expected) { Ok(()) } else { Err("res != expected".to_string()) }
 }
 
-pub(crate) fn test_send_scalar(
+fn test_send_scalar(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
     // Send the party ID over the network as a Scalar; expect the counterparty's ID back
