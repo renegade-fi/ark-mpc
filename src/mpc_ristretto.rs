@@ -1,0 +1,258 @@
+//! Groups the definitions and trait implementations for a Ristretto point within the MPC net
+
+use std::{convert::TryInto, borrow::Borrow};
+
+use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT};
+
+use rand_core::{RngCore, CryptoRng};
+
+use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource}, macros};
+
+/// Represents a Ristretto point that has been allocated in the MPC network
+#[derive(Clone, Debug)]
+pub struct MpcRistrettoPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The underlying value of the Ristretto point in the network
+    value: RistrettoPoint,
+    /// The visibility flag; what amount of information various parties have
+    visibility: Visibility,
+    /// The underlying network that the MPC operates on top of
+    network: SharedNetwork<N>,
+    /// The source for shared values; MAC keys, beaver triplets, etc
+    beaver_source: BeaverSource<S>
+}
+
+/**
+ * Static and helper methods
+ */
+
+/// Converts a scalar to u64
+pub fn ristretto_to_u64(a: &RistrettoPoint) -> u64 {
+    u64::from_le_bytes(
+        a.compress().to_bytes()[..8].try_into().unwrap()
+    )
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S> {
+    /// Multiplies a scalar by the Ristretto base point
+    #[inline]
+    fn base_point_mul(a: &Scalar) -> RistrettoPoint {
+        RISTRETTO_BASEPOINT_POINT * a
+    }
+
+    /// Multiplies a Scalar encoding of a u64 by the Ristretto base point
+    #[inline]
+    fn base_point_mul_u64(a: u64) -> RistrettoPoint {
+        Self::base_point_mul(&Scalar::from(a))
+    }
+}
+
+/**
+ * Wrapper type implementations
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S> {
+    /**
+     * Helper methods
+     */
+    #[inline]
+    fn value(&self) -> RistrettoPoint {
+        self.value
+    }
+
+    #[inline]
+    fn visibility(&self) -> &Visibility {
+        &self.visibility
+    }
+
+    /**
+     * Casting methods
+     */
+
+    /// Create a Ristretto point from a u64, visibility assumed Public
+    pub fn from_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::from_u64_with_visibility(a, Visibility::Public, network, beaver_source)
+    }
+
+    /// Create a Ristretto point from a u64, with visibility explicitly parameterized
+    pub fn from_u64_with_visibility(
+        a: u64,
+        visibility: Visibility,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> MpcRistrettoPoint<N, S> {
+        Self {
+            value: Self::base_point_mul_u64(a),
+            visibility,
+            network,
+            beaver_source,
+        }
+    }
+
+    /// Create a Ristretto point from a Scalar, visibility assumed Public
+    pub fn from_scalar(a: &Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::from_scalar_with_visibility(a, Visibility::Public, network, beaver_source)
+    }
+
+    /// Create a Ristretto point from a Scalar, with visibility explicitly parameterized
+    pub fn from_scalar_with_visibility(
+        a: &Scalar,
+        visibility: Visibility,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>
+    ) -> Self {
+        Self {
+            value: Self::base_point_mul(a),
+            visibility,
+            network,
+            beaver_source
+        }
+    }
+
+    /// Create a wrapper around an existing Ristretto point, assumed visibility is public
+    pub fn from_ristretto_point(
+        a: RistrettoPoint,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>
+    ) -> Self {
+        Self::from_ristretto_point_with_visibility(a, Visibility::Public, network, beaver_source)
+    }
+
+    /// Create a wrapper around an existing Ristretto point with visibility specified
+    pub fn from_ristretto_point_with_visibility(
+        a: RistrettoPoint,
+        visibility: Visibility,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self {
+            value: a,
+            visibility,
+            network,
+            beaver_source
+        }
+    }
+
+    /// Create a random ristretto point
+    pub fn random<R: RngCore + CryptoRng>(
+        rng: &mut R, 
+        network: SharedNetwork<N>, 
+        beaver_source: BeaverSource<S>
+    ) -> Self {
+        Self {
+            value: RistrettoPoint::random(rng),
+            visibility: Visibility::Private,
+            network,
+            beaver_source,
+        }
+    }
+
+    // Default-esque implementation
+    pub fn default(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::default_with_visibility(Visibility::Public, network, beaver_source)
+    }
+
+    pub fn default_with_visibility(visibility: Visibility, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::from_ristretto_point_with_visibility(
+            RistrettoPoint::default(), visibility, network, beaver_source
+        )
+    }
+
+    // Build from bytes
+    macros::impl_delegated_wrapper!(
+        RistrettoPoint, 
+        from_uniform_bytes, 
+        from_uniform_bytes_with_visibility,
+        bytes,
+        &[u8; 64]
+    );
+
+    /// Convert the point to a compressed Ristrestto point
+    pub fn compress(&self) -> MpcCompressedRistretto<N, S> {
+        MpcCompressedRistretto {
+            value: self.value().compress(),
+            visibility: self.visibility,
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone()
+        }
+    }
+
+    /// Double and compress a batch of points
+    pub fn double_and_compress_batch<I, T>(points: I) -> Vec<MpcCompressedRistretto<N, S>> where
+        I: IntoIterator<Item = T>,
+        T: Borrow<MpcRistrettoPoint<N, S>>
+    {
+        let mut peekable = points.into_iter().peekable();
+
+        let (network, beaver_source) = {
+            let first_elem: &MpcRistrettoPoint<N, S> = peekable.peek().unwrap().borrow();
+            (first_elem.network.clone(), first_elem.beaver_source.clone())
+        };
+
+        let mut underlying_points = Vec::<RistrettoPoint>::new();
+        let mut visibilities = Vec::<Visibility>::new();
+        
+        peekable.into_iter()
+            .for_each(|wrapped_point: T| {
+                underlying_points.push(wrapped_point.borrow().value());
+                visibilities.push(*wrapped_point.borrow().visibility());
+            });
+        
+        
+        RistrettoPoint::double_and_compress_batch(underlying_points.iter())
+            .into_iter()
+            .zip(0..underlying_points.len())  // Zip with indices to fetch the proper visibility
+            .map(|(compressed_point, index)| {
+                MpcCompressedRistretto::from_compressed_ristretto_with_visibility(
+                    compressed_point,
+                    visibilities[index],
+                    network.clone(),
+                    beaver_source.clone(),
+                ) 
+            })
+            .collect::<Vec<MpcCompressedRistretto<N, S>>>()
+    }
+    
+}
+
+
+/// Represents a CompressedRistretto point allocated in the network
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct MpcCompressedRistretto<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The underlying value of the Ristretto point in the network
+    value: CompressedRistretto,
+    /// The visibility flag; what amount of information various parties have
+    visibility: Visibility,
+    /// The underlying network that the MPC operates on top of
+    network: SharedNetwork<N>,
+    /// The source for shared values; MAC keys, beaver triplets, etc
+    beaver_source: BeaverSource<S>
+}
+
+/**
+ * Wrapper type implementation
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<N, S> {
+    // Convert from a CompressedRistretto point; visibility assumed public
+    pub fn from_compressed_ristretto(
+        a: CompressedRistretto,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self::from_compressed_ristretto_with_visibility(a, Visibility::Public, network, beaver_source)
+    }
+
+    /// Convert from a CompressedRistretto point with visibility explicitly defined
+    pub fn from_compressed_ristretto_with_visibility(
+        a: CompressedRistretto,
+        visibility: Visibility,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>
+    ) -> Self {
+        MpcCompressedRistretto {
+            value: a,
+            visibility,
+            network,
+            beaver_source,
+        }
+    }
+}

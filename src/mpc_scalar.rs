@@ -1,7 +1,5 @@
 //! Groups the definitions and trait implementations for a scalar value within an MPC network
 #![allow(unused_doc_comments)]
-mod macros;
-
 use std::{
     borrow::Borrow, 
     cell::RefCell,
@@ -17,14 +15,14 @@ use rand_core::{RngCore, CryptoRng, OsRng};
 use subtle::{ConstantTimeEq};
 use zeroize::Zeroize;
 
-use crate::{network::MpcNetwork, beaver::{SharedValueSource}, error::MpcNetworkError};
+use crate::{network::MpcNetwork, beaver::{SharedValueSource}, error::MpcNetworkError, macros};
 
 #[allow(type_alias_bounds)]
 pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource<Scalar>> = Rc<RefCell<S>>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Visibility {
     /// The below are in increasing order of visibility
     /// A value that only one party holds, can be *shared* into Shared
@@ -94,14 +92,14 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// Returns the minimum visibility over a vector of scalars
     pub fn min_visibility(scalars: &[MpcScalar<N, S>]) -> Visibility {
         scalars.iter()
-            .map(|scalar| scalar.visibility.clone())
+            .map(|scalar| scalar.visibility)
             .min()
             .unwrap()  // The Ord + PartialOrd implementations never return None
     }
 
     /// Returns the minimum visibility between two scalars
     pub fn min_visibility_two(a: &MpcScalar<N, S>, b: &MpcScalar<N, S>) -> Visibility {
-        if a.visibility.lt(&b.visibility) { a.visibility.clone() } else { b.visibility.clone() }
+        if a.visibility.lt(&b.visibility) { a.visibility } else { b.visibility }
     }
 }
 
@@ -188,8 +186,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     }
 
     // Build a scalar from bytes
-    macros::impl_delegated_wrapper!(from_bytes_mod_order, from_bytes_mod_order_with_visibility, bytes, [u8;32]);
+    macros::impl_delegated_wrapper!(Scalar, from_bytes_mod_order, from_bytes_mod_order_with_visibility, bytes, [u8;32]);
     macros::impl_delegated_wrapper!(
+        Scalar,
         from_bytes_mod_order_wide, 
         from_bytes_mod_order_wide_with_visibility,
         input, 
@@ -216,13 +215,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         )
     }
 
-    macros::impl_delegated_wrapper!(from_bits, from_bits_with_visibility, bytes, [u8; 32]);
+    macros::impl_delegated_wrapper!(Scalar, from_bits, from_bits_with_visibility, bytes, [u8; 32]);
     
     // Convert a scalar to bytes
     macros::impl_delegated!(to_bytes, self, [u8; 32]);
     macros::impl_delegated!(as_bytes, self, &[u8; 32]);
     // Compute the multiplicative inverse of the Scalar
-    macros::impl_delegated_wrapper!(invert, invert_with_visibility, self);
+    macros::impl_delegated_wrapper!(Scalar, invert, invert_with_visibility, self);
     // Invert a batch of scalars and return the product of inverses
     pub fn batch_invert(inputs: &mut [MpcScalar<N, S>]) -> MpcScalar<N, S> {
         let mut scalars: Vec<Scalar> = inputs.iter()
@@ -238,13 +237,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     }
 
     // Reduce the scalar mod l
-    macros::impl_delegated_wrapper!(reduce, reduce_with_visibility, self);
+    macros::impl_delegated_wrapper!(Scalar, reduce, reduce_with_visibility, self);
     // Check whether the scalar is canonically represented mod l
     macros::impl_delegated!(is_canonical, self, bool);
     // Generate the additive identity
-    macros::impl_delegated_wrapper!(zero, zero_with_visibility);
+    macros::impl_delegated_wrapper!(Scalar, zero, zero_with_visibility);
     // Generate the multiplicative identity
-    macros::impl_delegated_wrapper!(one, one_with_visibility);
+    macros::impl_delegated_wrapper!(Scalar, one, one_with_visibility);
 }
 
 /**
@@ -516,7 +515,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a MpcScal
 
     fn neg(self) -> Self::Output {
         MpcScalar {
-            visibility: self.visibility.clone(),
+            visibility: self.visibility,
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(),
             value: self.value.neg(),
