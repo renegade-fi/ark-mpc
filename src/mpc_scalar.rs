@@ -127,12 +127,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         self.value
     }
 
-    // TODO(@joey) Remove this method after debugging
-    #[inline]
-    pub fn visibility(&self) -> &Visibility {
-        &self.visibility
-    }
-
     /**
      * Casting methods
      */
@@ -403,7 +397,6 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
         if self.is_shared() && rhs.is_shared() {
             let (a, b, c) = self.next_beaver_triplet();
 
-            // a = 1, b = 3, c = 2
             // Open the value d = [lhs - a].open()
             let lhs_minus_a = (self - &a).open().unwrap();
             // Open the value e = [rhs - b].open()

@@ -1,5 +1,6 @@
 mod mpc_scalar;
 mod network;
+
 use std::{net::SocketAddr, cell::RefCell, rc::Rc, borrow::Borrow, process::exit};
 
 use clap::Parser;
@@ -10,7 +11,7 @@ use dns_lookup::lookup_host;
 use mpc_ristretto::network::{QuicTwoPartyNet, MpcNetwork};
 use mpc_scalar::PartyIDBeaverSource;
 
-// Integration test format
+/// Integration test arguments, common to all tests
 #[derive(Clone, Debug)]
 struct IntegrationTestArgs {
     party_id: u64,
@@ -18,15 +19,17 @@ struct IntegrationTestArgs {
     beaver_source: Rc<RefCell<PartyIDBeaverSource>>,
 }
 
-// Integration test format
+/// Integration test format
 #[derive(Clone)]
 struct IntegrationTest {
     pub name: &'static str,
     pub test_fn: fn(&IntegrationTestArgs) -> Result<(), String>,
 }
 
+// Collect the statically defined tests into an interable
 inventory::collect!(IntegrationTest);
 
+/// The command line interface for the test harness
 #[derive(Parser, Debug)]
 struct Args {
     /// The party id of the 
