@@ -265,7 +265,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             // Sender party
             // Sample a random additive complement
             let mut rng = OsRng{};
-            let random_share = Scalar::from(rng.next_u64());
+            let random_share = Scalar::random(&mut rng);
 
             // Broadcast the counterparty's share
             block_on(

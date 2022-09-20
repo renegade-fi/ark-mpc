@@ -66,6 +66,19 @@ impl MpcNetwork for DummyMpcNetwork {
         )
     }
 
+    async fn send_points(&mut self, _: Vec<RistrettoPoint>) -> Result<(), MpcNetworkError> {
+        Ok(())
+    }
+
+    async fn receive_points(&mut self, num_points: usize) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
+        Ok(
+            self.mock_points
+                .drain(0..num_points)
+                .as_slice()
+                .to_vec()
+        )
+    }
+
     async fn broadcast_scalars(&mut self, scalars: Vec<Scalar>) -> Result<
         Vec<Scalar>,
         MpcNetworkError 

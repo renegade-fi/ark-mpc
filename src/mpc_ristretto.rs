@@ -4,9 +4,10 @@ use std::{convert::TryInto, borrow::Borrow};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT};
 
-use rand_core::{RngCore, CryptoRng};
+use futures::executor::block_on;
+use rand_core::{RngCore, CryptoRng, OsRng};
 
-use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource}, macros};
+use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource}, macros, error::MpcNetworkError};
 
 /// Represents a Ristretto point that has been allocated in the MPC network
 #[derive(Clone, Debug)]
@@ -47,6 +48,92 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
 }
 
 /**
+ * Secret sharing implementation
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S> {
+    /// From a privately held value, construct an additive secret share and distribute this to the
+    /// counterparty. The local party takes a random scalar R which it multiplies by the Ristretto base
+    /// point. The local party gives R to the peer, and holds a - R for herself.
+    /// This method is called by both parties, only one of which transmits
+    pub fn share_secret(&self, party_id: u64) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
+        let my_party_id = self.network
+            .as_ref()
+            .borrow()
+            .party_id();
+        
+        if my_party_id == party_id {
+            // Sending party
+            let mut rng: OsRng = OsRng{};
+            let random_share = RistrettoPoint::random(&mut rng);
+
+            // Broadcast the peer's share
+            block_on(
+                self.network
+                    .as_ref()
+                    .borrow_mut()
+                    .send_single_point(self.value())
+            )?;
+
+            // Local party takes a - R
+            Ok(
+                MpcRistrettoPoint{
+                    value: self.value() - random_share,
+                    visibility: self.visibility(),
+                    network: self.network.clone(),
+                    beaver_source: self.beaver_source.clone(),
+                }
+            )
+        } else {
+            // Receive a secret share from the peer
+            let received_point = block_on(
+                self.network
+                    .as_ref()
+                    .borrow_mut()
+                    .receive_single_point()
+            )?;
+    
+            Ok(
+                MpcRistrettoPoint{
+                    value: received_point,
+                    visibility: self.visibility(),
+                    network: self.network.clone(),
+                    beaver_source: self.beaver_source.clone(),
+                }
+            )
+        }
+    }
+
+    /// From a shared value, both parties call this function to distribute their shares to the counterparty
+    /// The result is the sum of the shares of both parties and is a public value, so the result is no longer
+    /// and additive secret sharing of some underlying Ristretto point
+    pub fn open(&self) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
+        // Public values should not be opened, simply clone the value
+        if self.is_public() {
+            return Ok (
+                MpcRistrettoPoint::from_ristretto_point(self.value(), self.network.clone(), self.beaver_source.clone())
+            )
+        }
+
+        // Send a Ristretto point and receive one in return
+        let received_point = block_on(
+            self.network
+                .as_ref()
+                .borrow_mut()
+                .broadcast_single_point(self.value())
+        )?;
+
+        Ok(
+            MpcRistrettoPoint {
+                value: received_point,
+                visibility: Visibility::Public,
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone(),
+            }
+        )
+    }
+}
+
+/**
  * Wrapper type implementations
  */
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S> {
@@ -59,8 +146,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     #[inline]
-    fn visibility(&self) -> &Visibility {
-        &self.visibility
+    fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    #[inline]
+    fn is_public(&self) -> bool {
+        self.visibility() == Visibility::Public
     }
 
     /**
@@ -193,7 +285,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         peekable.into_iter()
             .for_each(|wrapped_point: T| {
                 underlying_points.push(wrapped_point.borrow().value());
-                visibilities.push(*wrapped_point.borrow().visibility());
+                visibilities.push(wrapped_point.borrow().visibility());
             });
         
         

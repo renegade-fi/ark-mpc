@@ -107,6 +107,22 @@ pub trait MpcNetwork {
             self.broadcast_scalars(vec![scalar]).await?[0]
         )
     }
+    /// The local party sends a vector of Ristretto points to the peer
+    async fn send_points(&mut self, points: Vec<RistrettoPoint>) -> Result<(), MpcNetworkError>;
+    /// The local party sends a single Ristretto point to the peer
+    async fn send_single_point(&mut self, point: RistrettoPoint) -> Result<(), MpcNetworkError> {
+        Ok(
+            self.send_points(vec![point]).await?
+        )
+    }
+    /// The local party awaits a vector of Ristretto points from the peer
+    async fn receive_points(&mut self, num_expected: usize) -> Result<Vec<RistrettoPoint>, MpcNetworkError>;
+    /// The local party awaits a single Ristretto point from the peer
+    async fn receive_single_point(&mut self) -> Result<RistrettoPoint, MpcNetworkError> {
+        Ok(
+            self.receive_points(1).await?[0]
+        )
+    }
     /// Both parties broadcast a vector of points to one another
     async fn broadcast_points(&mut self, points: Vec<RistrettoPoint>) -> Result<Vec<RistrettoPoint>, MpcNetworkError>;
     /// Both parties broadcast a single point to one another
@@ -307,6 +323,16 @@ impl MpcNetwork for QuicTwoPartyNet {
         let read_buffer = self.write_then_read_bytes(self.read_order(), &payload).await?;
         
         bytes_to_scalars(&read_buffer)
+    }
+
+    async fn send_points(&mut self, points: Vec<RistrettoPoint>) -> Result<(), MpcNetworkError> {
+        let payload = points_to_bytes(points);
+        self.write_bytes(&payload).await
+    }
+
+    async fn receive_points(&mut self, num_points: usize) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
+        let read_buffer = self.read_bytes(BYTES_PER_POINT * num_points).await?;
+        bytes_to_points(&read_buffer)
     }
 
     async fn broadcast_points(&mut self, points: Vec<RistrettoPoint>) -> Result<
