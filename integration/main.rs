@@ -1,4 +1,5 @@
 mod mpc_scalar;
+mod mpc_ristretto;
 mod network;
 
 use std::{net::SocketAddr, cell::RefCell, rc::Rc, borrow::Borrow, process::exit};
@@ -8,7 +9,7 @@ use colored::Colorize;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants};
 use dns_lookup::lookup_host;
 
-use mpc_ristretto::network::{QuicTwoPartyNet, MpcNetwork};
+use ::mpc_ristretto::network::{QuicTwoPartyNet, MpcNetwork};
 use mpc_scalar::PartyIDBeaverSource;
 
 /// Integration test arguments, common to all tests

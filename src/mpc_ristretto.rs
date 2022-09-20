@@ -71,7 +71,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
                 self.network
                     .as_ref()
                     .borrow_mut()
-                    .send_single_point(self.value())
+                    .send_single_point(random_share)
             )?;
 
             // Local party takes a - R
@@ -124,7 +124,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
 
         Ok(
             MpcRistrettoPoint {
-                value: received_point,
+                value: received_point + self.value(),
                 visibility: Visibility::Public,
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
@@ -141,7 +141,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
      * Helper methods
      */
     #[inline]
-    fn value(&self) -> RistrettoPoint {
+    pub fn value(&self) -> RistrettoPoint {
         self.value
     }
 
