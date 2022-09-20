@@ -168,10 +168,7 @@ fn validate_success(res: Result<(), String>, party_id: u64) -> bool {
 
         true
     } else {
-        if party_id == 0 {
-            println!("{}\n\t{}", "Failure...".red(), res.err().unwrap());
-        }
-
+        println!("{}\n\t{}", "Failure...".red(), res.err().unwrap());
         false
     }
 }

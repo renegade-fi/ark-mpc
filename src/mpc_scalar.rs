@@ -452,21 +452,32 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
     type Output = MpcScalar<N, S>;
 
     fn add(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
-        let mut res = Scalar::from(0u8);
+        // If public + shared swap the arguments for simplicity
+        if self.is_public() && rhs.is_shared() {
+            return rhs + self
+        }
+
+        // If both values are public; both parties add the values together to obtain
+        // a public result. 
+        // If both values are shared; both parties add the shared values together to
+        // obtain a shared result.
+        // If only one value is public, the king adds the public valid to her share
+        // I.e. if the parties hold an additive sharing of a = a_1 + a_2 and with to
+        // add public b; the king now holds a_1 + b and the peer holds a_2. Effectively
+        // they construct an implicit secret sharing of b where b_1 = b and b_2 = 0
         let am_king = self.network.as_ref().borrow().am_king();
 
-        // Both parties add a value if the value is shared.
-        // The king should add any public values to their share, the peer does not
-        // If the parties have a = a_1 + a_2; to construct an additive share 
-        // when added with a public value b we want a'_1 = a_1 + b and a'_2 = a_2
-        // this implicitly constructs an additive share of b_1 = b, b_2 = 0
-        if !self.is_public() || am_king {
-            res += self.value();
-        } 
-
-        if !rhs.is_public() || am_king {
-            res += rhs.value();
-        }
+        let res = {
+            if 
+                self.is_public() && rhs.is_public() ||  // Both public
+                self.is_shared() && rhs.is_shared() ||  // Both shared
+                am_king                                 // One public, but local peer is king
+            {
+                self.value() + rhs.value()
+            } else {
+                self.value()
+            }
+        };
 
         MpcScalar {
             value: res,
@@ -488,25 +499,9 @@ macros::impl_arithmetic_scalar!(Add, add, +, Scalar);
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcScalar<N, S>> for &'a MpcScalar<N, S> {
     type Output = MpcScalar<N, S>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
-        // If subtracting two public values, only the king modifies their share
-        if (self.is_public() || rhs.is_public()) &&     // Either value is public
-            !self.network.as_ref().borrow().am_king()   // Not party 0
-        {
-            return MpcScalar {
-                value: self.value,
-                visibility: MpcScalar::min_visibility_two(self, rhs),
-                network: self.network.clone(),
-                beaver_source: self.beaver_source.clone()
-            }
-        }
-
-        MpcScalar {
-            value: self.value - rhs.value,
-            visibility: MpcScalar::min_visibility_two(self, rhs),
-            network: self.network.clone(),
-            beaver_source: self.beaver_source.clone(), 
-        }
+        self + rhs.neg()
     }
 }
 
@@ -519,12 +514,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S>
     type Output = MpcScalar<N, S>; 
 
     fn neg(self) -> Self::Output {
-        MpcScalar {
-            visibility: self.visibility.clone(),
-            network: self.network.clone(),
-            beaver_source: self.beaver_source.clone(),
-            value: self.value.neg()
-        }
+        (&self).neg()
     }
 }
 

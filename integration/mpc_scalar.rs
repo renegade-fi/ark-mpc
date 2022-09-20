@@ -1,5 +1,5 @@
-use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::{mpc_scalar::{MpcScalar, Visibility}, beaver::SharedValueSource, error::MpcNetworkError};
+use curve25519_dalek::scalar::{Scalar};
+use mpc_ristretto::{mpc_scalar::{MpcScalar, Visibility, scalar_to_u64}, beaver::SharedValueSource, error::MpcNetworkError};
 
 use crate::{IntegrationTestArgs, IntegrationTest};
 
@@ -37,6 +37,205 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
     fn next_shared_value(&mut self) -> Scalar {
         Scalar::from(self.party_id)
     }
+}
+
+/// Simple test of an add circuit with different visibilities
+fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 holds 42 and party 1 holds 33
+    let value = if test_args.party_id == 0 { 42 } else { 33 };
+
+    let my_value = MpcScalar::from_u64_with_visibility(
+        value, 
+        Visibility::Private, 
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    let value1_shared = my_value.share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let value2_shared = my_value.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let public_value  = MpcScalar::from_u64(
+        58,
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+    
+    // Shared value + shared value
+    let double_shared = (&value1_shared + value2_shared)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(75u64);
+    
+    if double_shared.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&double_shared.value())
+        ));
+    }
+
+    // Shared value + public value
+    let shared_public = (&value1_shared + &public_value)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(100u64);
+
+    if shared_public.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&shared_public.value())
+        ))
+    }
+
+    // Public value + public value
+    let public_public = (&public_value + &public_value)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(116u64);
+
+    if public_public.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&public_public.value())
+        ))
+    }
+    
+    Ok(())
+}
+
+fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let value = if test_args.party_id == 0 { 10 } else { 6 };
+    let my_value = MpcScalar::from_u64_with_visibility(
+        value, 
+        Visibility::Private, 
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Share values with counterparty
+    let shared_value1 = my_value.share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let shared_value2 = my_value.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let public_value = MpcScalar::from_u64(
+        15u64, 
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Shared value - shared value
+    let shared_shared = (&shared_value1 - &shared_value2)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(4u8);
+
+    if shared_shared.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&shared_shared.value())
+        ))
+    }
+
+    // Public value - shared value
+    let public_shared = (&public_value - &shared_value1)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(5u8);
+
+    if public_shared.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&public_shared.value())
+        ))
+    }
+
+    // Public value - public value
+    #[allow(clippy::eq_op)]
+    let public_public = (&public_value - &public_value)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(0u8);
+
+    if public_public.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&public_public.value())
+        ))
+    }
+
+    Ok(())
+}
+
+/// Tests multiplication with different visibilities
+fn test_mul(test_args: &IntegrationTestArgs)  -> Result<(), String> {
+    let value = if test_args.party_id == 0 { 10 } else { 6 };
+    let my_value = MpcScalar::from_u64_with_visibility(
+        value, 
+        Visibility::Private, 
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Share values with counterparty
+    let shared_value1 = my_value.share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let shared_value2 = my_value.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let public_value = MpcScalar::from_u64(
+        15u64, 
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Shared value * shared value
+    let shared_shared = (&shared_value1 * &shared_value2)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(60u64);
+
+    if shared_shared.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&shared_shared.value())
+        ))
+    }
+
+    // Public value * shared value
+    let public_shared = (&public_value * &shared_value1)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(150u64);
+
+    if public_shared.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&public_shared.value())
+        ))
+    }
+
+    // Public value * public value
+    let public_public = (&public_value * &public_value)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    let expected = Scalar::from(225u64);
+
+    if public_public.value().ne(&expected) {
+        return Err(format!(
+            "Expected {}, got {}",
+            scalar_to_u64(&expected),
+            scalar_to_u64(&public_public.value())
+        ))
+    }
+
+    Ok(())
 }
 
 /// Party 0 shares a value then opens it, the result should be the initial value
@@ -211,6 +410,21 @@ fn test_simple_mpc(
 }
 
 // Register the tests
+inventory::submit!(IntegrationTest{
+    name: "test_add",
+    test_fn: test_add,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "test_sub",
+    test_fn: test_sub,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "test_mul",
+    test_fn: test_mul
+});
+
 inventory::submit!(IntegrationTest{
     name: "test_open_value",
     test_fn: test_open_value,
