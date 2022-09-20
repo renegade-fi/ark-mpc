@@ -9,13 +9,13 @@ use std::{
     ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, convert::TryInto, 
 };
 
-use curve25519_dalek::scalar::{Scalar};
+use curve25519_dalek::{scalar::{Scalar}};
 use futures::executor::block_on;
 use rand_core::{RngCore, CryptoRng, OsRng};
 use subtle::{ConstantTimeEq};
 use zeroize::Zeroize;
 
-use crate::{network::MpcNetwork, beaver::{SharedValueSource}, error::MpcNetworkError, macros};
+use crate::{network::MpcNetwork, beaver::{SharedValueSource}, error::MpcNetworkError, macros, mpc_ristretto::MpcRistrettoPoint};
 
 #[allow(type_alias_bounds)]
 pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
@@ -33,6 +33,47 @@ pub enum Visibility {
     Shared,
     /// Public, both parties know the value
     Public
+}
+
+/// Convenience methods for comparing visibilities on various types
+impl Visibility {
+    /// Returns the minimum visibility of an array of scalars
+    pub(crate) fn min_visibility_scalars<N, S>(scalars: &[MpcScalar<N, S>]) -> Visibility where
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar> 
+    {
+        scalars.iter()
+            .map(|scalar| scalar.visibility())
+            .min()
+            .unwrap()  // The Ord + PartialOrd implementations never return None
+    }
+
+    /// Returns the minimum visibility between two scalars
+    pub(crate) fn min_visibility_two_scalars<N, S>(a: &MpcScalar<N, S>, b: &MpcScalar<N, S>) -> Visibility where
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>
+    {
+        if a.visibility.lt(&b.visibility) { a.visibility } else { b.visibility }
+    }
+
+    /// Returns the minimum visibility over an array of Ristretto points
+    pub(crate) fn min_visibility_points<N, S>(points: &[MpcRistrettoPoint<N, S>]) -> Visibility where
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>
+    {
+        points.iter()
+            .map(|point| point.visibility())
+            .min()
+            .unwrap()
+    }
+
+    /// Returns the minimum visibility between two Ristretto points
+    pub(crate) fn min_visibility_two_points<N, S>(a: &MpcRistrettoPoint<N, S>, b: &MpcRistrettoPoint<N, S>) -> Visibility where
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>
+    {
+        if a.visibility().lt(&b.visibility()) { a.visibility() } else { b.visibility() }
+    }
 }
 
 /// An implementation of Ord for Visibilities
@@ -88,21 +129,6 @@ pub fn scalar_to_u64(a: &Scalar) -> u64 {
     u64::from_le_bytes(a.to_bytes()[..8].try_into().unwrap()) as u64
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
-    /// Returns the minimum visibility over a vector of scalars
-    pub fn min_visibility(scalars: &[MpcScalar<N, S>]) -> Visibility {
-        scalars.iter()
-            .map(|scalar| scalar.visibility)
-            .min()
-            .unwrap()  // The Ord + PartialOrd implementations never return None
-    }
-
-    /// Returns the minimum visibility between two scalars
-    pub fn min_visibility_two(a: &MpcScalar<N, S>, b: &MpcScalar<N, S>) -> Visibility {
-        if a.visibility.lt(&b.visibility) { a.visibility } else { b.visibility }
-    }
-}
-
 /**
  * Wrapper type implementations
  */
@@ -123,6 +149,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     #[inline]
     pub fn value(&self) -> Scalar {
         self.value
+    }
+
+    #[inline]
+    pub(crate) fn visibility(&self) -> Visibility {
+        self.visibility
     }
 
     /**
@@ -229,7 +260,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             .collect();
 
         MpcScalar {
-            visibility: MpcScalar::min_visibility(inputs),
+            visibility: Visibility::min_visibility_scalars(inputs),
             network: inputs[0].network.clone(),
             beaver_source: inputs[0].beaver_source.clone(),
             value: Scalar::batch_invert(&mut scalars)
@@ -421,7 +452,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
         } else {
             // Directly multiply
             MpcScalar {
-                visibility: MpcScalar::min_visibility_two(self, rhs),
+                visibility: Visibility::min_visibility_two_scalars(self, rhs),
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
                 value: self.value * rhs.value
@@ -432,10 +463,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
 
 // Multiplication with a scalar value is equivalent to a public multiplication, no Beaver
 // trick needed
-macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *, Scalar);
-macros::impl_arithmetic_assign_scalar!(MulAssign, mul_assign, *, MpcScalar<N, S>);
-macros::impl_arithmetic_scalar!(Mul, mul, *, Scalar);
-macros::impl_arithmetic_scalar!(Mul, mul, *, MpcScalar<N, S>);
+macros::impl_arithmetic_assign!(MpcScalar<N, S>, MulAssign, mul_assign, *, Scalar);
+macros::impl_arithmetic_assign!(MpcScalar<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
+macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Mul, mul, *, MpcScalar<N, S>);
+macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Mul, mul, *, from_scalar, Scalar);
 
 /**
  * Add and variants for: borrowed, non-borrowed, and scalar types
@@ -473,17 +504,17 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
 
         MpcScalar {
             value: res,
-            visibility: MpcScalar::min_visibility_two(self, rhs),
+            visibility: Visibility::min_visibility_two_scalars(self, rhs),
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(), 
         }
     }
 }
 
-macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +, MpcScalar<N, S>);
-macros::impl_arithmetic_assign_scalar!(AddAssign, add_assign, +, Scalar);
-macros::impl_arithmetic_scalar!(Add, add, +, MpcScalar<N, S>);
-macros::impl_arithmetic_scalar!(Add, add, +, Scalar);
+macros::impl_arithmetic_assign!(MpcScalar<N, S>, AddAssign, add_assign, +, MpcScalar<N, S>);
+macros::impl_arithmetic_assign!(MpcScalar<N, S>, AddAssign, add_assign, +, Scalar);
+macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Add, add, +, MpcScalar<N, S>);
+macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Add, add, +, from_scalar, Scalar);
 
 /**
  * Sub and variants for: borrowed, non-borrowed, and scalar types
@@ -497,10 +528,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcScalar<N
     }
 }
 
-macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -, MpcScalar<N, S>);
-macros::impl_arithmetic_assign_scalar!(SubAssign, sub_assign, -, Scalar);
-macros::impl_arithmetic_scalar!(Sub, sub, -, MpcScalar<N, S>);
-macros::impl_arithmetic_scalar!(Sub, sub, -, Scalar);
+macros::impl_arithmetic_assign!(MpcScalar<N, S>, SubAssign, sub_assign, -, MpcScalar<N, S>);
+macros::impl_arithmetic_assign!(MpcScalar<N, S>, SubAssign, sub_assign, -, Scalar);
+macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Sub, sub, -, MpcScalar<N, S>);
+macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Sub, sub, -, from_scalar, Scalar);
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S> {
     type Output = MpcScalar<N, S>; 

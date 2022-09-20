@@ -1,6 +1,10 @@
 
 /**
  * Implementation helper macros
+ * In what follows, a "wrapped" type is the underlying type that arithmetic is actually
+ * performed on. A "wrapper" type is the type that contains the "wrapped" type as an
+ * element. E.g. RistrettoPoint is a "wrapped" type and MpcRistrettoPoint is a "wrapper"
+ * type.
  */
 
 /// Used to implement a funciton type that simple calls down to a Scalar function
@@ -116,80 +120,85 @@ macro_rules! impl_delegated_wrapper {
     }
 }
 
-/// Helper macro for implementing arithmetic ops on underlying types, combinations of their borrows
-/// and against a right hand side of a raw Scalar.
-/// The assign macro handles traits like AddAssign, SubAssign, etc
-macro_rules! impl_arithmetic_assign_scalar {
-    ($trait:ident, $fn_name:ident, $op:tt, Scalar) => {
-        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<Scalar> for MpcScalar<N, S> {
-            fn $fn_name(&mut self, rhs: Scalar) {
-                *self = &*self $op MpcScalar::from_scalar(rhs, self.network.clone(), self.beaver_source.clone())
-            }
-        }
-
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a Scalar> for MpcScalar<N, S> {
-            fn $fn_name(&mut self, rhs: &'a Scalar) {
-                *self = &*self $op MpcScalar::from_scalar(*rhs, self.network.clone(), self.beaver_source.clone())
-            }
-        }
-    };
-
-    ($trait:ident, $fn_name:ident, $op:tt, $rhs_type:ty) => {
-        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs_type> for MpcScalar<N, S> {
-            fn $fn_name(&mut self, rhs: $rhs_type) {
+/// Handles arithmetic assign ops for both wrapped and wrapper types
+macro_rules! impl_arithmetic_assign {
+    ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty) => {
+        /// Default implementation
+        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
+            fn $fn_name(&mut self, rhs: $rhs) {
                 *self = &*self $op rhs
             }
         } 
+    }
+}
 
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs_type> for MpcScalar<N, S> {
-            fn $fn_name(&mut self, rhs: &'a $rhs_type) {
-                *self = &*self $op rhs
+/// Handles arithmetic implementations between a wrapped type and its wrapper type 
+macro_rules! impl_arithmetic_wrapped {
+    ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $from_fn:ident, $rhs:ty) => {
+        /// Default implementation
+        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: $rhs) -> Self::Output {
+                &self $op <$lhs>::$from_fn(rhs, self.network.clone(), self.beaver_source.clone())
+            }
+        }
+
+        /// Implementation for borrowed reference types
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for &'a $lhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: $rhs) -> Self::Output {
+                self $op <$lhs>::$from_fn(rhs, self.network.clone(), self.beaver_source.clone())
+            }
+        }
+        
+        /// Reverse implementation with wrapped type on the LHS
+        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$lhs> for $rhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: $lhs) -> Self::Output {
+                &rhs $op <$lhs>::$from_fn(self, rhs.network.clone(), rhs.beaver_source.clone())
+            }
+        }
+
+        /// Reverse implementation with wrapped type on LHS and borrowed reference on RHS
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $lhs> for $rhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: &'a $lhs) -> Self::Output {
+                rhs $op <$lhs>::$from_fn(self, rhs.network.clone(), rhs.beaver_source.clone())
             }
         }
     };
 }
 
-/// The arithmetic macro handles traits like Add, Sub, etc that produce an output
-macro_rules! impl_arithmetic_scalar {
-    ($trait:ident, $fn_name:ident, $op:tt, Scalar) => {
-        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<Scalar> for MpcScalar<N, S> {
-            type Output = MpcScalar<N, S>;
+/// Handles arithmetic between two wrapped types, assuming they both have a value() method
+macro_rules! impl_arithmetic_wrapper {
+    ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty) => {
+        /// Default implementation
+        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
+            type Output = $lhs;
 
-            fn $fn_name(self, rhs: Scalar) -> Self::Output {
-                &self $op MpcScalar::from_scalar(rhs, self.network.clone(), self.beaver_source.clone())
-            }
-        }
-
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<Scalar> for &'a MpcScalar<N, S> {
-            type Output = MpcScalar<N, S>;
-
-            fn $fn_name(self, rhs: Scalar) -> Self::Output {
-                self $op MpcScalar::from_scalar(rhs, self.network.clone(), self.beaver_source.clone())
-            }
-        }
-    };
-
-    ($trait:ident, $fn_name:ident, $op:tt, $rhs_type:ty) => {
-        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs_type> for MpcScalar<N, S> {
-            type Output = MpcScalar<N, S>;
-
-            fn $fn_name(self, rhs: $rhs_type) -> Self::Output {
+            fn $fn_name(self, rhs: $rhs) -> Self::Output {
                 &self $op &rhs
             }
         }
 
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs_type> for MpcScalar<N, S> {
-            type Output = MpcScalar<N, S>;
+        /// Implementation for a borrowed reference on the right hand side
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs> for $lhs {
+            type Output = $lhs;
 
-            fn $fn_name(self, rhs: &'a $rhs_type) -> Self::Output {
+            fn $fn_name(self, rhs: &'a $rhs) -> Self::Output {
                 &self $op rhs
             }
         }
 
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs_type> for &'a MpcScalar<N, S> {
-            type Output = MpcScalar<N, S>;
+        /// Implementation for a borrowed reference on the left hand side
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for &'a $lhs {
+            type Output = $lhs;
 
-            fn $fn_name(self, rhs: $rhs_type) -> Self::Output {
+            fn $fn_name(self, rhs: $rhs) -> Self::Output {
                 self $op &rhs
             }
         }
@@ -199,5 +208,6 @@ macro_rules! impl_arithmetic_scalar {
 // Exports
 pub(crate) use impl_delegated;
 pub(crate) use impl_delegated_wrapper;
-pub(crate) use impl_arithmetic_assign_scalar;
-pub(crate) use impl_arithmetic_scalar;
+pub(crate) use impl_arithmetic_assign;
+pub(crate) use impl_arithmetic_wrapper;
+pub(crate) use impl_arithmetic_wrapped;
