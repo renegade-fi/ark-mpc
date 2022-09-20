@@ -6,13 +6,6 @@
 /// Used to implement a funciton type that simple calls down to a Scalar function
 /// i.e. calls a function on the underlying scalar 
 macro_rules! impl_delegated {
-    // Static methods (no &self)
-    ($function_name:ident, $return_type:ty) => {
-        pub fn $function_name($($i:$j)*) -> $return_type {
-            Scalar::$function_name($($i)*)
-        }
-    };
-
     // Instance methods (&self)
     ($function_name:ident, self, $return_type:ty) => {
         pub fn $function_name(&self) -> $return_type {
@@ -25,7 +18,14 @@ macro_rules! impl_delegated {
         pub fn $function_name(&mut self) -> $return_type {
             self.value.$function_name()
         }
-    }
+    };
+
+    // Static methods (no &self)
+    ($function_name:ident, $base_type:ty, $return_type:ty) => {
+        pub fn $function_name($($i:$j)*) -> $return_type {
+            $base_type::$function_name($($i)*)
+        }
+    };
 }
 
 /// Used to implement a function type that calls an operation on a Scalar (returning another scalar)
@@ -33,8 +33,8 @@ macro_rules! impl_delegated {
 /// Assumed to have a local trait bound of N: MpcNetwork + Send
 macro_rules! impl_delegated_wrapper {
     // Static methods (no &self)
-    ($function_name:ident, $with_visibility_function:ident) => {
-        pub fn $function_name(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> MpcScalar<N, S> {
+    ($base_type:ty, $function_name:ident, $with_visibility_function:ident) => {
+        pub fn $function_name(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
             Self::$with_visibility_function(Visibility::Public, network, beaver_source)
         }
 
@@ -42,23 +42,23 @@ macro_rules! impl_delegated_wrapper {
             visibility: Visibility,
             network: SharedNetwork<N>, 
             beaver_source: BeaverSource<S>
-        ) -> MpcScalar<N, S> {
-            MpcScalar {
+        ) -> Self {
+            Self {
                 network,
                 visibility,
                 beaver_source,
-                value: Scalar::$function_name()
+                value: <$base_type>::$function_name()
             }
         }
     };
 
     // Static method single param
-    ($function_name:ident, $with_visibility_function:ident, $param_name:ident, $param_type:ty) => {
+    ($base_type:ty, $function_name:ident, $with_visibility_function:ident, $param_name:ident, $param_type:ty) => {
         pub fn $function_name(
             $param_name: $param_type, 
             network: SharedNetwork<N>, 
             beaver_source: BeaverSource<S>,
-        ) -> MpcScalar<N, S> {
+        ) -> Self {
             Self::$with_visibility_function($param_name, Visibility::Public, network, beaver_source)
         }
 
@@ -67,27 +67,27 @@ macro_rules! impl_delegated_wrapper {
             visibility: Visibility,
             network: SharedNetwork<N>,
             beaver_source: BeaverSource<S>
-        ) -> MpcScalar<N, S> {
-            MpcScalar {
+        ) -> Self {
+            Self {
                 visibility,
                 network,
                 beaver_source,
-                value: Scalar::$function_name($param_name),
+                value: <$base_type>::$function_name($param_name),
             }
         }
     };
     
     // Instance methods (including &self)
-    ($function_name:ident, $with_visibility_function:ident, self) => {
-        pub fn $function_name(&self) -> MpcScalar<N, S> {
+    ($base_type:ty, $function_name:ident, $with_visibility_function:ident, self) => {
+        pub fn $function_name(&self) -> Self {
             self.$with_visibility_function(Visibility::Public)
         }
 
         pub fn $with_visibility_function(
             &self,
             visibility: Visibility
-        ) -> MpcScalar<N, S> {
-            MpcScalar {
+        ) -> Self {
+            Self {
                 visibility,
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
@@ -97,16 +97,16 @@ macro_rules! impl_delegated_wrapper {
     };
 
     // Mutable instance methods (including &mut self)
-    ($function_name:ident, $with_visibility_function:ident, mut, self) => {
-        pub fn $function_name(&mut self) -> MpcScalar<N> {
-            MpcScalar {
+    ($base_type:ty, $function_name:ident, $with_visibility_function:ident, mut, self) => {
+        pub fn $function_name(&mut self) -> Self {
+            Self {
                 network: self.network,
                 value: self.value.$function_name(),
             }
         }
 
-        pub fn $with_visibility_function(&mut self, visibility: Visibility) -> MpcScalar<N, S> {
-            MpcScalar {
+        pub fn $with_visibility_function(&mut self, visibility: Visibility) -> Self {
+            Self {
                 visibility,
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
