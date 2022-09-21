@@ -411,41 +411,41 @@ fn test_simple_mpc(
 
 // Register the tests
 inventory::submit!(IntegrationTest{
-    name: "test_add",
+    name: "mpc-scalar::test_add",
     test_fn: test_add,
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_sub",
+    name: "mpc-scalar::test_sub",
     test_fn: test_sub,
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_mul",
+    name: "mpc-scalar::test_mul",
     test_fn: test_mul
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_open_value",
+    name: "mpc-scalar::test_open_value",
     test_fn: test_open_value,
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_sum",
+    name: "mpc-scalar::test_sum",
     test_fn: test_sum,
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_product",
+    name: "mpc-scalar::test_product",
     test_fn: test_product,
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_linear_combination",
+    name: "mpc-scalar::test_linear_combination",
     test_fn: test_linear_combination,
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_simple_mpc",
+    name: "mpc-scalar::test_simple_mpc",
     test_fn: test_simple_mpc,
 });

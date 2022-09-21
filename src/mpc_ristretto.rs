@@ -1,13 +1,14 @@
 //! Groups the definitions and trait implementations for a Ristretto point within the MPC net
 
-use std::{convert::TryInto, borrow::Borrow};
+use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign}};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT};
 
 use futures::executor::block_on;
 use rand_core::{RngCore, CryptoRng, OsRng};
+use subtle::ConstantTimeEq;
 
-use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource}, macros, error::MpcNetworkError};
+use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource}, macros::{self}, error::MpcNetworkError};
 
 /// Represents a Ristretto point that has been allocated in the MPC network
 #[derive(Clone, Debug)]
@@ -36,14 +37,14 @@ pub fn ristretto_to_u64(a: &RistrettoPoint) -> u64 {
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S> {
     /// Multiplies a scalar by the Ristretto base point
     #[inline]
-    fn base_point_mul(a: &Scalar) -> RistrettoPoint {
+    pub fn base_point_mul(a: Scalar) -> RistrettoPoint {
         RISTRETTO_BASEPOINT_POINT * a
     }
 
     /// Multiplies a Scalar encoding of a u64 by the Ristretto base point
     #[inline]
-    fn base_point_mul_u64(a: u64) -> RistrettoPoint {
-        Self::base_point_mul(&Scalar::from(a))
+    pub fn base_point_mul_u64(a: u64) -> RistrettoPoint {
+        Self::base_point_mul(Scalar::from(a))
     }
 }
 
@@ -78,7 +79,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             Ok(
                 MpcRistrettoPoint{
                     value: self.value() - random_share,
-                    visibility: self.visibility(),
+                    visibility: Visibility::Shared,
                     network: self.network.clone(),
                     beaver_source: self.beaver_source.clone(),
                 }
@@ -95,7 +96,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             Ok(
                 MpcRistrettoPoint{
                     value: received_point,
-                    visibility: self.visibility(),
+                    visibility: Visibility::Shared,
                     network: self.network.clone(),
                     beaver_source: self.beaver_source.clone(),
                 }
@@ -146,13 +147,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     #[inline]
-    fn visibility(&self) -> Visibility {
+    pub(crate) fn visibility(&self) -> Visibility {
         self.visibility
     }
 
     #[inline]
     fn is_public(&self) -> bool {
         self.visibility() == Visibility::Public
+    }
+
+    #[inline]
+    fn is_shared(&self) -> bool {
+        self.visibility() == Visibility::Shared
     }
 
     /**
@@ -180,13 +186,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     /// Create a Ristretto point from a Scalar, visibility assumed Public
-    pub fn from_scalar(a: &Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_scalar(a: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
         Self::from_scalar_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
     /// Create a Ristretto point from a Scalar, with visibility explicitly parameterized
     pub fn from_scalar_with_visibility(
-        a: &Scalar,
+        a: Scalar,
         visibility: Visibility,
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>
@@ -305,6 +311,72 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     
 }
 
+
+/**
+ * Generic Trait Implementations
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for MpcRistrettoPoint<N, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value().eq(&other.value())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for MpcRistrettoPoint<N, S> {
+    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+        self.value().ct_eq(&other.value())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for MpcRistrettoPoint<N, S> {}
+
+/**
+ * Add and variants for borrowed, non-borrowed values
+ */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcRistrettoPoint<N, S>> 
+    for &'a MpcRistrettoPoint<N, S> 
+{
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn add(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
+        // If public + shared, swap the arguments for simplicity
+        if self.is_public() && rhs.is_shared() {
+            return rhs + self
+        }
+        
+        // If both values are public; both parties add the values together to obtain
+        // a public result. 
+        // If both values are shared; both parties add the shared values together to
+        // obtain a shared result.
+        // If only one value is public, the king adds the public valid to her share
+        // I.e. if the parties hold an additive sharing of a = a_1 + a_2 and with to
+        // add public b; the king now holds a_1 + b and the peer holds a_2. Effectively
+        // they construct an implicit secret sharing of b where b_1 = b and b_2 = 0
+        let am_king = self.network.as_ref().borrow().am_king();
+        let res = {
+            if
+                self.is_public() && rhs.is_public() ||  // Both public
+                self.is_shared() && rhs.is_shared() ||  // Both shared
+                am_king                                 // King always adds shares
+            {
+                self.value() + rhs.value()
+            } else {
+                self.value()
+            }
+        };
+
+        MpcRistrettoPoint {
+            value: res,
+            visibility: Visibility::min_visibility_two_points(self, rhs),
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone(),
+        }
+    }
+}
+
+macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, +, MpcRistrettoPoint<N, S>);
+macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, +, RistrettoPoint);
+macros::impl_arithmetic_wrapped!(MpcRistrettoPoint<N, S>, Add, add, +, from_ristretto_point, RistrettoPoint);
+macros::impl_arithmetic_wrapper!(MpcRistrettoPoint<N, S>, Add, add, +, MpcRistrettoPoint<N, S>);
 
 /// Represents a CompressedRistretto point allocated in the network
 #[derive(Clone, Debug)]

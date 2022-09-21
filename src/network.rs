@@ -363,9 +363,9 @@ impl MpcNetwork for QuicTwoPartyNet {
 
 #[cfg(test)]
 mod test {
-    use std::{net::SocketAddr};
+    use std::net::SocketAddr;
 
-    use curve25519_dalek::{ristretto::RistrettoPoint};
+    use curve25519_dalek::ristretto::RistrettoPoint;
     use rand_core::OsRng;
     use tokio;
 
