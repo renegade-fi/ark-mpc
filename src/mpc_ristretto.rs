@@ -1,6 +1,6 @@
 //! Groups the definitions and trait implementations for a Ristretto point within the MPC net
 
-use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign}};
+use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub}};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT};
 
@@ -377,6 +377,49 @@ macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, 
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, +, RistrettoPoint);
 macros::impl_arithmetic_wrapped!(MpcRistrettoPoint<N, S>, Add, add, +, from_ristretto_point, RistrettoPoint);
 macros::impl_arithmetic_wrapper!(MpcRistrettoPoint<N, S>, Add, add, +, MpcRistrettoPoint<N, S>);
+
+/**
+ * Sub and variants for borrowed, non-borrowed values
+ */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcRistrettoPoint<N, S>>
+    for &'a MpcRistrettoPoint<N, S>
+{
+    type Output = MpcRistrettoPoint<N, S>;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
+        self + rhs.neg()
+    }
+}
+
+macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, SubAssign, sub_assign, -, MpcRistrettoPoint<N, S>);
+macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, SubAssign, sub_assign, -, RistrettoPoint);
+macros::impl_arithmetic_wrapped!(MpcRistrettoPoint<N, S>, Sub, sub, -, from_ristretto_point, RistrettoPoint);
+macros::impl_arithmetic_wrapper!(MpcRistrettoPoint<N, S>, Sub, sub, -, MpcRistrettoPoint<N, S>);
+
+/**
+ * Neg and variants for borrowed, non-borrowed values
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for MpcRistrettoPoint<N, S> {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn neg(self) -> Self::Output {
+        (&self).neg()
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a MpcRistrettoPoint<N, S> {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn neg(self) -> Self::Output {
+        MpcRistrettoPoint {
+            value: self.value.neg(),
+            visibility: self.visibility(),
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone(),
+        }
+    }
+}
 
 /// Represents a CompressedRistretto point allocated in the network
 #[derive(Clone, Debug)]

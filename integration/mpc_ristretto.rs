@@ -104,6 +104,57 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests subtraction of Ristretto points with various visibilities
+fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 holds 42 and party 1 holds 33
+    let value = if test_args.party_id == 0 { 42 } else { 33 };
+
+    let my_value = MpcRistrettoPoint::from_u64_with_visibility(
+        value, 
+        Visibility::Private, 
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    let value1_shared = my_value.share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let value2_shared = my_value.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    let public_value  = MpcRistrettoPoint::from_u64(
+        58,
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Shared value - shared value
+    let shared_shared = (&value1_shared - &value2_shared)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(shared_shared.value(), 9) {
+        return Err(format!("Expected {}, got {:?}", 9, shared_shared.value()))
+    }
+
+    // Public value - shared value
+    let public_shared = (&public_value - &value1_shared)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(public_shared.value(), 16) {
+        return Err(format!("Expected {}, got {:?}", 16, public_shared.value()))?;
+    }
+
+    // Public value - public value
+    #[allow(clippy::eq_op)]
+    let public_public = (&public_value - &public_value)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(public_public.value(), 0) {
+        return Err(format!("Expected {}, got {:?}", 0, public_public.value()));
+    }
+
+    Ok(())
+}
+
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_share_and_open",
     test_fn: test_share_and_open,
@@ -111,5 +162,10 @@ inventory::submit!(IntegrationTest{
 
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_add",
-    test_fn: test_add
+    test_fn: test_add,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "mpc-ristretto::test_sub",
+    test_fn: test_sub,
 });
