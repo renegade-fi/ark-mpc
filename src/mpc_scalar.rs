@@ -56,17 +56,6 @@ impl Visibility {
         if a.visibility.lt(&b.visibility) { a.visibility } else { b.visibility }
     }
 
-    /// Returns the minimum visibility over an array of Ristretto points
-    pub(crate) fn min_visibility_points<N, S>(points: &[MpcRistrettoPoint<N, S>]) -> Visibility where
-        N: MpcNetwork + Send,
-        S: SharedValueSource<Scalar>
-    {
-        points.iter()
-            .map(|point| point.visibility())
-            .min()
-            .unwrap()
-    }
-
     /// Returns the minimum visibility between two Ristretto points
     pub(crate) fn min_visibility_two_points<N, S>(a: &MpcRistrettoPoint<N, S>, b: &MpcRistrettoPoint<N, S>) -> Visibility where
         N: MpcNetwork + Send,
