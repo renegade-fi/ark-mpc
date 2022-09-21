@@ -314,23 +314,26 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
                 }
             )
         } else {
-            // Receiving party
-            let value = block_on(
-                self.network
-                    .as_ref()
-                    .borrow_mut()
-                    .receive_single_scalar()
-            )?;
-
-            Ok(
-                MpcScalar { 
-                    value,
-                    visibility: Visibility::Shared,
-                    network: self.network.clone(),
-                    beaver_source: self.beaver_source.clone(),
-                }
-            )
+            Self::receive_value(self.network.clone(), self.beaver_source.clone())
         }
+    }
+
+    /// Local party receives a secret share of a value; as opposed to using share_secret, no existing value is needed
+    pub fn receive_value(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        let value = block_on(
+            network.as_ref()
+                .borrow_mut()
+                .receive_single_scalar()
+        )?;
+
+        Ok(
+            MpcScalar { 
+                value,
+                visibility: Visibility::Shared,
+                network,
+                beaver_source,
+            }
+        )
     }
 
     /// From a shared value, both parties open their shares and construct the plaintext value.

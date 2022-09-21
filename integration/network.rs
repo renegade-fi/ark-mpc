@@ -40,11 +40,11 @@ fn test_send_scalar(
 
 // Take inventory
 inventory::submit!(IntegrationTest{
-    name: "test_send_ristretto",
+    name: "network::test_send_ristretto",
     test_fn: test_send_ristretto,
 });
 
 inventory::submit!(IntegrationTest{
-    name: "test_send_scalar",
+    name: "network::test_send_scalar",
     test_fn: test_send_scalar,
 });

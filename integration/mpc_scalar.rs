@@ -263,6 +263,33 @@ fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     }
 }
 
+/// Party 0 sends a value and party 1 receives
+fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let share = {
+        if test_args.party_id == 0 {
+            // Send 10 as an MpcScalar
+            MpcScalar::from_u64_with_visibility(
+                10, 
+                Visibility::Private, 
+                test_args.net_ref.clone(), 
+                test_args.beaver_source.clone()
+            )
+                .share_secret(0 /* party_id */)
+                .map_err(|err| format!("Error sharing secret: {:?}", err))?
+        } else {
+            MpcScalar::receive_value(test_args.net_ref.clone(), test_args.beaver_source.clone())
+                .map_err(|err| format!("Error receiving value: {:?}", err))?
+        }
+    };
+
+    let share_opened = share.open().map_err(|err| format!("Error opening share: {:?}", err))?;
+    if !share_opened.value().eq(&Scalar::from(10u64)) {
+        return Err(format!("Expected {}, got {}", 10, scalar_to_u64(&share_opened.value())));
+    }
+
+    Ok(())
+}
+
 /// Tests summing over a sequence of shared values
 fn test_sum(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 allocates the first values list, party 1 allocates the second list
@@ -376,9 +403,7 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
 
 /// Each party inputs their party_id + 1 and the two together compute the square
 /// Party IDs are 0 and 1, so the expected result is (0 + 1 + 1 + 1)^2 = 9
-fn test_simple_mpc(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
+fn test_simple_mpc(test_args: &IntegrationTestArgs,) -> Result<(), String> {
     let value = MpcScalar::from_u64_with_visibility(
         test_args.party_id, 
         Visibility::Private, 
@@ -428,6 +453,11 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "mpc-scalar::test_open_value",
     test_fn: test_open_value,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "mpc-scalar::test_receive_value",
+    test_fn: test_receive_value,
 });
 
 inventory::submit!(IntegrationTest{

@@ -50,6 +50,32 @@ fn test_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Test that receiving a value from the sending party works
+fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let share = {
+        if test_args.party_id == 0 {
+            MpcRistrettoPoint::from_u64_with_visibility(
+                10, 
+                Visibility::Private, 
+                test_args.net_ref.clone(), 
+                test_args.beaver_source.clone(),
+            )
+                .share_secret(0 /* party_id */)
+                .map_err(|err| format!("Error sharing value: {:?}", err))?
+        } else {
+            MpcRistrettoPoint::receive_value(test_args.net_ref.clone(), test_args.beaver_source.clone())
+                .map_err(|err| format!("Error receiving value: {:?}", err))?
+        }
+    };
+
+    let share_opened = share.open().map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(share_opened.value(), 10) {
+        return Err(format!("Expected {}, got {:?}", 10, share_opened.value()));
+    }
+
+    Ok(())
+}
+
 /// Test add with a variety of visibilities
 fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 holds 42 and party 1 holds 33
@@ -254,6 +280,11 @@ fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_share_and_open",
     test_fn: test_share_and_open,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "mpc-ristretto::test_receive_value",
+    test_fn: test_receive_value,
 });
 
 inventory::submit!(IntegrationTest{

@@ -86,22 +86,29 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             )
         } else {
             // Receive a secret share from the peer
-            let received_point = block_on(
-                self.network
-                    .as_ref()
-                    .borrow_mut()
-                    .receive_single_point()
-            )?;
-    
-            Ok(
-                MpcRistrettoPoint{
-                    value: received_point,
-                    visibility: Visibility::Shared,
-                    network: self.network.clone(),
-                    beaver_source: self.beaver_source.clone(),
-                }
-            )
+            Self::receive_value(self.network.clone(), self.beaver_source.clone())
         }
+    }
+
+    /// Local party receives a secret share of a value; as opposed to using share_secret, no existing value is needed
+    pub fn receive_value(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) 
+        -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> 
+    {
+        let received_point = block_on(
+            network
+                .as_ref()
+                .borrow_mut()
+                .receive_single_point()
+        )?;
+
+        Ok(
+            MpcRistrettoPoint{
+                value: received_point,
+                visibility: Visibility::Shared,
+                network,
+                beaver_source,
+            }
+        )
     }
 
     /// From a shared value, both parties call this function to distribute their shares to the counterparty
