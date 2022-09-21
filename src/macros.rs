@@ -176,9 +176,13 @@ macro_rules! impl_arithmetic_wrapped {
 /// Handles arithmetic between two wrapped types, assuming they both have a value() method
 macro_rules! impl_arithmetic_wrapper {
     ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty) => {
+        macros::impl_arithmetic_wrapper!($lhs, $trait, $fn_name, $op, $rhs, Output=$lhs);
+    };
+    
+    ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty, Output=$out_type:ty) => {
         /// Default implementation
         impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
-            type Output = $lhs;
+            type Output = $out_type;
 
             fn $fn_name(self, rhs: $rhs) -> Self::Output {
                 &self $op &rhs
@@ -187,7 +191,7 @@ macro_rules! impl_arithmetic_wrapper {
 
         /// Implementation for a borrowed reference on the right hand side
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs> for $lhs {
-            type Output = $lhs;
+            type Output = $out_type;
 
             fn $fn_name(self, rhs: &'a $rhs) -> Self::Output {
                 &self $op rhs
@@ -196,13 +200,13 @@ macro_rules! impl_arithmetic_wrapper {
 
         /// Implementation for a borrowed reference on the left hand side
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for &'a $lhs {
-            type Output = $lhs;
+            type Output = $out_type;
 
             fn $fn_name(self, rhs: $rhs) -> Self::Output {
                 self $op &rhs
             }
         }
-    };
+    }
 }
 
 // Exports

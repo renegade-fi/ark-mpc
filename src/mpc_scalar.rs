@@ -63,6 +63,14 @@ impl Visibility {
     {
         if a.visibility().lt(&b.visibility()) { a.visibility() } else { b.visibility() }
     }
+
+    /// Returns the minimum visibility between a point and a scalar
+    pub(crate) fn min_visibility_point_scalar<N, S>(point: &MpcRistrettoPoint<N, S>, scalar: &MpcScalar<N, S>) -> Visibility where
+        N: MpcNetwork + Send,
+        S: SharedValueSource<Scalar>
+    {
+        if point.visibility().lt(&scalar.visibility()) { point.visibility() } else { scalar.visibility() }
+    }
 }
 
 /// An implementation of Ord for Visibilities
@@ -100,13 +108,13 @@ impl PartialOrd for Visibility {
 #[derive(Clone, Debug)]
 pub struct MpcScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// the underlying value of the scalar allocated in the network
-    value: Scalar,
+    pub(crate) value: Scalar,
     /// The visibility flag; what amount of information parties have
-    visibility: Visibility,
+    pub(crate) visibility: Visibility,
     /// The underlying network that the MPC operates on
-    network: SharedNetwork<N>,
+    pub(crate) network: SharedNetwork<N>,
     /// The source for shared values; MAC keys, beaver triples, etc
-    beaver_source: BeaverSource<S>,
+    pub(crate) beaver_source: BeaverSource<S>,
 }
 
 /**
@@ -126,12 +134,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
      * Helper methods
      */
     #[inline]
-    fn is_shared(&self) -> bool {
+    pub(crate) fn is_shared(&self) -> bool {
         self.visibility == Visibility::Shared
     }
 
     #[inline]
-    fn is_public(&self) -> bool {
+    pub(crate) fn is_public(&self) -> bool {
         self.visibility == Visibility::Public
     }
 

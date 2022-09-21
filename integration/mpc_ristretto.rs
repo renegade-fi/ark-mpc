@@ -1,7 +1,7 @@
 
 
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants::RISTRETTO_BASEPOINT_POINT};
-use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::Visibility};
+use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::{Visibility, MpcScalar}};
 
 use crate::{IntegrationTestArgs, IntegrationTest};
 
@@ -155,6 +155,70 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests multiplication of Ristretto points with various visibilities
+fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let value = if test_args.party_id == 0 { 5 } else { 6 };
+
+    // Construct a shared point and a shared scalar
+    let point_shared = MpcRistrettoPoint::from_u64_with_visibility(
+        value, Visibility::Shared, test_args.net_ref.clone(), test_args.beaver_source.clone()
+    )
+        .share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    let scalar_shared = MpcScalar::from_u64_with_visibility(
+        value, Visibility::Shared, test_args.net_ref.clone(), test_args.beaver_source.clone()
+    )
+        .share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    // Construct a public point and a public scalar
+    let public_point  = MpcRistrettoPoint::from_u64(
+        7,
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+    let public_scalar = MpcScalar::from_u64(
+        8, 
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Shared scalar * shared point
+    let shared_shared = (&scalar_shared * &point_shared)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(shared_shared.value(), 30) {
+        return Err(format!("Expected {}, got {:?}", 30, shared_shared.value()));
+    }
+
+    // Shared scalar * public point
+    let shared_public1 = (&scalar_shared * &public_point)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(shared_public1.value(), 42) {
+        return Err(format!("Expected {}, got {:?}", 42, shared_public1.value()));
+    }
+
+    // Public scalar * shared point
+    let shared_public2 = (&public_scalar * &point_shared)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(shared_public2.value(), 40) {
+        return Err(format!("Expected {}, got {:?}", 40, shared_public2.value()));
+    }
+
+    // Public scalar * public point
+    let public_public = (&public_scalar * &public_point)
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(public_public.value(), 56) {
+        return Err(format!("Expected {}, got {:?}", 48, public_public.value()));
+    }
+
+    Ok(())
+}
+
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_share_and_open",
     test_fn: test_share_and_open,
@@ -168,4 +232,9 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_sub",
     test_fn: test_sub,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "mpc-ristretto::test_mul",
+    test_fn: test_mul,
 });

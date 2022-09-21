@@ -1,6 +1,6 @@
 //! Groups the definitions and trait implementations for a Ristretto point within the MPC net
 
-use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub}};
+use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub, Mul, MulAssign}};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT};
 
@@ -8,7 +8,7 @@ use futures::executor::block_on;
 use rand_core::{RngCore, CryptoRng, OsRng};
 use subtle::ConstantTimeEq;
 
-use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource}, macros::{self}, error::MpcNetworkError};
+use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource, MpcScalar}, error::MpcNetworkError, macros};
 
 /// Represents a Ristretto point that has been allocated in the MPC network
 #[derive(Clone, Debug)]
@@ -131,6 +131,22 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
                 beaver_source: self.beaver_source.clone(),
             }
         )
+    }
+
+    /// Fetch the next Beaver triplet from the source and cast them as MpcScalars
+    /// We leave them as scalars because some are directly used as scalars for Mul
+    fn next_beaver_triplet(&self) -> (MpcScalar<N, S>, MpcScalar<N, S>, MpcScalar<N, S>) {
+        let (a, b, c) = self.beaver_source
+            .as_ref()
+            .borrow_mut()
+            .next_triplet();
+        
+        (
+            MpcScalar::from_scalar_with_visibility(a, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
+            MpcScalar::from_scalar_with_visibility(b, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
+            MpcScalar::from_scalar_with_visibility(c, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
+        )
+
     }
 }
 
@@ -328,6 +344,151 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for MpcR
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for MpcRistrettoPoint<N, S> {}
+
+/**
+ * Mul and variants for borrowed, non-borrowed values
+ */
+
+/// An implementation of multiplication with the Beaver trick. This involves two openings 
+/// Panics in case of a network error; see mpc_scalar::MpcScalar::Mul for more info.
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>>
+    for &'a MpcRistrettoPoint<N, S>
+{
+    type Output = MpcRistrettoPoint<N, S>;
+
+    /// Multiplies two (possibly shared) values. The only case in which we need a Beaver trick
+    /// is when both lhs and rhs are Shared. If only one is shared, multiplying by a public value
+    /// directly leads to an additive sharing. If both are public, we do not need an additive share.
+    /// TODO(@joey): What is the correct behavior when one or both of lhs and rhs are private
+    /// 
+    /// See https://securecomputation.org/docs/pragmaticmpc.pdf (Section 3.4) for the identities this
+    /// implementation makes use of.
+    #[allow(non_snake_case)]
+    fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
+        if self.is_shared() && rhs.is_shared() {
+            let (a, b, c) = self.next_beaver_triplet();
+
+            // Compute \alpha * \betaG for generator point G. As far as the interface is concerned:
+            // self = \betaG, rhs = \alpha
+            // Open the value d = [\alpha - a].open()
+            let alpha_minus_a = (rhs - &a).open().unwrap();
+            // Opem the value eG = [\betaG - bG].open(); where G is the Ristretto base point
+            let beta_minus_b = (self - MpcRistrettoPoint::<N, S>::base_point_mul(b.value()))
+                .open()
+                .unwrap();
+            
+            // Identity [a * bG] = deG + d[bG] + [a]eG + [c]G
+            // To construct the secret share, only the king will add the deG term
+            // All multiplications here are between a shared value and a public value or
+            // two public values; so the recursion will not hit this case
+            let bG = MpcRistrettoPoint {
+                value: MpcRistrettoPoint::<N, S>::base_point_mul(b.value()),
+                visibility: Visibility::Shared,
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone(),
+            };
+            let cG = MpcRistrettoPoint {
+                value: MpcRistrettoPoint::<N, S>::base_point_mul(c.value()),
+                visibility: Visibility::Shared,
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone(),
+            };
+
+            let mut res = &alpha_minus_a * bG +
+                &a * &beta_minus_b +
+                cG;
+            
+            if self.network
+                .as_ref()
+                .borrow()
+                .am_king()
+            {
+                res += &alpha_minus_a * &beta_minus_b;
+            }
+
+            res
+        } else {
+            // Directly multiply
+            MpcRistrettoPoint {
+                value: self.value() * rhs.value(),
+                visibility: Visibility::min_visibility_point_scalar(self, rhs),
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone(),
+            }
+        }
+    }
+}
+
+macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
+macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, *, Scalar);
+macros::impl_arithmetic_wrapper!(MpcRistrettoPoint<N, S>, Mul, mul, *, MpcScalar<N, S>);
+
+/// Rather than expanding (and complicating) the impl_arithmetic_wrapped macro above to include the case in 
+/// which the LHS type cannot be created from the RHS type (e.g. MpcRistrettoPoint::from_scalar -> MpcScalar
+/// doesn't exist); explicitly implement these methods for this case.
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for &'a MpcRistrettoPoint<N, S> {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: Scalar) -> Self::Output {
+        self * MpcScalar::from_scalar(rhs, self.network.clone(), self.beaver_source.clone())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for MpcRistrettoPoint<N, S> {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: Scalar) -> Self::Output {
+        &self * rhs
+    }
+}
+
+/// An implementation of scalar/point multiplication with the scalar on the LHS
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrettoPoint<N, S>>
+    for &'a MpcScalar<N, S>
+{
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
+        rhs * self
+    }
+}
+
+macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Mul, mul, *, MpcRistrettoPoint<N, S>, Output=MpcRistrettoPoint<N, S>);
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint> for &'a MpcScalar<N, S> {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: RistrettoPoint) -> Self::Output {
+        self * MpcRistrettoPoint::from_ristretto_point(rhs, self.network.clone(), self.beaver_source.clone())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint> for MpcScalar<N, S> {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: RistrettoPoint) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrettoPoint<N, S>>
+    for Scalar
+{
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
+        rhs * self
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcRistrettoPoint<N, S>> for Scalar {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: MpcRistrettoPoint<N, S>) -> Self::Output {
+        &rhs * self
+    }
+}
+
 
 /**
  * Add and variants for borrowed, non-borrowed values
