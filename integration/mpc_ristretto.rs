@@ -1,6 +1,6 @@
 
 
-use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants::RISTRETTO_BASEPOINT_POINT};
+use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants::RISTRETTO_BASEPOINT_POINT, traits::MultiscalarMul};
 use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::{Visibility, MpcScalar}};
 
 use crate::{IntegrationTestArgs, IntegrationTest};
@@ -219,6 +219,38 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Both parties hold a scalar and a point
+    // Computing 1 * 2 + 3 * 4 == 14
+    let my_value = if test_args.party_id == 0 { 2 } else { 4 };
+
+    let my_point = MpcRistrettoPoint::from_u64_with_visibility(
+        my_value,
+        Visibility::Private,  
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Share the values with the peer
+    let shared_point1 = my_point.share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let shared_point2 = my_point.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    
+    let res = MpcRistrettoPoint::multiscalar_mul(
+        vec![Scalar::from(1u64), Scalar::from(3u64)], 
+        vec![shared_point1, shared_point2]
+    );
+
+    let res_open = res.open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(res_open.value(), 14) {
+        return Err(format!("Expected {}, got {:?}", 14, res_open.value()));
+    }
+
+    Ok(())
+}
+
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_share_and_open",
     test_fn: test_share_and_open,
@@ -237,4 +269,9 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_mul",
     test_fn: test_mul,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "mpc-ristretto::test_multiscalar_mul",
+    test_fn: test_multiscalar_mul,
 });

@@ -2,7 +2,7 @@
 
 use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub, Mul, MulAssign}};
 
-use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT};
+use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT, traits::{MultiscalarMul, Identity}};
 
 use futures::executor::block_on;
 use rand_core::{RngCore, CryptoRng, OsRng};
@@ -180,6 +180,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     /**
      * Casting methods
      */
+    /// Creates the identity point for the Ristretto group, allocated in the network
+    pub fn identity(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self {
+            value: RistrettoPoint::identity(),
+            visibility: Visibility::Public,
+            network,
+            beaver_source,
+        }
+    }
 
     /// Create a Ristretto point from a u64, visibility assumed Public
     pub fn from_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
@@ -472,12 +481,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint> for
 }
 
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrettoPoint<N, S>>
-    for Scalar
+    for &'a Scalar
 {
     type Output = MpcRistrettoPoint<N, S>;
 
     fn mul(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
-        rhs * self
+        *self * rhs
     }
 }
 
@@ -489,6 +498,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcRistrettoPoint<N
     }
 }
 
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrettoPoint<N, S>> for Scalar {
+    type Output = MpcRistrettoPoint<N, S>;
+
+    fn mul(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
+        rhs * self
+    }
+}
 
 /**
  * Add and variants for borrowed, non-borrowed values
@@ -579,6 +595,36 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a MpcRist
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(),
         }
+    }
+}
+
+/**
+ * Multiscalar Multiplication
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul for MpcRistrettoPoint<N, S> {
+    type Point = Self;
+
+    /// Computes c_1P_1 + c_2P_2 + ... + c_nP_n for scalars c and points P
+    fn multiscalar_mul<I, J>(scalars: I, points: J) -> Self::Point
+        where
+            I: IntoIterator,
+            I::Item: Borrow<Scalar>,
+            J: IntoIterator,
+            J::Item: Borrow<Self::Point> 
+    {
+        // Fetch the network and beaver source from the first element          
+        let mut peekable_points = points.into_iter().peekable();
+        let (network, beaver_source) = {
+            let first_elem: &MpcRistrettoPoint<N, S> = peekable_points.peek().unwrap().borrow();
+            (first_elem.network.clone(), first_elem.beaver_source.clone())
+        };
+
+        scalars.into_iter()
+            .zip(peekable_points.into_iter())
+            .fold(
+                MpcRistrettoPoint::identity(network, beaver_source), 
+                |acc, pair| acc + pair.0.borrow() * pair.1.borrow() // Pair is a 2-tuple of (c_i, P_i)
+            )
     }
 }
 
