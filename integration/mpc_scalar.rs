@@ -1,5 +1,6 @@
 use curve25519_dalek::scalar::{Scalar};
-use mpc_ristretto::{mpc_scalar::{MpcScalar, Visibility, scalar_to_u64}, beaver::SharedValueSource, error::MpcNetworkError};
+use ::mpc_ristretto::Visibility;
+use mpc_ristretto::{mpc_scalar::{MpcScalar, scalar_to_u64}, beaver::SharedValueSource, error::MpcNetworkError};
 
 use crate::{IntegrationTestArgs, IntegrationTest};
 

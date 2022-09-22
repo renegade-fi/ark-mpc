@@ -1,7 +1,8 @@
 
 
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants::RISTRETTO_BASEPOINT_POINT, traits::MultiscalarMul};
-use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::{Visibility, MpcScalar}};
+use ::mpc_ristretto::Visibility;
+use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::MpcScalar};
 
 use crate::{IntegrationTestArgs, IntegrationTest};
 

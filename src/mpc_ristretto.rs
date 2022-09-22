@@ -8,7 +8,16 @@ use futures::executor::block_on;
 use rand_core::{RngCore, CryptoRng, OsRng};
 use subtle::ConstantTimeEq;
 
-use crate::{network::MpcNetwork, beaver::{SharedValueSource}, mpc_scalar::{Visibility, SharedNetwork, BeaverSource, MpcScalar}, error::MpcNetworkError, macros};
+use crate::{
+    network::MpcNetwork, 
+    beaver::SharedValueSource, 
+    mpc_scalar::MpcScalar, 
+    error::MpcNetworkError, 
+    macros, 
+    Visibility, 
+    SharedNetwork, 
+    BeaverSource
+};
 
 /// Represents a Ristretto point that has been allocated in the MPC network
 #[derive(Clone, Debug)]
