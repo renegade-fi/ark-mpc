@@ -8,6 +8,7 @@ use crate::{network::MpcNetwork, mpc_scalar::MpcScalar, beaver::SharedValueSourc
 /// An authenticated scalar, wrapper around an MPC-capable Scalar that supports methods
 /// to authenticate an opened result against a shared global MAC.
 /// See SPDZ (https://eprint.iacr.org/2012/642.pdf) for a detailed explanation.
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct AuthenticatedScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying MpcScalar that this structure authenticates 

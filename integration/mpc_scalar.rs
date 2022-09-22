@@ -1,5 +1,5 @@
 use curve25519_dalek::scalar::{Scalar};
-use ::mpc_ristretto::Visibility;
+
 use mpc_ristretto::{mpc_scalar::{MpcScalar, scalar_to_u64}, beaver::SharedValueSource, error::MpcNetworkError};
 
 use crate::{IntegrationTestArgs, IntegrationTest};
@@ -45,9 +45,8 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 holds 42 and party 1 holds 33
     let value = if test_args.party_id == 0 { 42 } else { 33 };
 
-    let my_value = MpcScalar::from_u64_with_visibility(
+    let my_value = MpcScalar::from_private_u64(
         value, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -56,7 +55,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
     let value2_shared = my_value.share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let public_value  = MpcScalar::from_u64(
+    let public_value  = MpcScalar::from_public_u64(
         58,
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
@@ -109,9 +108,8 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
 fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value = if test_args.party_id == 0 { 10 } else { 6 };
-    let my_value = MpcScalar::from_u64_with_visibility(
+    let my_value = MpcScalar::from_private_u64(
         value, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -121,7 +119,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
     let shared_value2 = my_value.share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let public_value = MpcScalar::from_u64(
+    let public_value = MpcScalar::from_public_u64(
         15u64, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
@@ -176,9 +174,8 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Tests multiplication with different visibilities
 fn test_mul(test_args: &IntegrationTestArgs)  -> Result<(), String> {
     let value = if test_args.party_id == 0 { 10 } else { 6 };
-    let my_value = MpcScalar::from_u64_with_visibility(
+    let my_value = MpcScalar::from_private_u64(
         value, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -188,7 +185,7 @@ fn test_mul(test_args: &IntegrationTestArgs)  -> Result<(), String> {
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
     let shared_value2 = my_value.share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let public_value = MpcScalar::from_u64(
+    let public_value = MpcScalar::from_public_u64(
         15u64, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
@@ -242,9 +239,8 @@ fn test_mul(test_args: &IntegrationTestArgs)  -> Result<(), String> {
 /// Party 0 shares a value then opens it, the result should be the initial value
 fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val: u64 = 42;
-    let private_val = MpcScalar::from_u64_with_visibility(
+    let private_val = MpcScalar::from_private_u64(
         val, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -255,7 +251,7 @@ fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let opened_val = share.open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     
-    if MpcScalar::from_u64(val, test_args.net_ref.clone(), test_args.beaver_source.clone()).eq(
+    if MpcScalar::from_public_u64(val, test_args.net_ref.clone(), test_args.beaver_source.clone()).eq(
         &opened_val
     ) {
         Ok(())
@@ -269,9 +265,8 @@ fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let share = {
         if test_args.party_id == 0 {
             // Send 10 as an MpcScalar
-            MpcScalar::from_u64_with_visibility(
+            MpcScalar::from_private_u64(
                 10, 
-                Visibility::Private, 
                 test_args.net_ref.clone(), 
                 test_args.beaver_source.clone()
             )
@@ -297,7 +292,7 @@ fn test_sum(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let values: Vec<u64> = if test_args.party_id == 0 { vec![1, 2, 3] } else { vec![4, 5, 6] };
     
     let network_values: Vec<MpcScalar<_, _>> = values.into_iter()
-        .map(|value| MpcScalar::from_u64(value, test_args.net_ref.clone(), test_args.beaver_source.clone())
+        .map(|value| MpcScalar::from_public_u64(value, test_args.net_ref.clone(), test_args.beaver_source.clone())
     ).collect();
 
     // Share values with peer
@@ -319,7 +314,7 @@ fn test_sum(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res = shared_sum.open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     
-    let expected = MpcScalar::from_u64(21, test_args.net_ref.clone(), test_args.beaver_source.clone());
+    let expected = MpcScalar::from_public_u64(21, test_args.net_ref.clone(), test_args.beaver_source.clone());
 
     if res.eq(&expected) { Ok(()) } else { Err(format!("Expected: {:?}\nGot: {:?}\n", expected.value(), res.value())) }
 }
@@ -330,7 +325,7 @@ fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let values: Vec<u64> = if test_args.party_id == 0 { vec![1, 2, 3] } else { vec![4, 5, 6] };
     
     let network_values: Vec<MpcScalar<_, _>> = values.into_iter()
-        .map(|value| MpcScalar::from_u64(value, test_args.net_ref.clone(), test_args.beaver_source.clone())
+        .map(|value| MpcScalar::from_public_u64(value, test_args.net_ref.clone(), test_args.beaver_source.clone())
     ).collect();
 
     // Share values with peer
@@ -352,7 +347,7 @@ fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res = shared_product.open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     
-    let expected = MpcScalar::from_u64(720, test_args.net_ref.clone(), test_args.beaver_source.clone());
+    let expected = MpcScalar::from_public_u64(720, test_args.net_ref.clone(), test_args.beaver_source.clone());
 
     if res.eq(&expected) { Ok(()) } else { Err(format!("Expected: {:?}\nGot: {:?}\n", expected.value(), res.value())) }
 }
@@ -367,7 +362,7 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
             7..12
         }
     }.map(
-        |a| MpcScalar::from_u64(a, test_args.net_ref.clone(), test_args.beaver_source.clone())
+        |a| MpcScalar::from_public_u64(a, test_args.net_ref.clone(), test_args.beaver_source.clone())
     ).collect::<Vec<MpcScalar<_, _>>>();
 
     // Share the values
@@ -384,7 +379,7 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
     let shared_combination = shared_values.iter()
         .zip(shared_coeffs.iter())
         .fold(
-            MpcScalar::from_u64(0u64, test_args.net_ref.clone(), test_args.beaver_source.clone()), 
+            MpcScalar::from_public_u64(0u64, test_args.net_ref.clone(), test_args.beaver_source.clone()), 
             |acc, pair| acc + pair.0 * pair.1
         );
     
@@ -395,7 +390,7 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
     let linear_comb = (1..6).zip(7..12)
         .fold(0, |acc, val| acc + val.0 * val.1);
 
-    let expected = MpcScalar::from_u64(
+    let expected = MpcScalar::from_public_u64(
         linear_comb, test_args.net_ref.clone(), test_args.beaver_source.clone()
     );
 
@@ -405,9 +400,8 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
 /// Each party inputs their party_id + 1 and the two together compute the square
 /// Party IDs are 0 and 1, so the expected result is (0 + 1 + 1 + 1)^2 = 9
 fn test_simple_mpc(test_args: &IntegrationTestArgs,) -> Result<(), String> {
-    let value = MpcScalar::from_u64_with_visibility(
+    let value = MpcScalar::from_private_u64(
         test_args.party_id, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -428,7 +422,7 @@ fn test_simple_mpc(test_args: &IntegrationTestArgs,) -> Result<(), String> {
     // Open the value, assert that it equals 9
     let res = sum_squared.open()
         .map_err(|err| format!("Error opening: {:?}", err))?;
-    let expected = MpcScalar::from_u64(9, test_args.net_ref.clone(), test_args.beaver_source.clone());
+    let expected = MpcScalar::from_public_u64(9, test_args.net_ref.clone(), test_args.beaver_source.clone());
     
     if res.eq(&expected) { Ok(()) } else { 
         Err(format!("Result does not equal expected\n\tResult: {:?}\n\tExpected: {:?}", res.value(), expected.value()))

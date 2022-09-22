@@ -193,8 +193,8 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let scalar_shared = MpcScalar::from_u64_with_visibility(
-        value, Visibility::Shared, test_args.net_ref.clone(), test_args.beaver_source.clone()
+    let scalar_shared = MpcScalar::from_private_u64(
+        value, test_args.net_ref.clone(), test_args.beaver_source.clone()
     )
         .share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
@@ -205,7 +205,7 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
-    let public_scalar = MpcScalar::from_u64(
+    let public_scalar = MpcScalar::from_public_u64(
         8, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()

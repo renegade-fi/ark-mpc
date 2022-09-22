@@ -75,13 +75,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
      * Casting methods
      */
 
-    /// Create a scalar from a given u64, visibility assumed to be Public
-    pub fn from_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    /// Create a public network scalar from a u64
+    pub fn from_public_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
         Self::from_u64_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
+    /// Create a private network scalar from a given u64
+    pub fn from_private_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::from_u64_with_visibility(a, Visibility::Private, network, beaver_source)
+    }
+
     /// Create a scalar from a given u64 and visibility
-    pub fn from_u64_with_visibility(
+    pub(crate) fn from_u64_with_visibility(
         a: u64, 
         visibility: Visibility,
         network: SharedNetwork<N>, 
@@ -95,13 +100,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         }
     }
 
-    /// Allocate an existing scalar in the network
-    pub fn from_scalar(value: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    /// Allocate a public network value from an underlying scalar
+    pub fn from_public_scalar(value: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
         Self::from_scalar_with_visibility(value, Visibility::Public, network, beaver_source)
     }
 
+    /// Allocate a private network value from an underlying scalar
+    pub fn from_private_scalar(value: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::from_scalar_with_visibility(value, Visibility::Private, network, beaver_source)
+    }
+
     /// Allocate an existing scalar in the network with given visibility
-    pub fn from_scalar_with_visibility(
+    pub(crate) fn from_scalar_with_visibility(
         value: Scalar, 
         visibility: Visibility,
         network: SharedNetwork<N>,
@@ -260,7 +270,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     pub fn open(&self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
         if self.is_public() {
             return Ok(
-                MpcScalar::from_scalar(
+                MpcScalar::from_public_scalar(
                     self.value, self.network.clone(), self.beaver_source.clone()
                 )
             )
@@ -276,9 +286,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
 
         // Reconstruct the plaintext from the peer's share
         Ok(
-            MpcScalar::from_scalar_with_visibility(
+            MpcScalar::from_public_scalar(
                 self.value + received_scalar, 
-                Visibility::Public,
                 self.network.clone(),
                 self.beaver_source.clone()
             )
@@ -384,7 +393,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, MulAssign, mul_assign, *, Scalar);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
 macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Mul, mul, *, MpcScalar<N, S>);
-macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Mul, mul, *, from_scalar, Scalar);
+macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Mul, mul, *, from_public_scalar, Scalar);
 
 /**
  * Add and variants for: borrowed, non-borrowed, and scalar types
@@ -432,7 +441,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, AddAssign, add_assign, +, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, AddAssign, add_assign, +, Scalar);
 macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Add, add, +, MpcScalar<N, S>);
-macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Add, add, +, from_scalar, Scalar);
+macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Add, add, +, from_public_scalar, Scalar);
 
 /**
  * Sub and variants for: borrowed, non-borrowed, and scalar types
@@ -449,7 +458,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcScalar<N
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, SubAssign, sub_assign, -, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, SubAssign, sub_assign, -, Scalar);
 macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Sub, sub, -, MpcScalar<N, S>);
-macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Sub, sub, -, from_scalar, Scalar);
+macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Sub, sub, -, from_public_scalar, Scalar);
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S> {
     type Output = MpcScalar<N, S>; 
@@ -542,7 +551,7 @@ mod test {
         let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
         let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
 
-        let expected = MpcScalar::from_scalar(
+        let expected = MpcScalar::from_public_scalar(
             Scalar::zero(), network.clone(), beaver_source.clone()
         );
         let zero = MpcScalar::zero(network, beaver_source);
@@ -558,7 +567,7 @@ mod test {
         
         let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
 
-        let expected = MpcScalar::from_scalar(
+        let expected = MpcScalar::from_public_scalar(
             Scalar::from(2u8), network.clone(), beaver_source.clone()
         );
         
@@ -595,7 +604,7 @@ mod test {
         assert_eq!(res.visibility, Visibility::Shared);
         assert_eq!(
             res.open().unwrap(),
-            MpcScalar::from_u64(7u64, network.clone(), beaver_source.clone())
+            MpcScalar::from_public_u64(7u64, network.clone(), beaver_source.clone())
         );
 
         // Test adding another shared value
@@ -615,7 +624,7 @@ mod test {
         assert_eq!(res.visibility, Visibility::Shared);
         assert_eq!(
             res.open().unwrap(),
-            MpcScalar::from_u64(9, network, beaver_source)
+            MpcScalar::from_public_u64(9, network, beaver_source)
         )
     }
 
@@ -639,7 +648,7 @@ mod test {
         assert_eq!(res.visibility, Visibility::Shared);
         assert_eq!(
             res.open().unwrap(),
-            MpcScalar::from_u64(1u64, network.clone(), beaver_source.clone())
+            MpcScalar::from_public_u64(1u64, network.clone(), beaver_source.clone())
         );
 
         // Subtract two shared values
@@ -656,7 +665,7 @@ mod test {
         assert_eq!(res.visibility, Visibility::Shared);
         assert_eq!(
             res.open().unwrap(),
-            MpcScalar::from_u64(5, network, beaver_source)
+            MpcScalar::from_public_u64(5, network, beaver_source)
         )
     }
 
@@ -684,13 +693,12 @@ mod test {
         
         assert_eq!(
             res.open().unwrap(),
-            MpcScalar::from_u64(22, network.clone(), beaver_source.clone())
+            MpcScalar::from_public_u64(22, network.clone(), beaver_source.clone())
         );
 
         // Multiply a shared value with a public value
-        let public_value = MpcScalar::from_u64_with_visibility(
+        let public_value = MpcScalar::from_public_u64(
             3u64,
-            Visibility::Public,
             network.clone(),
             beaver_source.clone(),
         );
@@ -703,7 +711,7 @@ mod test {
             .add_mock_scalars(vec![Scalar::from(15u8)]);
         assert_eq!(
             res.open().unwrap(),
-            MpcScalar::from_u64(33u64, network.clone(), beaver_source.clone())
+            MpcScalar::from_public_u64(33u64, network.clone(), beaver_source.clone())
         );
 
         // Multiply two shared values, a beaver triplet (a, b, c) will be needed
@@ -729,7 +737,7 @@ mod test {
         
         assert_eq!(
             res.open().unwrap(),
-            MpcScalar::from_u64(12 * 11, network, beaver_source)
+            MpcScalar::from_public_u64(12 * 11, network, beaver_source)
         )
 
 

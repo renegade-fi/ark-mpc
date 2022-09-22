@@ -227,7 +227,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     /// Create a Ristretto point from a Scalar, visibility assumed Public
-    pub fn from_scalar(a: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_public_scalar(a: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
         Self::from_scalar_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
@@ -455,7 +455,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for &'a
     type Output = MpcRistrettoPoint<N, S>;
 
     fn mul(self, rhs: Scalar) -> Self::Output {
-        self * MpcScalar::from_scalar(rhs, self.network.clone(), self.beaver_source.clone())
+        self * MpcScalar::from_public_scalar(rhs, self.network.clone(), self.beaver_source.clone())
     }
 }
 
