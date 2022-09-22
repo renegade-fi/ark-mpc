@@ -6,6 +6,7 @@ use mpc_ristretto::MpcRistrettoPoint;
 use mpc_scalar::MpcScalar;
 use network::MpcNetwork;
 
+pub mod authenticated_scalar;
 pub mod beaver;
 pub mod error;
 mod macros;
