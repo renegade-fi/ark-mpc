@@ -38,17 +38,6 @@ pub enum Visibility {
 
 /// Convenience methods for comparing visibilities on various types
 impl Visibility {
-    /// Returns the minimum visibility of an array of scalars
-    pub(crate) fn min_visibility_scalars<N, S>(scalars: &[MpcScalar<N, S>]) -> Visibility where
-        N: MpcNetwork + Send,
-        S: SharedValueSource<Scalar> 
-    {
-        scalars.iter()
-            .map(|scalar| scalar.visibility())
-            .min()
-            .unwrap()  // The Ord + PartialOrd implementations never return None
-    }
-
     /// Returns the minimum visibility between two scalars
     pub(crate) fn min_visibility_two_scalars<N, S>(a: &MpcScalar<N, S>, b: &MpcScalar<N, S>) -> Visibility where
         N: MpcNetwork + Send,

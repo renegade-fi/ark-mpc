@@ -176,30 +176,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     // Convert a scalar to bytes
     macros::impl_delegated!(to_bytes, self, [u8; 32]);
     macros::impl_delegated!(as_bytes, self, &[u8; 32]);
-    // Compute the multiplicative inverse of the Scalar
-    macros::impl_delegated_wrapper!(Scalar, invert, invert_with_visibility, self);
-    // Invert a batch of scalars and return the product of inverses
-    pub fn batch_invert(inputs: &mut [MpcScalar<N, S>]) -> MpcScalar<N, S> {
-        let mut scalars: Vec<Scalar> = inputs.iter()
-            .map(|mpc_scalar| mpc_scalar.value)
-            .collect();
-
-        MpcScalar {
-            visibility: Visibility::min_visibility_scalars(inputs),
-            network: inputs[0].network.clone(),
-            beaver_source: inputs[0].beaver_source.clone(),
-            value: Scalar::batch_invert(&mut scalars)
-        }
-    }
-
-    // Reduce the scalar mod l
-    macros::impl_delegated_wrapper!(Scalar, reduce, reduce_with_visibility, self);
     // Check whether the scalar is canonically represented mod l
     macros::impl_delegated!(is_canonical, self, bool);
     // Generate the additive identity
-    macros::impl_delegated_wrapper!(Scalar, zero, zero_with_visibility);
+    macros::impl_delegated_wrapper!(Scalar, zero);
     // Generate the multiplicative identity
-    macros::impl_delegated_wrapper!(Scalar, one, one_with_visibility);
+    macros::impl_delegated_wrapper!(Scalar, one);
 }
 
 /**
@@ -524,7 +506,7 @@ impl<N, S, T> Sum<T> for MpcScalar<N, S> where
             .clone();
 
         peekable.fold(
-            MpcScalar::zero_with_visibility(Visibility::Shared, network, beaver_source), 
+            MpcScalar::from_u64_with_visibility(0, Visibility::Shared, network, beaver_source), 
             |acc, item| acc + item.borrow()
         )
     } 

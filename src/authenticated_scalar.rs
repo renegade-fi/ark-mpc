@@ -2,7 +2,7 @@
 
 use curve25519_dalek::scalar::Scalar;
 
-use crate::{network::MpcNetwork, mpc_scalar::MpcScalar, beaver::SharedValueSource, Visibility, SharedNetwork, BeaverSource};
+use crate::{network::MpcNetwork, mpc_scalar::MpcScalar, beaver::SharedValueSource, Visibility, SharedNetwork, BeaverSource, macros};
 
 
 /// An authenticated scalar, wrapper around an MPC-capable Scalar that supports methods
@@ -24,99 +24,62 @@ pub struct AuthenticatedScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar
     visibility: Visibility,
 }
 
+#[allow(unused_doc_comments)]
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, S> {
     /// Create a new AuthenticatedScalar from a public u64 constant
-    pub fn from_public_u64(
-        value: u64,
-        key_share: MpcScalar<N, S>,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
-    ) -> Self {
-        AuthenticatedScalar::from_u64_with_visibility(
-            value, 
-            Visibility::Public, 
-            key_share, 
-            network, 
-            beaver_source
-        )
-    }
-
-    /// Create a new AuthenticatedScalar from a private u64 value
-    pub fn from_private_u64(
-        value: u64,
-        key_share: MpcScalar<N, S>,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
-    ) -> Self {
-        AuthenticatedScalar::from_u64_with_visibility(
-            value, 
-            Visibility::Private, 
-            key_share, 
-            network, 
-            beaver_source
-        )
-    }
-
-    /// Create a new AuthenticatedScalar from a u64 with Visibility specified
-    fn from_u64_with_visibility(
-        value: u64,
-        visibility: Visibility,
-        key_share: MpcScalar<N, S>,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
-    ) -> Self {
-        let value = MpcScalar::from_u64_with_visibility(
-            value,
-            visibility,
-            network,
-            beaver_source,
-        );
-
-        Self { 
-            value,
-            mac_share: None,  // Filled in when value is shared
-            key_share,
-            visibility
-        }
-    }
+    macros::impl_authenticated!(
+        MpcScalar<N, S>, from_public_u64, from_private_u64, from_u64_with_visibility, u64
+    );
 
     /// Create a new AuthenticatedScalar from a public Scalar constant
-    pub fn from_public_scalar(
-        value: Scalar,
-        key_share: MpcScalar<N, S>,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
-    ) -> Self {
-        Self::from_scalar_with_visibility(value, Visibility::Public, key_share, network, beaver_source)
-    }
-    
-    /// Create a new AuthenticatedScalar from a private Scalar value
-    pub fn from_private_scalar(
-        value: Scalar,
-        key_share: MpcScalar<N, S>,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
-    ) -> Self {
-        Self::from_scalar_with_visibility(value, Visibility::Private, key_share, network, beaver_source)
-    }
-    
-    /// Create a new AuthenticatedScalar from a Scalar with given visibility
-    fn from_scalar_with_visibility(
-        value: Scalar,
-        visibility: Visibility,
-        key_share: MpcScalar<N, S>,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
-    ) -> Self {
-        let value = MpcScalar::from_scalar_with_visibility(
-            value, visibility, network, beaver_source
-        );
+    macros::impl_authenticated!(
+        MpcScalar<N, S>, from_public_scalar, from_private_scalar, from_scalar_with_visibility, Scalar
+    );
 
-        Self {
-            value,
-            mac_share: None,  // Filled in when value is shared
-            key_share,
-            visibility,
-        }
+    macros::impl_authenticated!(MpcScalar<N, S>, zero);
+    macros::impl_authenticated!(MpcScalar<N, S>, one);
+    macros::impl_authenticated!(MpcScalar<N, S>, default);
+
+    macros::impl_authenticated!(
+        MpcScalar<N, S>, 
+        from_public_bytes_mod_order, 
+        from_private_bytes_mod_order, 
+        from_bytes_mod_order_with_visibility,
+        [u8; 32]
+    );
+
+    macros::impl_authenticated!(
+        MpcScalar<N, S>,
+        from_bytes_mod_order_wide,
+        from_public_bytes_mod_order_wide,
+        from_bytes_mod_order_wide_with_visibility,
+        &[u8; 64]
+    );
+
+    pub fn from_public_canonical_bytes_with_visibility(
+        bytes: [u8; 32], visibility: Visibility, key_share: MpcScalar<N, S>, network: SharedNetwork<N>, beaver_source: BeaverSource<S>
+    ) -> Option<Self> {
+        let value = MpcScalar::<N, S>::from_canonical_bytes_with_visibility(bytes, Visibility::Public, network, beaver_source)?;
+
+        Some(
+            Self {
+                value,
+                visibility,
+                mac_share: None,
+                key_share,
+            }
+        )
     }
+
+    macros::impl_authenticated!(
+        MpcScalar<N, S>,
+        from_public_bits,
+        from_private_bits,
+        from_bits_with_visibility,
+        [u8; 32]
+    );
+
+    macros::impl_delegated!(to_bytes, self, [u8; 32]);
+    macros::impl_delegated!(as_bytes, self, &[u8; 32]);
+    macros::impl_delegated!(is_canonical, self, bool);
 }
