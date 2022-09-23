@@ -288,6 +288,11 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a Authenticat
         let mac = {
             // Public * public results in a public value, which has no MAC
             if self.is_public() && rhs.is_public() { None }
+            else if rhs.is_public() {
+                Some(
+                    self.mac().unwrap() * rhs.value()
+                )
+            }
             else {
                 Some(
                     &value * self.key_share()
