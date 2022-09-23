@@ -1,6 +1,9 @@
 //! Implements an authenticated wrapper around the MpcScalar type for malicious security
 
+use std::ops::Index;
+
 use curve25519_dalek::scalar::Scalar;
+use subtle::ConstantTimeEq;
 
 
 
@@ -42,6 +45,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     #[inline]
     pub(crate) fn is_public(&self) -> bool {
         self.visibility == Visibility::Public
+    }
+
+    #[inline]
+    pub fn value(&self) -> MpcScalar<N, S> {
+        self.value
     }
 
     /// Create a new AuthenticatedScalar from a public u64 constant
@@ -146,5 +154,29 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     ///        the value is authenticated
     pub fn open_and_authenticate(&self) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
         unimplemented!("Not implemented yet...");
+    }
+}
+
+/**
+ * Generic trait implementations
+ */
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for AuthenticatedScalar<N, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value.eq(&other.value())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for AuthenticatedScalar<N, S> {
+    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+        self.value.ct_eq(&other.value())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for AuthenticatedScalar<N, S> {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.value.index(index)
     }
 }
