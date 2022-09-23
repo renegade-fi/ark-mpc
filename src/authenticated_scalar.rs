@@ -2,14 +2,16 @@
 
 use curve25519_dalek::scalar::Scalar;
 
-use crate::{network::MpcNetwork, mpc_scalar::MpcScalar, beaver::SharedValueSource, Visibility, SharedNetwork, BeaverSource, macros};
+
+
+use crate::{network::MpcNetwork, mpc_scalar::MpcScalar, beaver::SharedValueSource, Visibility, SharedNetwork, BeaverSource, macros, error::MpcNetworkError};
 
 
 /// An authenticated scalar, wrapper around an MPC-capable Scalar that supports methods
 /// to authenticate an opened result against a shared global MAC.
 /// See SPDZ (https://eprint.iacr.org/2012/642.pdf) for a detailed explanation.
 #[allow(dead_code)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AuthenticatedScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying MpcScalar that this structure authenticates 
     value: MpcScalar<N, S>,
@@ -24,8 +26,24 @@ pub struct AuthenticatedScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar
     visibility: Visibility,
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for AuthenticatedScalar<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            mac_share: self.mac_share.clone(),
+            key_share: self.key_share.clone(),
+            visibility: self.visibility,
+        }
+    }
+}
+
 #[allow(unused_doc_comments)]
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, S> {
+    #[inline]
+    pub(crate) fn is_public(&self) -> bool {
+        self.visibility == Visibility::Public
+    }
+
     /// Create a new AuthenticatedScalar from a public u64 constant
     macros::impl_authenticated!(
         MpcScalar<N, S>, from_public_u64, from_private_u64, from_u64_with_visibility, u64
@@ -82,4 +100,51 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     macros::impl_delegated!(to_bytes, self, [u8; 32]);
     macros::impl_delegated!(as_bytes, self, &[u8; 32]);
     macros::impl_delegated!(is_canonical, self, bool);
+}
+
+/**
+ * Secret sharing implementation
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, S> {
+    /// Shares a value with the counterparty, and creates a MAC for it using the global key
+    pub fn share_secret(&self, party_id: u64) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
+        // Share the underlying value then construct a MAC share with the counterparty
+        let my_share = self.value.share_secret(party_id)?;
+        let my_mac_share = &self.key_share * &my_share;
+
+        Ok(
+            Self {
+                value: my_share,
+                visibility: Visibility::Shared,
+                key_share: self.key_share.clone(),
+                mac_share: Some(my_mac_share),
+            }
+        )
+    }
+
+    /// From a shared value, both parties broadcast their shares and reconstruct the plaintext.
+    /// The parties no longer hold a valid secret sharing of the result, they hold the result itself.
+    pub fn open(&self) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
+        if self.is_public() {
+            return Ok(self.clone())
+        }
+
+        Ok(
+            Self {
+                value: self.value.open()?,
+                visibility: Visibility::Public,
+                key_share: self.key_share.clone(),
+                mac_share: self.mac_share.clone(),
+            }
+        )
+    }
+
+    /// Open the value and authenticate it using the MAC. This works in ___ steps:
+    ///     1. The parties open the value
+    ///     2. The parites each commit to key_share * value - mac_share
+    ///     3. The parties open these commitments and add them; if equal to 0
+    ///        the value is authenticated
+    pub fn open_and_authenticate(&self) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
+        unimplemented!("Not implemented yet...");
+    }
 }

@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Represents a scalar value allocated in an MPC network
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct MpcScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// the underlying value of the scalar allocated in the network
     pub(crate) value: Scalar,
@@ -33,6 +33,17 @@ pub struct MpcScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     pub(crate) network: SharedNetwork<N>,
     /// The source for shared values; MAC keys, beaver triples, etc
     pub(crate) beaver_source: BeaverSource<S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for MpcScalar<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value,
+            visibility: self.visibility,
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone()
+        }
+    }
 }
 
 /**
@@ -251,11 +262,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// at the end of a computation
     pub fn open(&self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
         if self.is_public() {
-            return Ok(
-                MpcScalar::from_public_scalar(
-                    self.value, self.network.clone(), self.beaver_source.clone()
-                )
-            )
+            return Ok(self.clone())
         }
 
         // Send my scalar and expect one back
