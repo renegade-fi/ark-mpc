@@ -48,8 +48,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     }
 
     #[inline]
-    pub fn value(&self) -> MpcScalar<N, S> {
-        self.value
+    pub fn value(&self) -> &MpcScalar<N, S> {
+        &self.value
     }
 
     /// Create a new AuthenticatedScalar from a public u64 constant
@@ -163,13 +163,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for AuthenticatedScalar<N, S> {
     fn eq(&self, other: &Self) -> bool {
-        self.value.eq(&other.value())
+        self.value.eq(other.value())
     }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for AuthenticatedScalar<N, S> {
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
-        self.value.ct_eq(&other.value())
+        self.value.ct_eq(other.value())
     }
 }
 
@@ -180,3 +180,5 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for Authen
         self.value.index(index)
     }
 }
+
+

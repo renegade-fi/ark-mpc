@@ -1,3 +1,4 @@
+mod authenticated_scalar;
 mod mpc_scalar;
 mod mpc_ristretto;
 mod network;
@@ -9,7 +10,7 @@ use colored::Colorize;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants};
 use dns_lookup::lookup_host;
 
-use ::mpc_ristretto::network::{QuicTwoPartyNet, MpcNetwork};
+use ::mpc_ristretto::{network::{QuicTwoPartyNet, MpcNetwork}, mpc_scalar::MpcScalar};
 use mpc_scalar::PartyIDBeaverSource;
 
 /// Integration test arguments, common to all tests
@@ -18,6 +19,7 @@ struct IntegrationTestArgs {
     party_id: u64,
     net_ref: Rc<RefCell<QuicTwoPartyNet>>,
     beaver_source: Rc<RefCell<PartyIDBeaverSource>>,
+    mac_key: MpcScalar<QuicTwoPartyNet, PartyIDBeaverSource>,
 }
 
 /// Integration test format
@@ -98,6 +100,16 @@ async fn main() {
 
     net.connect().await
         .unwrap();
+
+    // Share the global mac key (hardcoded to Scalar(15))
+    let net_ref = Rc::new(RefCell::new(net));
+    let beaver_source = Rc::new(RefCell::new(
+        PartyIDBeaverSource::new(args.party)
+    ));
+
+    let mac_key = MpcScalar::from_private_u64(15, net_ref.clone(), beaver_source.clone())
+        .share_secret(0 /* party_id */)
+        .unwrap();
     
     /**
      * Test harness
@@ -112,8 +124,9 @@ async fn main() {
 
     let test_args = IntegrationTestArgs {
         party_id: args.party,
-        net_ref: Rc::new(RefCell::new(net)),
-        beaver_source: Rc::new(RefCell::new(PartyIDBeaverSource::new(args.party))),
+        net_ref,
+        beaver_source,
+        mac_key,
     };
 
     let mut all_success = true;
