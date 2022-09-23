@@ -215,6 +215,59 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let value = if test_args.party_id == 0 { 5 } else { 6 };
+    let my_value = AuthenticatedScalar::from_private_u64(
+        value,
+        test_args.mac_key.clone(),
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone()
+    );
+
+    // Share the values
+    let shared_value1 = my_value.share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let shared_value2 = my_value.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    
+    let public_value = AuthenticatedScalar::from_public_u64(
+        7,
+        test_args.mac_key.clone(),
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone()
+    );
+
+    // Shared * shared
+    let shared_shared = (&shared_value1 * &shared_value2)
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
+    if shared_shared.to_scalar().ne(&Scalar::from(30u64)) {
+        return Err(format!("Expected {}, got {}", 30, scalar_to_u64(&shared_shared.to_scalar())));
+    }
+
+    // Public * shared
+    let public_shared = (&public_value * &shared_value1)
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
+    if public_shared.to_scalar().ne(&Scalar::from(35u64)) {
+        return Err(format!("Expected {}, got {}", 35, scalar_to_u64(&public_shared.to_scalar())))
+    }
+
+    // Public * public
+    let public_public = &public_value * &public_value;
+    if public_public.visibility() != Visibility::Public {
+        return Err(format!("Expected Public visibility, got {:?}", public_public.visibility()))
+    }
+
+    public_public.open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
+    if public_public.to_scalar().ne(&Scalar::from(49u64)) {
+        return Err(format!("Expected {}, got {}", 49, scalar_to_u64(&public_public.to_scalar())))
+    }
+
+    Ok(())
+}
+
 inventory::submit!(IntegrationTest{
     name: "authenticated-scalar::test_share_and_open",
     test_fn: test_share_and_open,
@@ -238,4 +291,9 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "authenticated-scalar::test_sub",
     test_fn: test_sub,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "authenticated-scalar::test_mul",
+    test_fn: test_mul
 });

@@ -1,6 +1,6 @@
 //! Implements an authenticated wrapper around the MpcScalar type for malicious security
 
-use std::ops::{Index, Add, AddAssign, Neg, Sub, SubAssign};
+use std::ops::{Index, Add, AddAssign, Neg, Sub, SubAssign, Mul};
 
 use curve25519_dalek::scalar::Scalar;
 use subtle::ConstantTimeEq;
@@ -273,7 +273,36 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for Authen
 /**
  * Mul and variants for borrowed, non-borrowed, wrapped values
  */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a AuthenticatedScalar<N, S>>
+    for &'a AuthenticatedScalar<N, S>
+{
+    type Output = AuthenticatedScalar<N, S>;    
 
+    fn mul(self, rhs: &'a AuthenticatedScalar<N, S>) -> Self::Output {
+        // If public * shared, swap arguments so public is on the RHS
+        if self.is_public() && rhs.is_shared() {
+            return rhs * self
+        }
+
+        let value = self.value() * rhs.value();
+        let mac = {
+            // Public * public results in a public value, which has no MAC
+            if self.is_public() && rhs.is_public() { None }
+            else {
+                Some(
+                    &value * self.key_share()
+                )
+            }
+        };
+
+        Self::Output {
+            value,
+            visibility: Visibility::min_visibility_two(self, rhs),
+            mac_share: mac,
+            key_share: self.key_share()
+        }
+    }
+}
 
 /**
  * Add and variants for borrowed, non-borrowed, wrapped values
