@@ -1,6 +1,6 @@
 //! Implements an authenticated wrapper around the MpcScalar type for malicious security
 
-use std::ops::{Index, Add, AddAssign};
+use std::ops::{Index, Add, AddAssign, Neg, Sub, SubAssign};
 
 use curve25519_dalek::scalar::Scalar;
 use subtle::ConstantTimeEq;
@@ -328,3 +328,50 @@ macros::impl_arithmetic_wrapped_authenticated!(
 );
 
 
+/**
+ * Sub and variants for borrowed, non-borrowed, and wrapped types
+ */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a AuthenticatedScalar<N, S>>
+    for &'a AuthenticatedScalar<N, S>
+{
+    type Output = AuthenticatedScalar<N, S>; 
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: &'a AuthenticatedScalar<N, S>) -> Self::Output {
+        self + rhs.neg()
+    }
+}
+
+macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, SubAssign, sub_assign, -, AuthenticatedScalar<N, S>);
+macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, SubAssign, sub_assign, -, Scalar);
+macros::impl_arithmetic_wrapper!(AuthenticatedScalar<N, S>, Sub, sub, -, AuthenticatedScalar<N, S>);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedScalar<N, S>, Sub, sub, -, from_public_scalar, Scalar
+);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedScalar<N, S>, Sub, sub, -, from_mpc_scalar, MpcScalar<N, S>
+);
+
+/**
+ * Neg and variants for borrowed, non-borrowed types
+ */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a AuthenticatedScalar<N, S> {
+    type Output = AuthenticatedScalar<N, S>;
+
+    fn neg(self) -> Self::Output {
+        Self::Output {
+            value: self.value().neg(),
+            visibility: self.visibility(),
+            mac_share: self.mac().map(|value| value.neg()),
+            key_share: self.key_share(),
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for AuthenticatedScalar<N, S> {
+    type Output = AuthenticatedScalar<N, S>;
+
+    fn neg(self) -> Self::Output {
+        (&self).neg()
+    }
+}

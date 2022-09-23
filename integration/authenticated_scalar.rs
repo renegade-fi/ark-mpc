@@ -1,4 +1,4 @@
-use curve25519_dalek::scalar::{Scalar, self};
+use curve25519_dalek::scalar::{Scalar};
 use ::mpc_ristretto::{Visible, Visibility};
 use mpc_ristretto::{authenticated_scalar::AuthenticatedScalar, mpc_scalar::scalar_to_u64};
 
@@ -164,6 +164,57 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 holds 10 and party 1 holds 5
+    let value = if test_args.party_id == 0 { 10 } else { 5 };
+    let my_value = AuthenticatedScalar::from_private_u64(
+        value,
+        test_args.mac_key.clone(),
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone()
+    );
+
+    // Shared values
+    let shared_value1 = my_value.share_secret(0 /* party_id */) 
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let shared_value2 = my_value.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    
+    let public_value = AuthenticatedScalar::from_public_u64(
+        15,
+        test_args.mac_key.clone(),
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone()
+    );
+
+    // Shared value - shared value
+    let shared_shared = (&shared_value1 - &shared_value2)
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
+    if shared_shared.to_scalar().ne(&Scalar::from(5u64)) {
+        return Err(format!("Expected {}, got {}", 5, scalar_to_u64(&shared_shared.to_scalar())))
+    }
+
+    // Public value - shared value
+    let public_shared = (&public_value - &shared_value1)
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
+    if public_shared.to_scalar().ne(&Scalar::from(5u64)) {
+        return Err(format!("Expected {}, got {}", 5, scalar_to_u64(&public_shared.to_scalar())))
+    }
+
+    // Public value - public value
+    #[allow(clippy::eq_op)]
+    let public_public = (&public_value - &public_value)
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
+    if public_public.to_scalar().ne(&Scalar::from(0u64)) {
+        return Err(format!("Expected {}, got {}", 0, scalar_to_u64(&public_public.to_scalar())));
+    }
+
+    Ok(())
+}
+
 inventory::submit!(IntegrationTest{
     name: "authenticated-scalar::test_share_and_open",
     test_fn: test_share_and_open,
@@ -182,4 +233,9 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "authenticated-scalar::test_add",
     test_fn: test_add,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "authenticated-scalar::test_sub",
+    test_fn: test_sub,
 });
