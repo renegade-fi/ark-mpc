@@ -1,8 +1,8 @@
 use curve25519_dalek::scalar::{Scalar};
 use ::mpc_ristretto::{Visible, Visibility};
-use mpc_ristretto::{authenticated_scalar::AuthenticatedScalar, mpc_scalar::scalar_to_u64};
+use mpc_ristretto::{authenticated_scalar::AuthenticatedScalar, mpc_scalar::scalar_to_u64, network::QuicTwoPartyNet, error::MpcNetworkError};
 
-use crate::{IntegrationTestArgs, IntegrationTest};
+use crate::{IntegrationTestArgs, IntegrationTest, mpc_scalar::PartyIDBeaverSource};
 
 
 fn test_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -268,6 +268,82 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let values: Vec<u64> = if test_args.party_id == 0 { vec![1, 2, 3] } else { vec![4, 5, 6] };
+    let my_values = values.into_iter()
+        .map(|value| {
+            AuthenticatedScalar::from_private_u64(
+                value,
+                test_args.mac_key.clone(),
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+        })
+        .collect::<Vec<AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource>>>();
+    
+    // Share the values
+    let shared_values1 = my_values.iter()
+        .map(|value| value.share_secret(0 /* party_id */))
+        .collect::<Result<Vec<AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource>>, MpcNetworkError>>()
+        .map_err(|err| format!("Error sharing values: {:?}", err))?;
+
+    let shared_values2 = my_values.iter()
+        .map(|value| value.share_secret(1 /* party_id */))
+        .collect::<Result<Vec<AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource>>, MpcNetworkError>>()
+        .map_err(|err| format!("Error sharing values: {:?}", err))?;
+    
+    // Take product, open and authenticate, then enforce equality
+    let product: AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource> = shared_values1.iter()
+        .chain(shared_values2.iter())
+        .product();
+    
+    let product_open = product.open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
+    if product_open.to_scalar().ne(&Scalar::from(720u64)) {
+        return Err(format!("Expected {}, got {}", 720, scalar_to_u64(&product_open.to_scalar())))
+    }
+
+    Ok(())
+}
+
+fn test_sum(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let values: Vec<u64> = if test_args.party_id == 0 { vec![1, 2, 3] } else { vec![4, 5, 6] };
+    let my_values = values.into_iter()
+        .map(|value| {
+            AuthenticatedScalar::from_private_u64(
+                value,
+                test_args.mac_key.clone(),
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+        })
+        .collect::<Vec<AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource>>>();
+    
+    // Share the values
+    let shared_values1 = my_values.iter()
+        .map(|value| value.share_secret(0 /* party_id */))
+        .collect::<Result<Vec<AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource>>, MpcNetworkError>>()
+        .map_err(|err| format!("Error sharing values: {:?}", err))?;
+
+    let shared_values2 = my_values.iter()
+        .map(|value| value.share_secret(1 /* party_id */))
+        .collect::<Result<Vec<AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource>>, MpcNetworkError>>()
+        .map_err(|err| format!("Error sharing values: {:?}", err))?;
+    
+    // Take the sum, open and authenticate, then enforce equality
+    let sum: AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource> = shared_values1.iter()
+        .chain(shared_values2.iter())
+        .sum();
+    
+    let sum_open = sum.open_and_authenticate()
+        .map_err(|err| format!("Error opening and authenticating: {:?}", err))?;
+    if sum_open.to_scalar().ne(&Scalar::from(21u64)) {
+        return Err(format!("Expected {}, got {}", 21, scalar_to_u64(&sum_open.to_scalar())))
+    }
+
+    Ok(())
+}
+
 inventory::submit!(IntegrationTest{
     name: "authenticated-scalar::test_share_and_open",
     test_fn: test_share_and_open,
@@ -296,4 +372,14 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "authenticated-scalar::test_mul",
     test_fn: test_mul
+});
+
+inventory::submit!(IntegrationTest{
+    name: "authenticated-scalar::test_product",
+    test_fn: test_product,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "authenticated-scalar::test_sum",
+    test_fn: test_sum,
 });

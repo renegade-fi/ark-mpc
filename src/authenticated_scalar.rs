@@ -1,6 +1,6 @@
 //! Implements an authenticated wrapper around the MpcScalar type for malicious security
 
-use std::ops::{Index, Add, AddAssign, Neg, Sub, SubAssign, Mul};
+use std::{ops::{Index, Add, AddAssign, Neg, Sub, SubAssign, Mul, MulAssign}, borrow::Borrow, iter::{Product, Sum}};
 
 use curve25519_dalek::scalar::Scalar;
 use subtle::ConstantTimeEq;
@@ -304,6 +304,16 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a Authenticat
     }
 }
 
+macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, MulAssign, mul_assign, *, AuthenticatedScalar<N, S>);
+macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, MulAssign, mul_assign, *, Scalar);
+macros::impl_arithmetic_wrapper!(AuthenticatedScalar<N, S>, Mul, mul, *, AuthenticatedScalar<N, S>);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedScalar<N, S>, Mul, mul, *, from_public_scalar, Scalar
+);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedScalar<N, S>, Mul, mul, *, from_mpc_scalar, MpcScalar<N, S>
+);
+
 /**
  * Add and variants for borrowed, non-borrowed, wrapped values
  */
@@ -402,5 +412,48 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for AuthenticatedSc
 
     fn neg(self) -> Self::Output {
         (&self).neg()
+    }
+}
+
+/**
+ * Iterator traits
+ */
+impl<N, S, T> Product<T> for AuthenticatedScalar<N, S> where
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
+    T: Borrow<AuthenticatedScalar<N, S>>
+{
+    fn product<I: Iterator<Item = T>>(iter: I) -> Self {
+        let mut peekable = iter.peekable();
+        let first_elem = peekable.peek().unwrap();
+        let key_share: MpcScalar<N, S> = first_elem.borrow()
+            .key_share
+            .clone();
+        let network: SharedNetwork<N> = first_elem.borrow().network();
+        let beaver_source: BeaverSource<S> = first_elem.borrow().beaver_source();
+        
+        peekable.fold(
+            AuthenticatedScalar::one(key_share, network, beaver_source),
+            |acc, item| acc * item.borrow()
+        )
+    } 
+}
+
+impl<N, S, T> Sum<T> for AuthenticatedScalar<N, S> where
+    N: MpcNetwork + Send,
+    S: SharedValueSource<Scalar>,
+    T: Borrow<AuthenticatedScalar<N, S>>
+{
+    fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
+        let mut peekable = iter.peekable();
+        let first_elem = peekable.peek().unwrap();
+        let key_share: MpcScalar<N, S> = first_elem.borrow().key_share();
+        let network: SharedNetwork<N> = first_elem.borrow().network();
+        let beaver_source: BeaverSource<S> = first_elem.borrow().beaver_source();
+
+        peekable.fold(
+            AuthenticatedScalar::zero(key_share, network, beaver_source),
+            |acc, item| acc + item.borrow()
+        )
     }
 }
