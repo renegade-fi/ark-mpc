@@ -2,6 +2,12 @@
 use quinn::{ConnectionError, ConnectError};
 
 #[derive(Debug)]
+pub enum MpcError {
+    NetworkError(MpcNetworkError),
+    AuthenticationError,
+}
+
+#[derive(Debug)]
 pub enum MpcNetworkError {
     SendError,
     RecvError,

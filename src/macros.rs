@@ -264,6 +264,66 @@ macro_rules! impl_arithmetic_wrapper {
     }
 }
 
+macro_rules! impl_arithmetic_wrapped_authenticated {
+    ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $from_fn:ident, $rhs:ty) => {
+        /// Default implementation
+        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: $rhs) -> Self::Output {
+                &self $op <$lhs>::$from_fn(
+                    rhs, 
+                    self.key_share.clone(), 
+                    self.network(), 
+                    self.beaver_source()
+                )
+            }
+        }
+
+        /// Implementation for borrowed reference types
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for &'a $lhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: $rhs) -> Self::Output {
+                self $op <$lhs>::$from_fn(
+                    rhs, 
+                    self.key_share(), 
+                    self.network(), 
+                    self.beaver_source()
+                )
+            }
+        }
+        
+        /// Reverse implementation with wrapped type on the LHS
+        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$lhs> for $rhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: $lhs) -> Self::Output {
+                &rhs $op <$lhs>::$from_fn(
+                    self, 
+                    rhs.key_share.clone(), 
+                    rhs.network(), 
+                    rhs.beaver_source(),
+                )
+            }
+        }
+
+        /// Reverse implementation with wrapped type on LHS and borrowed reference on RHS
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $lhs> for $rhs {
+            type Output = $lhs;
+
+            fn $fn_name(self, rhs: &'a $lhs) -> Self::Output {
+                rhs $op <$lhs>::$from_fn(
+                    self, 
+                    rhs.key_share(), 
+                    rhs.network(), 
+                    rhs.beaver_source()
+                )
+            }
+        }
+    };
+}
+
 // Exports
 pub(crate) use impl_delegated;
 pub(crate) use impl_delegated_wrapper;
@@ -271,3 +331,4 @@ pub(crate) use impl_authenticated;
 pub(crate) use impl_arithmetic_assign;
 pub(crate) use impl_arithmetic_wrapper;
 pub(crate) use impl_arithmetic_wrapped;
+pub(crate) use impl_arithmetic_wrapped_authenticated;

@@ -2,8 +2,7 @@ use std::{cmp::Ordering, cell::RefCell, rc::Rc};
 
 use beaver::SharedValueSource;
 use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::MpcRistrettoPoint;
-use mpc_scalar::MpcScalar;
+
 use network::MpcNetwork;
 
 pub mod authenticated_scalar;
@@ -20,6 +19,11 @@ pub mod network;
 pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource<Scalar>> = Rc<RefCell<S>>;
+
+/// A wrapper trait that allows for implementing generic comparisons
+pub trait Visible {
+    fn visibility(&self) -> Visibility;
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Visibility determines what information peers have for values allocated
@@ -39,27 +43,8 @@ pub enum Visibility {
 /// Convenience methods for comparing visibilities on various types
 impl Visibility {
     /// Returns the minimum visibility between two scalars
-    pub(crate) fn min_visibility_two_scalars<N, S>(a: &MpcScalar<N, S>, b: &MpcScalar<N, S>) -> Visibility where
-        N: MpcNetwork + Send,
-        S: SharedValueSource<Scalar>
-    {
-        if a.visibility.lt(&b.visibility) { a.visibility } else { b.visibility }
-    }
-
-    /// Returns the minimum visibility between two Ristretto points
-    pub(crate) fn min_visibility_two_points<N, S>(a: &MpcRistrettoPoint<N, S>, b: &MpcRistrettoPoint<N, S>) -> Visibility where
-        N: MpcNetwork + Send,
-        S: SharedValueSource<Scalar>
-    {
+    pub(crate) fn min_visibility_two(a: &impl Visible, b: &impl Visible) -> Visibility {
         if a.visibility().lt(&b.visibility()) { a.visibility() } else { b.visibility() }
-    }
-
-    /// Returns the minimum visibility between a point and a scalar
-    pub(crate) fn min_visibility_point_scalar<N, S>(point: &MpcRistrettoPoint<N, S>, scalar: &MpcScalar<N, S>) -> Visibility where
-        N: MpcNetwork + Send,
-        S: SharedValueSource<Scalar>
-    {
-        if point.visibility().lt(&scalar.visibility()) { point.visibility() } else { scalar.visibility() }
     }
 }
 

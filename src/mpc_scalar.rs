@@ -19,7 +19,7 @@ use crate::{
     error::MpcNetworkError, 
     macros, 
     Visibility, 
-    SharedNetwork, 
+    SharedNetwork, Visible, 
 };
 
 /// Represents a scalar value allocated in an MPC network
@@ -75,11 +75,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     #[inline]
     pub fn value(&self) -> Scalar {
         self.value
-    }
-
-    #[inline]
-    pub(crate) fn visibility(&self) -> Visibility {
-        self.visibility
     }
 
     /**
@@ -301,6 +296,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
 /**
  * Generic trait implementations
  */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Visible for MpcScalar<N, S> {
+    fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+}
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for MpcScalar<N, S> {
     fn eq(&self, other: &Self) -> bool {
@@ -368,7 +368,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
         } else {
             // Directly multiply
             MpcScalar {
-                visibility: Visibility::min_visibility_two_scalars(self, rhs),
+                visibility: Visibility::min_visibility_two(self, rhs),
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
                 value: self.value * rhs.value
@@ -420,7 +420,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
 
         MpcScalar {
             value: res,
-            visibility: Visibility::min_visibility_two_scalars(self, rhs),
+            visibility: Visibility::min_visibility_two(self, rhs),
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(), 
         }

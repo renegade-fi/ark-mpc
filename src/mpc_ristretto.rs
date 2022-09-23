@@ -3,7 +3,6 @@
 use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub, Mul, MulAssign}};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT, traits::{MultiscalarMul, Identity}};
-
 use futures::executor::block_on;
 use rand_core::{RngCore, CryptoRng, OsRng};
 use subtle::ConstantTimeEq;
@@ -16,7 +15,7 @@ use crate::{
     macros, 
     Visibility, 
     SharedNetwork, 
-    BeaverSource
+    BeaverSource, Visible
 };
 
 /// Represents a Ristretto point that has been allocated in the MPC network
@@ -176,11 +175,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     #[inline]
     pub fn value(&self) -> RistrettoPoint {
         self.value
-    }
-
-    #[inline]
-    pub(crate) fn visibility(&self) -> Visibility {
-        self.visibility
     }
 
     #[inline]
@@ -356,6 +350,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
 /**
  * Generic Trait Implementations
  */
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Visible for MpcRistrettoPoint<N, S> {
+    fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for MpcRistrettoPoint<N, S> {
     fn eq(&self, other: &Self) -> bool {
         self.value().eq(&other.value())
@@ -436,7 +437,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
             // Directly multiply
             MpcRistrettoPoint {
                 value: self.value() * rhs.value(),
-                visibility: Visibility::min_visibility_point_scalar(self, rhs),
+                visibility: Visibility::min_visibility_two(self, rhs),
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
             }
@@ -559,7 +560,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcRistrett
 
         MpcRistrettoPoint {
             value: res,
-            visibility: Visibility::min_visibility_two_points(self, rhs),
+            visibility: Visibility::min_visibility_two(self, rhs),
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(),
         }
