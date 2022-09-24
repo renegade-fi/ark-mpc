@@ -5,7 +5,7 @@ use std::{ops::{Index, Add, AddAssign, Neg, Sub, SubAssign, Mul, MulAssign}, bor
 use curve25519_dalek::scalar::Scalar;
 use subtle::ConstantTimeEq;
 
-use crate::{network::MpcNetwork, mpc_scalar::MpcScalar, beaver::SharedValueSource, Visibility, SharedNetwork, BeaverSource, macros, error::{MpcNetworkError, MpcError}, Visible};
+use crate::{network::MpcNetwork, mpc_scalar::{MpcScalar}, beaver::SharedValueSource, Visibility, SharedNetwork, BeaverSource, macros, error::{MpcNetworkError, MpcError}, Visible};
 
 
 /// An authenticated scalar, wrapper around an MPC-capable Scalar that supports methods
@@ -204,27 +204,27 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
         )
     }
 
+
     /// Open the value and authenticate it using the MAC. This works in ___ steps:
     ///     1. The parties open the value
     ///     2. The parites each commit to key_share * value - mac_share
-    ///     3. The parties open these commitments and add them; if equal to 0
-    ///        the value is authenticated
+    ///     3. The parties open these commitments and add them; if equal to 0 the
+    ///        value is authenticated
     pub fn open_and_authenticate(&self) -> Result<AuthenticatedScalar<N, S>, MpcError> {
-        // TODO: implement commitment phase, current implementation is not safe
         // If the value is not shared, there is nothing to open and authenticate
         if !self.is_shared() {
             return Ok(self.clone())
         }
 
-        // Open the value
+        // 1. Open the underlying value
         let opened_value = self.value().open()
             .map_err(MpcError::NetworkError)?;
+
+        // 2. Commit to the value key_share * value - mac_share, then open the values and check commitments
         let mac_check_share = &self.key_share * &opened_value - self.mac().unwrap();
 
-        // The opening of hte mac_check should be 0
-        let mac_check_open = mac_check_share.open()
-            .map_err(MpcError::NetworkError)?;
-        if mac_check_open.value().ne(&Scalar::zero()) {
+        // 3. Verify the authenticated mac check shares sum to zero
+        if mac_check_share.commit_and_open()?.value().ne(&Scalar::zero()) {
             return Err(MpcError::AuthenticationError)
         }
 

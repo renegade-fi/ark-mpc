@@ -56,6 +56,16 @@ impl PedersenCommitment {
         self.commitment
     }
 
+    #[inline]
+    pub fn get_blinding(&self) -> Scalar {
+        self.blinding_factor
+    }
+    
+    #[inline]
+    pub fn get_value(&self) -> Scalar {
+        self.value
+    }
+
     /// Create a Pedersen commitment to a value
     pub fn commit(value: Scalar) -> PedersenCommitment {
         // Sample a secure random blinding scalar

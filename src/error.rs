@@ -5,6 +5,7 @@ use quinn::{ConnectionError, ConnectError};
 pub enum MpcError {
     NetworkError(MpcNetworkError),
     AuthenticationError,
+    VisibilityError(String),
 }
 
 #[derive(Debug)]

@@ -16,10 +16,10 @@ use crate::{
     BeaverSource,
     beaver::{SharedValueSource},
     network::MpcNetwork, 
-    error::MpcNetworkError, 
+    error::{MpcNetworkError, MpcError}, 
     macros, 
     Visibility, 
-    SharedNetwork, Visible, 
+    SharedNetwork, Visible, commitment::PedersenCommitment, 
 };
 
 /// Represents a scalar value allocated in an MPC network
@@ -75,6 +75,21 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     #[inline]
     pub fn value(&self) -> Scalar {
         self.value
+    }
+
+    #[inline]
+    pub fn to_scalar(&self) -> Scalar {
+        self.value()
+    }
+
+    #[inline]
+    pub(crate) fn network(&self) -> SharedNetwork<N> {
+        self.network.clone()
+    }
+
+    #[inline]
+    pub(crate) fn beaver_source(&self) -> BeaverSource<S> {
+        self.beaver_source.clone()
     }
 
     /**
@@ -275,6 +290,53 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
                 self.network.clone(),
                 self.beaver_source.clone()
             )
+        )
+    }
+
+    /// From a shared value:
+    ///     1. Commit to the value and exchange commitments
+    ///     2. Open those commitments to the underlying value
+    ///     3. Verify that the peer's opening matches their commitment
+    pub(crate) fn commit_and_open(&self) -> Result<MpcScalar<N, S>, MpcError> {
+        // Only a shared value can be committed and opened
+        if !self.is_shared() {
+            return Err(MpcError::VisibilityError(
+                "commit_and_open may only be called on shared values".to_string()
+            ))
+        }
+
+        // Compute a Pedersen commitment to the value
+        let commitment = PedersenCommitment::commit(self.to_scalar());
+        let peer_commitment = block_on(
+            self.network().as_ref()
+                .borrow_mut()
+                .broadcast_single_point(commitment.get_commitment())
+        ).map_err(MpcError::NetworkError)?;
+
+        // Open the commitment to the underlying value
+        let received_scalars = block_on(
+            self.network().as_ref()
+                .borrow_mut()
+                .broadcast_scalars(vec![
+                    commitment.get_blinding(),
+                    commitment.get_value()
+                ])
+        ).map_err(MpcError::NetworkError)?;
+
+        let (peer_blinding, peer_value) = (received_scalars[0], received_scalars[1]);
+
+        // Verify the commitment and return the opened value
+        if !PedersenCommitment::verify_from_values(peer_commitment, peer_blinding, peer_value) {
+            return Err(MpcError::AuthenticationError)
+        }
+
+        Ok(
+            Self {
+                value: self.value() + peer_value,
+                visibility: Visibility::Public,
+                network: self.network(),
+                beaver_source: self.beaver_source(),
+            }
         )
     }
 
@@ -530,6 +592,7 @@ mod test {
     use std::{rc::Rc, cell::RefCell};
 
     use curve25519_dalek::scalar::Scalar;
+    use rand_core::OsRng;
 
     use crate::{network::dummy_network::DummyMpcNetwork, beaver::DummySharedScalarSource};
 
@@ -615,6 +678,22 @@ mod test {
             res.open().unwrap(),
             MpcScalar::from_public_u64(9, network, beaver_source)
         )
+    }
+
+    #[test]
+    fn test_add_associative() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+
+        // Add two random values, ensure associativity
+        let mut rng = OsRng{};
+        let v1 = MpcScalar::random(&mut rng, network, beaver_source);
+        let v2 = Scalar::random(&mut rng);
+
+        let res1 = &v1 + v2;
+        let res2 = v2 + &v1;
+
+        assert_eq!(res1, res2);
     }
 
     #[test]
