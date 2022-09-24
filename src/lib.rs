@@ -6,6 +6,7 @@ use curve25519_dalek::scalar::Scalar;
 use network::MpcNetwork;
 
 pub mod authenticated_scalar;
+pub mod authenticated_ristretto;
 pub mod beaver;
 pub mod commitment;
 pub mod error;

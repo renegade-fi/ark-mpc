@@ -1,6 +1,6 @@
 //! Groups the definitions and trait implementations for a Ristretto point within the MPC net
 
-use std::{convert::TryInto, borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub, Mul, MulAssign}};
+use std::{borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub, Mul, MulAssign}};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT, traits::{MultiscalarMul, Identity}};
 use futures::executor::block_on;
@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Represents a Ristretto point that has been allocated in the MPC network
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct MpcRistrettoPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying value of the Ristretto point in the network
     value: RistrettoPoint,
@@ -31,16 +31,20 @@ pub struct MpcRistrettoPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     beaver_source: BeaverSource<S>
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for MpcRistrettoPoint<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value(),
+            visibility: self.visibility(),
+            network: self.network(),
+            beaver_source: self.beaver_source(),
+        }
+    }
+}
+
 /**
  * Static and helper methods
  */
-
-/// Converts a scalar to u64
-pub fn ristretto_to_u64(a: &RistrettoPoint) -> u64 {
-    u64::from_le_bytes(
-        a.compress().to_bytes()[..8].try_into().unwrap()
-    )
-}
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S> {
     /// Multiplies a scalar by the Ristretto base point
@@ -126,7 +130,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         // Public values should not be opened, simply clone the value
         if self.is_public() {
             return Ok (
-                MpcRistrettoPoint::from_ristretto_point(self.value(), self.network.clone(), self.beaver_source.clone())
+                self.clone()
             )
         }
 
@@ -175,6 +179,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     #[inline]
     pub fn value(&self) -> RistrettoPoint {
         self.value
+    }
+
+    #[inline]
+    pub(crate) fn network(&self) -> SharedNetwork<N> {
+        self.network.clone()
+    }
+
+    #[inline]
+    pub(crate) fn beaver_source(&self) -> BeaverSource<S> {
+        self.beaver_source.clone()
     }
 
     #[inline]
@@ -240,8 +254,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         }
     }
 
-    /// Create a wrapper around an existing Ristretto point, assumed visibility is public
-    pub fn from_ristretto_point(
+    /// Create a new MpcRistrettoPoint from an existing, public RistrettoPoint
+    pub fn from_public_ristretto_point(
         a: RistrettoPoint,
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>
@@ -249,8 +263,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         Self::from_ristretto_point_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
+    /// Create a new MpcRistrettoPoint from an existing, private RistrettoPoint
+    pub fn from_private_ristretto_point(
+        a: RistrettoPoint,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self::from_ristretto_point_with_visibility(a, Visibility::Private, network, beaver_source)
+    }
+
     /// Create a wrapper around an existing Ristretto point with visibility specified
-    pub fn from_ristretto_point_with_visibility(
+    pub(crate) fn from_ristretto_point_with_visibility(
         a: RistrettoPoint,
         visibility: Visibility,
         network: SharedNetwork<N>,
@@ -485,7 +508,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint>
     type Output = MpcRistrettoPoint<N, S>;
 
     fn mul(self, rhs: RistrettoPoint) -> Self::Output {
-        self * MpcRistrettoPoint::from_ristretto_point(rhs, self.network.clone(), self.beaver_source.clone())
+        self * MpcRistrettoPoint::from_public_ristretto_point(rhs, self.network.clone(), self.beaver_source.clone())
     }
 }
 
@@ -569,7 +592,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcRistrett
 
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, +, MpcRistrettoPoint<N, S>);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, +, RistrettoPoint);
-macros::impl_arithmetic_wrapped!(MpcRistrettoPoint<N, S>, Add, add, +, from_ristretto_point, RistrettoPoint);
+macros::impl_arithmetic_wrapped!(MpcRistrettoPoint<N, S>, Add, add, +, from_public_ristretto_point, RistrettoPoint);
 macros::impl_arithmetic_wrapper!(MpcRistrettoPoint<N, S>, Add, add, +, MpcRistrettoPoint<N, S>);
 
 /**
@@ -588,7 +611,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcRistrett
 
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, SubAssign, sub_assign, -, MpcRistrettoPoint<N, S>);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, SubAssign, sub_assign, -, RistrettoPoint);
-macros::impl_arithmetic_wrapped!(MpcRistrettoPoint<N, S>, Sub, sub, -, from_ristretto_point, RistrettoPoint);
+macros::impl_arithmetic_wrapped!(MpcRistrettoPoint<N, S>, Sub, sub, -, from_public_ristretto_point, RistrettoPoint);
 macros::impl_arithmetic_wrapper!(MpcRistrettoPoint<N, S>, Sub, sub, -, MpcRistrettoPoint<N, S>);
 
 /**
@@ -685,5 +708,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
             network,
             beaver_source,
         }
+    }
+
+    /// Convert form a CompressedRistretto point to a RistrettoPoint
+    pub fn decompress(&self) -> Option<MpcRistrettoPoint<N, S>> {
+        Some(
+            MpcRistrettoPoint {
+                value: self.value.decompress()?,
+                visibility: self.visibility,
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone()
+            }
+        )
     }
 }
