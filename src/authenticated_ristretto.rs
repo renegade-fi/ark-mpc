@@ -1,9 +1,9 @@
 //! Groups logic for a Ristretto Point that contains an authenticated value
-
 use curve25519_dalek::{scalar::Scalar, ristretto::RistrettoPoint};
+use rand_core::{RngCore, CryptoRng};
+use subtle::ConstantTimeEq;
 
-
-use crate::{network::MpcNetwork, beaver::SharedValueSource, mpc_ristretto::MpcRistrettoPoint, mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros};
+use crate::{network::{MpcNetwork}, beaver::SharedValueSource, mpc_ristretto::{MpcRistrettoPoint, MpcCompressedRistretto}, mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros, Visible};
 
 
 /// An authenticated Ristretto point, wrapper around an MPC-capable Ristretto point
@@ -36,7 +36,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for Authenticated
     }
 }
 
-#[allow(unused_doc_comments)]
+#[allow(unused_doc_comments, dead_code)]
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<N, S> {
     #[inline]
     pub(crate) fn is_public(&self) -> bool {
@@ -119,6 +119,109 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
         }
     }
 
+    // Create a random authenticated Ristretto point, assumed private
+    pub fn random<R: RngCore + CryptoRng>(
+        rng: &mut R,
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>
+    ) -> Self {
+        Self {
+            value: MpcRistrettoPoint::random(rng, network, beaver_source),
+            visibility: Visibility::Private,
+            mac_share: None,  // Private values don't have MACs
+            key_share,
+        }
+    }
+
     macros::impl_authenticated!(MpcRistrettoPoint<N, S>, identity);
     macros::impl_authenticated!(MpcRistrettoPoint<N, S>, default);
+
+    pub fn compress(&self) -> AuthenticatedCompressedRistretto<N, S> {
+        AuthenticatedCompressedRistretto { 
+            value: self.value().compress(),
+            visibility: self.visibility,
+            mac_share: self.mac().map(|val| val.compress()),
+            key_share: self.key_share(),
+        }
+    }
+}
+
+/**
+ * Secret sharing implementation
+ */
+
+/**
+ * Generic trait implementations
+ */
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Visible for AuthenticatedRistretto<N, S> {
+    fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for AuthenticatedRistretto<N, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value().eq(other.value())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for AuthenticatedRistretto<N, S> {}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for AuthenticatedRistretto<N, S> {
+    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+        self.value().ct_eq(other.value())
+    }
+}
+
+/**
+ * Mul and variants for borrowed, non-borrowed values
+ */
+
+
+/**
+ * Add and variants for borrowed, non-borrowed values
+ */
+
+
+/**
+ * Sub and variants for borrowed, non-borrowed values
+ */
+
+/**
+ * Neg and variants for borrowed, non-borrowed values
+ */
+
+/**
+ * Compressed Representation
+ */
+
+/// An authenticated CompressedRistrettoPoint where authentication is over the decompressed version
+pub struct AuthenticatedCompressedRistretto<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
+    /// The underlying value that this structure authenticates
+    value: MpcCompressedRistretto<N, S>,
+    /// The visibility of this Ristretto point to peers in the network
+    visibility: Visibility,
+    /// The share of the MAC for this value
+    mac_share: Option<MpcCompressedRistretto<N, S>>,
+    /// The share of the MAC key held by the local party
+    key_share: MpcScalar<N, S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressedRistretto<N, S> {
+    pub fn decompress(&self) -> Option<AuthenticatedRistretto<N, S>> {
+        let new_mac = match &self.mac_share {
+            None => None,
+            Some(val) => Some(val.decompress()?)
+        };
+
+        Some(
+            AuthenticatedRistretto {
+                value: self.value.decompress()?,
+                visibility: self.visibility,
+                mac_share: new_mac,
+                key_share: self.key_share.clone()
+            }
+        )
+    }
 }

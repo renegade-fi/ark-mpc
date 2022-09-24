@@ -143,18 +143,6 @@ async fn main() {
         all_success &= validate_success(res, args.party);
     }
 
-    // Close the network
-    #[allow(clippy::await_holding_refcell_ref, unused_must_use)]
-    if test_args.net_ref
-        .as_ref()
-        .borrow_mut()
-        .close()
-        .await
-        .is_err()
-    {
-        println!("Error tearing down connection");
-    }
-
     if all_success {
         if args.party == 0 {
             println!(

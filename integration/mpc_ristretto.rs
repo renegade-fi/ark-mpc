@@ -1,7 +1,7 @@
 
 
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants::RISTRETTO_BASEPOINT_POINT, traits::MultiscalarMul};
-use ::mpc_ristretto::Visibility;
+
 use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::MpcScalar};
 
 use crate::{IntegrationTestArgs, IntegrationTest};
@@ -21,9 +21,8 @@ fn test_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let my_value = if test_args.party_id == 0 { value1 } else { value2 };
 
     // Allocate the value in the network
-    let my_mpc_value = MpcRistrettoPoint::from_u64_with_visibility(
+    let my_mpc_value = MpcRistrettoPoint::from_private_u64(
         my_value, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -55,9 +54,8 @@ fn test_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
 fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let share = {
         if test_args.party_id == 0 {
-            MpcRistrettoPoint::from_u64_with_visibility(
+            MpcRistrettoPoint::from_private_u64(
                 10, 
-                Visibility::Private, 
                 test_args.net_ref.clone(), 
                 test_args.beaver_source.clone(),
             )
@@ -82,9 +80,8 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 holds 42 and party 1 holds 33
     let value = if test_args.party_id == 0 { 42 } else { 33 };
 
-    let my_value = MpcRistrettoPoint::from_u64_with_visibility(
+    let my_value = MpcRistrettoPoint::from_private_u64(
         value, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -96,7 +93,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value2_shared = my_value.share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let public_value  = MpcRistrettoPoint::from_u64(
+    let public_value  = MpcRistrettoPoint::from_public_u64(
         58,
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
@@ -136,9 +133,8 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 holds 42 and party 1 holds 33
     let value = if test_args.party_id == 0 { 42 } else { 33 };
 
-    let my_value = MpcRistrettoPoint::from_u64_with_visibility(
+    let my_value = MpcRistrettoPoint::from_private_u64(
         value, 
-        Visibility::Private, 
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );
@@ -148,7 +144,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value2_shared = my_value.share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let public_value  = MpcRistrettoPoint::from_u64(
+    let public_value  = MpcRistrettoPoint::from_public_u64(
         58,
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
@@ -187,8 +183,8 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value = if test_args.party_id == 0 { 5 } else { 6 };
 
     // Construct a shared point and a shared scalar
-    let point_shared = MpcRistrettoPoint::from_u64_with_visibility(
-        value, Visibility::Shared, test_args.net_ref.clone(), test_args.beaver_source.clone()
+    let point_shared = MpcRistrettoPoint::from_private_u64(
+        value, test_args.net_ref.clone(), test_args.beaver_source.clone()
     )
         .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
@@ -200,7 +196,7 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
     // Construct a public point and a public scalar
-    let public_point  = MpcRistrettoPoint::from_u64(
+    let public_point  = MpcRistrettoPoint::from_public_u64(
         7,
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
@@ -251,9 +247,8 @@ fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Computing 1 * 2 + 3 * 4 == 14
     let my_value = if test_args.party_id == 0 { 2 } else { 4 };
 
-    let my_point = MpcRistrettoPoint::from_u64_with_visibility(
+    let my_point = MpcRistrettoPoint::from_private_u64(
         my_value,
-        Visibility::Private,  
         test_args.net_ref.clone(), 
         test_args.beaver_source.clone()
     );

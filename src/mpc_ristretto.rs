@@ -215,12 +215,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     /// Create a Ristretto point from a u64, visibility assumed Public
-    pub fn from_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_public_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
         Self::from_u64_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
+    pub fn from_private_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::from_u64_with_visibility(a, Visibility::Private, network, beaver_source)
+    }
+
     /// Create a Ristretto point from a u64, with visibility explicitly parameterized
-    pub fn from_u64_with_visibility(
+    pub(crate) fn from_u64_with_visibility(
         a: u64,
         visibility: Visibility,
         network: SharedNetwork<N>,
@@ -234,9 +238,14 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         }
     }
 
-    /// Create a Ristretto point from a Scalar, visibility assumed Public
+    /// Create a Ristretto point from an existing, public Scalar
     pub fn from_public_scalar(a: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
         Self::from_scalar_with_visibility(a, Visibility::Public, network, beaver_source)
+    }
+
+    /// Create a Ristretto point from an existing, private scalar
+    pub fn from_private_scalar(a: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        Self::from_scalar_with_visibility(a, Visibility::Private, network, beaver_source)
     }
 
     /// Create a Ristretto point from a Scalar, with visibility explicitly parameterized
@@ -332,39 +341,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     /// Double and compress a batch of points
-    pub fn double_and_compress_batch<I, T>(points: I) -> Vec<MpcCompressedRistretto<N, S>> where
+    pub fn double_and_compress_batch<I, T>(_: I) -> Vec<MpcCompressedRistretto<N, S>> where
         I: IntoIterator<Item = T>,
         T: Borrow<MpcRistrettoPoint<N, S>>
     {
-        let mut peekable = points.into_iter().peekable();
-
-        let (network, beaver_source) = {
-            let first_elem: &MpcRistrettoPoint<N, S> = peekable.peek().unwrap().borrow();
-            (first_elem.network.clone(), first_elem.beaver_source.clone())
-        };
-
-        let mut underlying_points = Vec::<RistrettoPoint>::new();
-        let mut visibilities = Vec::<Visibility>::new();
-        
-        peekable.into_iter()
-            .for_each(|wrapped_point: T| {
-                underlying_points.push(wrapped_point.borrow().value());
-                visibilities.push(wrapped_point.borrow().visibility());
-            });
-        
-        
-        RistrettoPoint::double_and_compress_batch(underlying_points.iter())
-            .into_iter()
-            .zip(0..underlying_points.len())  // Zip with indices to fetch the proper visibility
-            .map(|(compressed_point, index)| {
-                MpcCompressedRistretto::from_compressed_ristretto_with_visibility(
-                    compressed_point,
-                    visibilities[index],
-                    network.clone(),
-                    beaver_source.clone(),
-                ) 
-            })
-            .collect::<Vec<MpcCompressedRistretto<N, S>>>()
+        unimplemented!("double_and_compress_batch not implemented...");
     }
     
 }
