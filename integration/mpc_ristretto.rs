@@ -50,6 +50,24 @@ fn test_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Test that commiting and opening a value works properly
+fn test_commit_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let my_share = MpcRistrettoPoint::from_private_u64(
+        42, test_args.net_ref.clone(), test_args.beaver_source.clone()
+    )
+        .share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    let opened = my_share.commit_and_open()
+        .map_err(|err| format!("Error committing and opening value: {:?}", err))?;
+
+    if !is_equal_u64(opened.value(), 42) {
+        return Err(format!("Expected {}, got {:?}", 42, opened.value()))
+    }
+
+    Ok(())
+}
+
 /// Test that receiving a value from the sending party works
 fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let share = {
@@ -276,6 +294,11 @@ fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 inventory::submit!(IntegrationTest{
     name: "mpc-ristretto::test_share_and_open",
     test_fn: test_share_and_open,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "mpc-ristretto::test_commit_and_open",
+    test_fn: test_commit_and_open,
 });
 
 inventory::submit!(IntegrationTest{

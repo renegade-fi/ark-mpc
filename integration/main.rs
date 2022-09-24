@@ -10,7 +10,7 @@ use colored::Colorize;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants};
 use dns_lookup::lookup_host;
 
-use ::mpc_ristretto::{network::{QuicTwoPartyNet}, mpc_scalar::MpcScalar};
+use ::mpc_ristretto::{network::{QuicTwoPartyNet, MpcNetwork}, mpc_scalar::MpcScalar};
 use mpc_scalar::PartyIDBeaverSource;
 
 /// Integration test arguments, common to all tests
@@ -141,6 +141,18 @@ async fn main() {
         }
         let res: Result<(), String> = (test.test_fn)(&test_args);
         all_success &= validate_success(res, args.party);
+    }
+
+    // Close the network
+    #[allow(clippy::await_holding_refcell_ref, unused_must_use)]
+    if test_args.net_ref
+        .as_ref()
+        .borrow_mut()
+        .close()
+        .await
+        .is_err()
+    {
+        println!("Error tearing down connection");
     }
 
     if all_success {

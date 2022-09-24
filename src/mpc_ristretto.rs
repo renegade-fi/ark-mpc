@@ -11,11 +11,11 @@ use crate::{
     network::MpcNetwork, 
     beaver::SharedValueSource, 
     mpc_scalar::MpcScalar, 
-    error::MpcNetworkError, 
+    error::{MpcNetworkError, MpcError}, 
     macros, 
     Visibility, 
     SharedNetwork, 
-    BeaverSource, Visible
+    BeaverSource, Visible, commitment::RistrettoCommitment
 };
 
 /// Represents a Ristretto point that has been allocated in the MPC network
@@ -148,6 +148,52 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
                 visibility: Visibility::Public,
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
+            }
+        )
+    }
+
+    /// From a shared value:
+    ///     1. Each party commits to their share of the underlying value
+    ///     2. The parties exchange openings and verify the peer's opening
+    pub fn commit_and_open(&self) -> Result<MpcRistrettoPoint<N, S>, MpcError> {
+        // Only a shared value can be committed and opened
+        if !self.is_shared() {
+            return Err(MpcError::VisibilityError(
+                "commit_and_open may only be called on shared values".to_string()
+            ))
+        }
+
+        let commitment = RistrettoCommitment::commit(self.value());
+        let peer_commitment = block_on(
+            self.network().as_ref()
+                .borrow_mut()
+                .broadcast_single_scalar(commitment.get_commitment())
+        ).map_err(MpcError::NetworkError)?;
+
+        // Open the commitment to the underlying value
+        let peer_blinding = block_on(
+            self.network.as_ref()
+                .borrow_mut()
+                .broadcast_single_scalar(commitment.get_blinding())
+        ).map_err(MpcError::NetworkError)?;
+
+        let peer_value = block_on(
+            self.network.as_ref()
+                .borrow_mut()
+                .broadcast_single_point(commitment.get_value())
+        ).map_err(MpcError::NetworkError)?;
+
+        // Verify the commitment and return the opened value
+        if !RistrettoCommitment::verify_from_values(peer_commitment, peer_blinding, peer_value) {
+            return Err(MpcError::AuthenticationError)
+        }
+
+        Ok(
+            Self {
+                value: self.value() + peer_value,
+                visibility: Visibility::Public,
+                network: self.network(),
+                beaver_source: self.beaver_source(),
             }
         )
     }
