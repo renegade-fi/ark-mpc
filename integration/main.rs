@@ -1,3 +1,4 @@
+mod authenticated_ristretto;
 mod authenticated_scalar;
 mod mpc_scalar;
 mod mpc_ristretto;

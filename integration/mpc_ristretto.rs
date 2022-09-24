@@ -8,7 +8,7 @@ use crate::{IntegrationTestArgs, IntegrationTest};
 
 /// Helper to test equality of Ristretto points; dlog is assumed hard so to test equality
 /// with a u64 we have to perform a base point mul
-fn is_equal_u64(point: RistrettoPoint, value: u64) -> bool {
+pub(crate) fn is_equal_u64(point: RistrettoPoint, value: u64) -> bool {
     point.eq(
         &(RISTRETTO_BASEPOINT_POINT * Scalar::from(value))
     )

@@ -1,9 +1,9 @@
 //! Groups logic for a Ristretto Point that contains an authenticated value
-use curve25519_dalek::{scalar::Scalar, ristretto::RistrettoPoint};
+use curve25519_dalek::{scalar::Scalar, ristretto::RistrettoPoint, traits::Identity};
 use rand_core::{RngCore, CryptoRng};
 use subtle::ConstantTimeEq;
 
-use crate::{network::{MpcNetwork}, beaver::SharedValueSource, mpc_ristretto::{MpcRistrettoPoint, MpcCompressedRistretto}, mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros, Visible};
+use crate::{network::{MpcNetwork}, beaver::SharedValueSource, mpc_ristretto::{MpcRistrettoPoint, MpcCompressedRistretto}, mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros, Visible, error::{MpcNetworkError, MpcError}};
 
 
 /// An authenticated Ristretto point, wrapper around an MPC-capable Ristretto point
@@ -150,6 +150,71 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
 /**
  * Secret sharing implementation
  */
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<N, S> {
+    /// From a private value, the <party_id>'th party distributes additive shares of
+    /// their local value to the other parties. Togther they use the Beaver trick
+    /// to also obtain a secret sharing of the value's MAC under the shared key
+    pub fn share_secret(&self, party_id: u64) -> Result<AuthenticatedRistretto<N, S>, MpcNetworkError> {
+        // Share the value and then create the mac
+        let my_share = self.value().share_secret(party_id)?;
+        let my_mac_share = &self.key_share() * &my_share;
+
+        Ok(
+            Self {
+                value: my_share,
+                visibility: Visibility::Shared,
+                mac_share: Some(my_mac_share),
+                key_share: self.key_share(),
+            }
+        )
+    }
+
+    /// From a shared value, both parties distribute their shares of the underlying value
+    /// The parties locally sum all shares to reconstruct the value
+    pub fn open(&self) -> Result<AuthenticatedRistretto<N, S>, MpcNetworkError> {
+        Ok(
+            Self {
+                value: self.value().open()?,
+                visibility: Visibility::Public,
+                mac_share: None,  // Public values have no MAC
+                key_share: self.key_share(),
+            }
+        )
+    }
+    
+    /// From a shared value, both parties:
+    ///     1. Distribute their shares of the underlying value, compute the sum to reveal the plaintext
+    ///     2. Compute and commit to their share of \key_share * value - \mac_share
+    ///     3. Open their commitments to the other party, and verify that the shares sum to zero
+    pub fn open_and_authenticate(&self) -> Result<AuthenticatedRistretto<N, S>, MpcError> {
+        // If the value is not shard, there is nothing to open or authenticate
+        if !self.is_shared() {
+            return Ok(self.clone())
+        }
+
+        // 1. Open the underlying value
+        let opened_value = self.value().open()
+            .map_err(MpcError::NetworkError)?;
+        
+        // 2. Commit to the value key_share * value - mac_share, then open the values and check commitments
+        let mac_check_share = &self.key_share * &opened_value - self.mac().unwrap();
+
+        // 3. Verify the authenticated mac check shares sum to zero
+        if mac_check_share.commit_and_open()?.value().ne(&RistrettoPoint::identity()) {
+            return Err(MpcError::AuthenticationError)
+        }
+
+        Ok(
+            Self {
+                value: opened_value,
+                visibility: Visibility::Public,
+                key_share: self.key_share(),
+                mac_share: None,  // Public value has no MAC
+            }
+        )
+    }
+}
 
 /**
  * Generic trait implementations
