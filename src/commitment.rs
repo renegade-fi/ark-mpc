@@ -1,13 +1,14 @@
 //! Pedersen commitment implementation, borrowed from
 //! https://github.com/dalek-cryptography/bulletproofs/blob/main/src/generators.rs#L29
 
+
 use curve25519_dalek::{
     constants::{RISTRETTO_BASEPOINT_POINT, RISTRETTO_BASEPOINT_COMPRESSED},
     ristretto::RistrettoPoint, 
     scalar::Scalar, traits::MultiscalarMul, 
 };
-use rand_core::OsRng;
-use sha3::{Sha3_512};
+use rand_core::{OsRng, RngCore};
+use sha3::{Sha3_512, Digest};
 
 /// Implementation of a Pedersen commitment scheme, modified from:
 /// https://github.com/dalek-cryptography/bulletproofs/blob/main/src/generators.rs#L29
@@ -91,8 +92,74 @@ impl PedersenCommitment {
     }
 }
 
+/// A hash commitment to a RistrettoPoint
+#[derive(Clone, Debug)]
+pub struct RistrettoCommitment {
+    /// The commitment to the underlying value
+    commitment: Scalar,
+    /// The randomness used to blind the input to the hash
+    blinding_factor: Scalar,
+    /// The underlying RistrettoPoint that has been salted and hashed into `commitment`
+    value: RistrettoPoint 
+}
+
+impl RistrettoCommitment {
+    #[inline]
+    pub fn get_commitment(&self) -> Scalar {
+        self.commitment
+    }
+
+    #[inline]
+    pub fn get_blinding(&self) -> Scalar {
+        self.blinding_factor
+    }
+
+    #[inline]
+    pub fn get_value(&self) -> RistrettoPoint {
+        self.value
+    }
+
+    /// Create a hash commitment from the given RistrettoPoint
+    pub fn commit(point: RistrettoPoint) -> RistrettoCommitment {
+        // Allocate an 8 byte buffer for the blinding factor and fill with random bytes
+        let mut rng = OsRng{};
+        let blinding_factor = rng.next_u64();
+
+        // Compute SHA3_512(point||blinding)
+        let mut hasher = Sha3_512::new();
+        hasher.input(point.compress().as_bytes());
+        hasher.input(blinding_factor.to_le_bytes());
+
+        Self {
+            commitment: Scalar::from_hash(hasher),
+            blinding_factor: Scalar::from(blinding_factor),
+            value: point
+        }
+    }
+
+    /// Verify a commitment 
+    pub fn verify(&self) -> bool {
+        RistrettoCommitment::verify_from_values(self.commitment, self.blinding_factor, self.value)
+    }
+
+    /// Verify a commitment from the values, avoid constructing a RistrettoCommitment instance
+    pub fn verify_from_values(commitment: Scalar, blinding_factor: Scalar, value: RistrettoPoint) -> bool {
+        // Hash the value and the blinding factor
+        let mut hasher = Sha3_512::new();
+        hasher.input(value.compress().as_bytes());
+
+        let blinding_factor_bytes: [u8; 8] = blinding_factor.to_bytes()[..8]
+            .try_into()
+            .expect("Not enough bytes in hash");
+        hasher.input(blinding_factor_bytes);
+
+        Scalar::from_hash(hasher).eq(&commitment)
+    }
+}
+
+
 #[cfg(test)]
-mod tests {
+mod pedersen_tests {
     use curve25519_dalek::scalar::Scalar;
     use rand_core::OsRng;
 
@@ -109,6 +176,28 @@ mod tests {
         assert!(commitment.verify());
         assert!(
             !PedersenCommitment::verify_from_values(commitment.commitment, commitment.blinding_factor, bad_value)
+        )
+    }
+}
+
+#[cfg(test)]
+mod hash_commit_tests {
+    use curve25519_dalek::ristretto::RistrettoPoint;
+    use rand_core::OsRng;
+
+    use super::RistrettoCommitment;
+
+    #[test]
+    fn test_commit_and_open() {
+        // Commit to a random value, open it correctly, then attempt to open it incorrectly
+        let mut rng = OsRng{};
+        let value = RistrettoPoint::random(&mut rng);
+        let bad_value = RistrettoPoint::random(&mut rng);
+
+        let commitment = RistrettoCommitment::commit(value);
+        assert!(commitment.verify());
+        assert!(
+            !RistrettoCommitment::verify_from_values(commitment.get_commitment(), commitment.get_blinding(), bad_value)
         )
     }
 }
