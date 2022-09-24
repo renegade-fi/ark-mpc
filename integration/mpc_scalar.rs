@@ -260,6 +260,22 @@ fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     }
 }
 
+fn test_commit_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Both parties commit and open a value
+    let shared_value = MpcScalar::from_private_u64(42, test_args.net_ref.clone(), test_args.beaver_source.clone())
+        .share_secret(0 /* party_id */) // Only party 0 shares
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    
+    let res = shared_value.commit_and_open()
+        .map_err(|err| format!("Error commiting and opening value: {:?}", err))?;
+    
+    if res.value().ne(&Scalar::from(42u64)) {
+        return Err(format!("Expected {}, got {}", 42, scalar_to_u64(&res.value())))
+    }
+
+    Ok(())
+}
+
 /// Party 0 sends a value and party 1 receives
 fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let share = {
@@ -448,6 +464,11 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "mpc-scalar::test_open_value",
     test_fn: test_open_value,
+});
+
+inventory::submit!(IntegrationTest{
+    name: "mpc-scalar::test_commit_and_open",
+    test_fn: test_commit_and_open,
 });
 
 inventory::submit!(IntegrationTest{

@@ -297,7 +297,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     ///     1. Commit to the value and exchange commitments
     ///     2. Open those commitments to the underlying value
     ///     3. Verify that the peer's opening matches their commitment
-    pub(crate) fn commit_and_open(&self) -> Result<MpcScalar<N, S>, MpcError> {
+    pub fn commit_and_open(&self) -> Result<MpcScalar<N, S>, MpcError> {
         // Only a shared value can be committed and opened
         if !self.is_shared() {
             return Err(MpcError::VisibilityError(
