@@ -18,11 +18,13 @@ harness = false
 async-std = "1.12"
 async-trait = "0.1"
 bytes = "1.2"
-curve25519-dalek = "^3"
+curve25519-dalek = "2"
+digest = "0.10"
 futures = "0.3"
 rand_core = "0.5.1"
 rcgen = "0.9"
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
+sha3 = { version = "0.8" }
 subtle = "2.4.1"
 typenum = "1.15"
 quinn = { version = "0.8", features = ["tls-rustls", "native-certs"] }

@@ -7,6 +7,7 @@ use network::MpcNetwork;
 
 pub mod authenticated_scalar;
 pub mod beaver;
+pub mod commitment;
 pub mod error;
 mod macros;
 pub mod mpc_scalar;
