@@ -1,5 +1,5 @@
 //! Groups logic for a Ristretto Point that contains an authenticated value
-use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Neg, Sub, SubAssign, Mul, MulAssign};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::RistrettoPoint, traits::Identity};
 use rand_core::{RngCore, CryptoRng};
@@ -10,7 +10,7 @@ use crate::{
     beaver::SharedValueSource, 
     mpc_ristretto::{MpcRistrettoPoint, MpcCompressedRistretto}, 
     mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros, Visible, 
-    error::{MpcNetworkError, MpcError}
+    error::{MpcNetworkError, MpcError}, authenticated_scalar::AuthenticatedScalar
 };
 
 
@@ -255,6 +255,150 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for Auth
 /**
  * Mul and variants for borrowed, non-borrowed values
  */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a AuthenticatedScalar<N, S>>
+    for &'a AuthenticatedRistretto<N, S>
+{
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: &'a AuthenticatedScalar<N, S>) -> Self::Output {
+        let value = self.value() * rhs.value();
+        let mac = {
+            // Public * public results in a public value, which has no MAC
+            if self.is_public() && rhs.is_public() { None }
+            else if self.is_shared() && rhs.is_shared() {
+                Some(
+                    &value * self.key_share()
+                )
+            }
+            else if rhs.is_public() {
+                Some(
+                    self.mac().unwrap() * rhs.value()
+                )
+            }
+            // Left hand side is public
+            else {
+                Some(
+                    rhs.mac().unwrap() * self.value()
+                )
+            }
+        };
+
+        Self::Output {  
+            value,
+            visibility: Visibility::min_visibility_two(self, rhs),
+            mac_share: mac,
+            key_share: self.key_share(),
+        }
+    }
+}
+
+macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, AuthenticatedScalar<N, S>);
+macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, Scalar);
+macros::impl_arithmetic_wrapper!(AuthenticatedRistretto<N, S>, Mul, mul, *, AuthenticatedScalar<N, S>);
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for &'a AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: Scalar) -> Self::Output {
+        self * AuthenticatedScalar::from_public_scalar(
+            rhs,
+            self.key_share(),
+            self.network(),
+            self.beaver_source(),
+        )
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: Scalar) -> Self::Output {
+        &self * rhs        
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for &'a AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
+        self * rhs.value()
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>> for &'a AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: MpcScalar<N, S>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>> for AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: MpcScalar<N, S>) -> Self::Output {
+        &self * &rhs
+    }
+}
+
+/// Multiplication with AuthenticatedScalar on the LHS
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a AuthenticatedRistretto<N, S>>
+    for &'a AuthenticatedScalar<N, S>
+{
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: &'a AuthenticatedRistretto<N, S>) -> Self::Output {
+        rhs * self
+    }
+}
+
+macros::impl_arithmetic_wrapper!(
+    AuthenticatedScalar<N, S>, Mul, mul, *, AuthenticatedRistretto<N, S>, Output=AuthenticatedRistretto<N, S>
+);
+
+/// Multiplication with MpcScalar on the LHS
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a AuthenticatedRistretto<N, S>>
+    for &'a MpcScalar<N, S>
+{
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: &'a AuthenticatedRistretto<N, S>) -> Self::Output {
+        rhs * self
+    }
+}
+
+macros::impl_arithmetic_wrapper!(
+    MpcScalar<N, S>, Mul, mul, *, AuthenticatedRistretto<N, S>, Output=AuthenticatedRistretto<N, S>
+);
+
+/// Multiplication with Scalar on the LHS
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a AuthenticatedRistretto<N, S>>
+    for Scalar
+{
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: &'a AuthenticatedRistretto<N, S>) -> Self::Output {
+        rhs * self
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<AuthenticatedRistretto<N, S>>
+    for Scalar
+{
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: AuthenticatedRistretto<N, S>) -> Self::Output {
+        &rhs * self
+    }
+}
 
 
 /**

@@ -56,22 +56,22 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     }
 
     #[inline]
-    fn mac(&self) -> Option<MpcScalar<N, S>> {
+    pub(crate) fn mac(&self) -> Option<MpcScalar<N, S>> {
         self.mac_share.clone()
     }
 
     #[inline]
-    fn key_share(&self) -> MpcScalar<N, S> {
+    pub(crate) fn key_share(&self) -> MpcScalar<N, S> {
         self.key_share.clone()
     }
 
     #[inline]
-    fn network(&self) -> SharedNetwork<N> {
+    pub(crate) fn network(&self) -> SharedNetwork<N> {
         self.value().network.clone()
     }
 
     #[inline]
-    fn beaver_source(&self) -> BeaverSource<S> {
+    pub(crate) fn beaver_source(&self) -> BeaverSource<S> {
         self.value().beaver_source.clone()
     }
     
