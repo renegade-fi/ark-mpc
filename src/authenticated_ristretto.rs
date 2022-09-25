@@ -1,5 +1,5 @@
 //! Groups logic for a Ristretto Point that contains an authenticated value
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 use curve25519_dalek::{scalar::Scalar, ristretto::RistrettoPoint, traits::Identity};
 use rand_core::{RngCore, CryptoRng};
@@ -309,10 +309,50 @@ macros::impl_arithmetic_wrapped_authenticated!(
 /**
  * Sub and variants for borrowed, non-borrowed values
  */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a AuthenticatedRistretto<N, S>>
+    for &'a AuthenticatedRistretto<N, S>
+{
+    type Output = AuthenticatedRistretto<N, S>;    
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: &'a AuthenticatedRistretto<N, S>) -> Self::Output {
+        self + rhs.neg() 
+    }
+}
+
+macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, SubAssign, sub_assign, -, AuthenticatedRistretto<N, S>);
+macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, SubAssign, sub_assign, -, Scalar);
+macros::impl_arithmetic_wrapper!(AuthenticatedRistretto<N, S>, Sub, sub, -, AuthenticatedRistretto<N, S>);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedRistretto<N, S>, Sub, sub, -, from_public_scalar, Scalar
+);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedRistretto<N, S>, Sub, sub, -, from_mpc_ristretto, MpcRistrettoPoint<N, S>
+);
 
 /**
  * Neg and variants for borrowed, non-borrowed values
  */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn neg(self) -> Self::Output {
+        Self::Output {
+            value: self.value().neg(),
+            visibility: self.visibility(),
+            mac_share: self.mac().map(|value| value.neg()),
+            key_share: self.key_share(),
+        }
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for AuthenticatedRistretto<N, S> {
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn neg(self) -> Self::Output {
+        (&self).neg()
+    }
+}
 
 /**
  * Compressed Representation
