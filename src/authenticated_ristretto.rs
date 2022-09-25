@@ -1,9 +1,17 @@
 //! Groups logic for a Ristretto Point that contains an authenticated value
+use std::ops::{Add, AddAssign};
+
 use curve25519_dalek::{scalar::Scalar, ristretto::RistrettoPoint, traits::Identity};
 use rand_core::{RngCore, CryptoRng};
 use subtle::ConstantTimeEq;
 
-use crate::{network::{MpcNetwork}, beaver::SharedValueSource, mpc_ristretto::{MpcRistrettoPoint, MpcCompressedRistretto}, mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros, Visible, error::{MpcNetworkError, MpcError}};
+use crate::{
+    network::MpcNetwork, 
+    beaver::SharedValueSource, 
+    mpc_ristretto::{MpcRistrettoPoint, MpcCompressedRistretto}, 
+    mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros, Visible, 
+    error::{MpcNetworkError, MpcError}
+};
 
 
 /// An authenticated Ristretto point, wrapper around an MPC-capable Ristretto point
@@ -103,6 +111,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
     /// Create a new AuthenticatedRistretto from an existing public MpcRistrettoPoint
     pub fn from_public_mpc_ristretto(x: MpcRistrettoPoint<N, S>, key_share: MpcScalar<N, S>) -> Self {
         Self::from_mpc_ristretto_with_visibility(x, Visibility::Public, key_share)
+    }
+
+    /// A helper method that fits the macro interface
+    fn from_mpc_ristretto(x: MpcRistrettoPoint<N, S>, key_share: MpcScalar<N, S>, _: SharedNetwork<N>, _: BeaverSource<S>) -> Self {
+        Self::from_public_mpc_ristretto(x, key_share)
     }
 
     /// Create a new AuthenticatedRistretto from an existing MpcRistrettoPoint with visiblity specified
@@ -247,7 +260,51 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for Auth
 /**
  * Add and variants for borrowed, non-borrowed values
  */
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a AuthenticatedRistretto<N, S>>
+    for &'a AuthenticatedRistretto<N, S>
+{
+    type Output = AuthenticatedRistretto<N, S>;
 
+    fn add(self, rhs: &'a AuthenticatedRistretto<N, S>) -> Self::Output {
+        // For a public value + a scalar value; always put the public value on the RHS
+        if self.is_public() && rhs.is_shared() {
+            return rhs + self
+        }
+
+        let mac_share = {
+            // The unwraps below are appropriately handled by this fist case, if a value
+            // is shared, it will have a MAC
+            if self.is_public() && rhs.is_public() {
+                None
+            } else if rhs.is_public() {
+                Some (
+                    self.mac().unwrap() + &self.key_share() * rhs.value()
+                )
+            } else {
+                Some(
+                    self.mac().unwrap() + rhs.mac().unwrap()
+                )
+            }
+        };
+
+        Self::Output {
+            value: self.value() + rhs.value(),
+            visibility: Visibility::min_visibility_two(self, rhs),
+            mac_share,
+            key_share: self.key_share(),
+        }
+    }
+}
+
+macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, AddAssign, add_assign, +, AuthenticatedRistretto<N, S>);
+macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, AddAssign, add_assign, +, RistrettoPoint);
+macros::impl_arithmetic_wrapper!(AuthenticatedRistretto<N, S>, Add, add, +, AuthenticatedRistretto<N, S>);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedRistretto<N, S>, Add, add, +, from_public_ristretto_point, RistrettoPoint
+);
+macros::impl_arithmetic_wrapped_authenticated!(
+    AuthenticatedRistretto<N, S>, Add, add, +, from_mpc_ristretto, MpcRistrettoPoint<N, S>
+);
 
 /**
  * Sub and variants for borrowed, non-borrowed values
