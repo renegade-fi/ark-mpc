@@ -1,3 +1,4 @@
+use curve25519_dalek::{traits::MultiscalarMul, scalar::Scalar};
 use ::mpc_ristretto::{Visible, Visibility};
 use mpc_ristretto::{authenticated_ristretto::AuthenticatedRistretto, mpc_ristretto::MpcRistrettoPoint, network::QuicTwoPartyNet, authenticated_scalar::AuthenticatedScalar};
 
@@ -29,7 +30,7 @@ fn test_authenticated_open(test_args: &IntegrationTestArgs) -> Result<(), String
         .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
     
-    let opened_value = shared_value.open()
+    let opened_value = shared_value.open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     
     if !is_equal_u64(opened_value.to_ristretto(), 42) {
@@ -156,7 +157,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Shared value - shared value
     let shared_shared = (&value1_shared - &value2_shared)
-        .open()
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(shared_shared.to_ristretto(), 9) {
         return Err(format!("Expected {}, got {:?}", 9, shared_shared.value()))
@@ -164,7 +165,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Public value - shared value
     let public_shared = (&public_value - &value1_shared)
-        .open()
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(public_shared.to_ristretto(), 16) {
         return Err(format!("Expected {}, got {:?}", 16, public_shared.value()))?;
@@ -173,7 +174,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Public value - public value
     #[allow(clippy::eq_op)]
     let public_public = (&public_value - &public_value)
-        .open()
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(public_public.to_ristretto(), 0) {
         return Err(format!("Expected {}, got {:?}", 0, public_public.value()));
@@ -215,7 +216,7 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Shared scalar * shared point
     let shared_shared = (&scalar_shared * &point_shared)
-        .open()
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(shared_shared.to_ristretto(), 30) {
         return Err(format!("Expected {}, got {:?}", 30, shared_shared.value()));
@@ -223,7 +224,7 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Shared scalar * public point
     let shared_public1 = (&scalar_shared * &public_point)
-        .open()
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(shared_public1.to_ristretto(), 42) {
         return Err(format!("Expected {}, got {:?}", 42, shared_public1.value()));
@@ -231,7 +232,7 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Public scalar * shared point
     let shared_public2 = (&public_scalar * &point_shared)
-        .open()
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(shared_public2.to_ristretto(), 40) {
         return Err(format!("Expected {}, got {:?}", 40, shared_public2.value()));
@@ -239,11 +240,54 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Public scalar * public point
     let public_public = (&public_scalar * &public_point)
-        .open()
+        .open_and_authenticate()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(public_public.to_ristretto(), 56) {
         return Err(format!("Expected {}, got {:?}", 48, public_public.value()));
     }
+
+    Ok(())
+}
+
+fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Both parties hold a scalar and a point
+    // Computing 1 * 2 + 3 * 4 == 14
+    let my_value = if test_args.party_id == 0 { 2 } else { 4 };
+
+    let my_point = AuthenticatedRistretto::from_private_u64(
+        my_value,
+        test_args.mac_key.clone(),
+        test_args.net_ref.clone(), 
+        test_args.beaver_source.clone()
+    );
+
+    // Share the values with the peer
+    let shared_point1 = my_point.share_secret(0 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    let shared_point2 = my_point.share_secret(1 /* party_id */)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    
+    let mut res = AuthenticatedRistretto::multiscalar_mul(
+        vec![Scalar::from(1u64), Scalar::from(3u64)], 
+        vec![shared_point1, shared_point2]
+    );
+
+    let res_open = res.open_and_authenticate()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
+    if !is_equal_u64(res_open.to_ristretto(), 14) {
+        return Err(format!("Expected {}, got {:?}", 14, res_open.to_ristretto()));
+    }
+
+    // Party 0 now tries to corrupt the multiscalar multiplication; open and validate authentication fails
+    if test_args.party_id == 0 {
+        res += MpcRistrettoPoint::<QuicTwoPartyNet, PartyIDBeaverSource>::base_point_mul_u64(5);
+    }
+
+    res.open_and_authenticate()
+        .map_or(
+            Ok(()),
+            |_| Err("Expected authentication failure, authentication passed...".to_string())
+        )?;
 
     Ok(())
 }
@@ -276,4 +320,9 @@ inventory::submit!(IntegrationTest{
 inventory::submit!(IntegrationTest{
     name: "authenticated-ristretto::test_mul",
     test_fn: test_mul
+});
+
+inventory::submit!(IntegrationTest{
+    name: "authenticated-ristretto::test_multiscalar_mul",
+    test_fn: test_multiscalar_mul
 });
