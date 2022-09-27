@@ -1,21 +1,28 @@
 //! Groups the definitions and trait implementations for a Ristretto point within the MPC net
 
-use std::{borrow::Borrow, ops::{Add, AddAssign, Neg, SubAssign, Sub, Mul, MulAssign}};
+use std::{
+    borrow::Borrow,
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 
-use curve25519_dalek::{scalar::Scalar, ristretto::{RistrettoPoint, CompressedRistretto}, constants::RISTRETTO_BASEPOINT_POINT, traits::{MultiscalarMul, Identity}};
+use curve25519_dalek::{
+    constants::RISTRETTO_BASEPOINT_POINT,
+    ristretto::{CompressedRistretto, RistrettoPoint},
+    scalar::Scalar,
+    traits::{Identity, MultiscalarMul},
+};
 use futures::executor::block_on;
-use rand_core::{RngCore, CryptoRng, OsRng};
+use rand_core::{CryptoRng, OsRng, RngCore};
 use subtle::ConstantTimeEq;
 
 use crate::{
-    network::MpcNetwork, 
-    beaver::SharedValueSource, 
-    mpc_scalar::MpcScalar, 
-    error::{MpcNetworkError, MpcError}, 
-    macros, 
-    Visibility, 
-    SharedNetwork, 
-    BeaverSource, Visible, commitment::RistrettoCommitment
+    beaver::SharedValueSource,
+    commitment::RistrettoCommitment,
+    error::{MpcError, MpcNetworkError},
+    macros,
+    mpc_scalar::MpcScalar,
+    network::MpcNetwork,
+    BeaverSource, SharedNetwork, Visibility, Visible,
 };
 
 /// Represents a Ristretto point that has been allocated in the MPC network
@@ -28,7 +35,7 @@ pub struct MpcRistrettoPoint<N: MpcNetwork + Send, S: SharedValueSource<Scalar>>
     /// The underlying network that the MPC operates on top of
     network: SharedNetwork<N>,
     /// The source for shared values; MAC keys, beaver triplets, etc
-    beaver_source: BeaverSource<S>
+    beaver_source: BeaverSource<S>,
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for MpcRistrettoPoint<N, S> {
@@ -69,14 +76,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     /// point. The local party gives R to the peer, and holds a - R for herself.
     /// This method is called by both parties, only one of which transmits
     pub fn share_secret(&self, party_id: u64) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
-        let my_party_id = self.network
-            .as_ref()
-            .borrow()
-            .party_id();
-        
+        let my_party_id = self.network.as_ref().borrow().party_id();
+
         if my_party_id == party_id {
             // Sending party
-            let mut rng: OsRng = OsRng{};
+            let mut rng: OsRng = OsRng {};
             let random_share = RistrettoPoint::random(&mut rng);
 
             // Broadcast the peer's share
@@ -84,18 +88,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
                 self.network
                     .as_ref()
                     .borrow_mut()
-                    .send_single_point(random_share)
+                    .send_single_point(random_share),
             )?;
 
             // Local party takes a - R
-            Ok(
-                MpcRistrettoPoint{
-                    value: self.value() - random_share,
-                    visibility: Visibility::Shared,
-                    network: self.network.clone(),
-                    beaver_source: self.beaver_source.clone(),
-                }
-            )
+            Ok(MpcRistrettoPoint {
+                value: self.value() - random_share,
+                visibility: Visibility::Shared,
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone(),
+            })
         } else {
             // Receive a secret share from the peer
             Self::receive_value(self.network.clone(), self.beaver_source.clone())
@@ -103,24 +105,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     /// Local party receives a secret share of a value; as opposed to using share_secret, no existing value is needed
-    pub fn receive_value(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) 
-        -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> 
-    {
-        let received_point = block_on(
-            network
-                .as_ref()
-                .borrow_mut()
-                .receive_single_point()
-        )?;
+    pub fn receive_value(
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
+        let received_point = block_on(network.as_ref().borrow_mut().receive_single_point())?;
 
-        Ok(
-            MpcRistrettoPoint{
-                value: received_point,
-                visibility: Visibility::Shared,
-                network,
-                beaver_source,
-            }
-        )
+        Ok(MpcRistrettoPoint {
+            value: received_point,
+            visibility: Visibility::Shared,
+            network,
+            beaver_source,
+        })
     }
 
     /// From a shared value, both parties call this function to distribute their shares to the counterparty
@@ -129,9 +125,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     pub fn open(&self) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
         // Public values should not be opened, simply clone the value
         if self.is_public() {
-            return Ok (
-                self.clone()
-            )
+            return Ok(self.clone());
         }
 
         // Send a Ristretto point and receive one in return
@@ -139,17 +133,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             self.network
                 .as_ref()
                 .borrow_mut()
-                .broadcast_single_point(self.value())
+                .broadcast_single_point(self.value()),
         )?;
 
-        Ok(
-            MpcRistrettoPoint {
-                value: received_point + self.value(),
-                visibility: Visibility::Public,
-                network: self.network.clone(),
-                beaver_source: self.beaver_source.clone(),
-            }
-        )
+        Ok(MpcRistrettoPoint {
+            value: received_point + self.value(),
+            visibility: Visibility::Public,
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone(),
+        })
     }
 
     /// From a shared value:
@@ -159,59 +151,74 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         // Only a shared value can be committed and opened
         if !self.is_shared() {
             return Err(MpcError::VisibilityError(
-                "commit_and_open may only be called on shared values".to_string()
-            ))
+                "commit_and_open may only be called on shared values".to_string(),
+            ));
         }
 
         let commitment = RistrettoCommitment::commit(self.value());
         let peer_commitment = block_on(
-            self.network().as_ref()
+            self.network()
+                .as_ref()
                 .borrow_mut()
-                .broadcast_single_scalar(commitment.get_commitment())
-        ).map_err(MpcError::NetworkError)?;
+                .broadcast_single_scalar(commitment.get_commitment()),
+        )
+        .map_err(MpcError::NetworkError)?;
 
         // Open the commitment to the underlying value
         let peer_blinding = block_on(
-            self.network.as_ref()
+            self.network
+                .as_ref()
                 .borrow_mut()
-                .broadcast_single_scalar(commitment.get_blinding())
-        ).map_err(MpcError::NetworkError)?;
+                .broadcast_single_scalar(commitment.get_blinding()),
+        )
+        .map_err(MpcError::NetworkError)?;
 
         let peer_value = block_on(
-            self.network.as_ref()
+            self.network
+                .as_ref()
                 .borrow_mut()
-                .broadcast_single_point(commitment.get_value())
-        ).map_err(MpcError::NetworkError)?;
+                .broadcast_single_point(commitment.get_value()),
+        )
+        .map_err(MpcError::NetworkError)?;
 
         // Verify the commitment and return the opened value
         if !RistrettoCommitment::verify_from_values(peer_commitment, peer_blinding, peer_value) {
-            return Err(MpcError::AuthenticationError)
+            return Err(MpcError::AuthenticationError);
         }
 
-        Ok(
-            Self {
-                value: self.value() + peer_value,
-                visibility: Visibility::Public,
-                network: self.network(),
-                beaver_source: self.beaver_source(),
-            }
-        )
+        Ok(Self {
+            value: self.value() + peer_value,
+            visibility: Visibility::Public,
+            network: self.network(),
+            beaver_source: self.beaver_source(),
+        })
     }
 
     /// Fetch the next Beaver triplet from the source and cast them as MpcScalars
     /// We leave them as scalars because some are directly used as scalars for Mul
     fn next_beaver_triplet(&self) -> (MpcScalar<N, S>, MpcScalar<N, S>, MpcScalar<N, S>) {
-        let (a, b, c) = self.beaver_source
-            .as_ref()
-            .borrow_mut()
-            .next_triplet();
-        
-        (
-            MpcScalar::from_scalar_with_visibility(a, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
-            MpcScalar::from_scalar_with_visibility(b, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
-            MpcScalar::from_scalar_with_visibility(c, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
-        )
+        let (a, b, c) = self.beaver_source.as_ref().borrow_mut().next_triplet();
 
+        (
+            MpcScalar::from_scalar_with_visibility(
+                a,
+                Visibility::Shared,
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
+            MpcScalar::from_scalar_with_visibility(
+                b,
+                Visibility::Shared,
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
+            MpcScalar::from_scalar_with_visibility(
+                c,
+                Visibility::Shared,
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
+        )
     }
 }
 
@@ -261,11 +268,19 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     /// Create a Ristretto point from a u64, visibility assumed Public
-    pub fn from_public_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_public_u64(
+        a: u64,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_u64_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
-    pub fn from_private_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_private_u64(
+        a: u64,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_u64_with_visibility(a, Visibility::Private, network, beaver_source)
     }
 
@@ -285,12 +300,20 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     }
 
     /// Create a Ristretto point from an existing, public Scalar
-    pub fn from_public_scalar(a: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_public_scalar(
+        a: Scalar,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_scalar_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
     /// Create a Ristretto point from an existing, private scalar
-    pub fn from_private_scalar(a: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_private_scalar(
+        a: Scalar,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_scalar_with_visibility(a, Visibility::Private, network, beaver_source)
     }
 
@@ -299,13 +322,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         a: Scalar,
         visibility: Visibility,
         network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
+        beaver_source: BeaverSource<S>,
     ) -> Self {
         Self {
             value: Self::base_point_mul(a),
             visibility,
             network,
-            beaver_source
+            beaver_source,
         }
     }
 
@@ -313,7 +336,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     pub fn from_public_ristretto_point(
         a: RistrettoPoint,
         network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
+        beaver_source: BeaverSource<S>,
     ) -> Self {
         Self::from_ristretto_point_with_visibility(a, Visibility::Public, network, beaver_source)
     }
@@ -338,15 +361,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             value: a,
             visibility,
             network,
-            beaver_source
+            beaver_source,
         }
     }
 
     /// Create a random ristretto point
     pub fn random<R: RngCore + CryptoRng>(
-        rng: &mut R, 
-        network: SharedNetwork<N>, 
-        beaver_source: BeaverSource<S>
+        rng: &mut R,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
     ) -> Self {
         Self {
             value: RistrettoPoint::random(rng),
@@ -361,16 +384,23 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         Self::default_with_visibility(Visibility::Public, network, beaver_source)
     }
 
-    pub fn default_with_visibility(visibility: Visibility, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn default_with_visibility(
+        visibility: Visibility,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_ristretto_point_with_visibility(
-            RistrettoPoint::default(), visibility, network, beaver_source
+            RistrettoPoint::default(),
+            visibility,
+            network,
+            beaver_source,
         )
     }
 
     // Build from bytes
     macros::impl_delegated_wrapper!(
-        RistrettoPoint, 
-        from_uniform_bytes, 
+        RistrettoPoint,
+        from_uniform_bytes,
         from_uniform_bytes_with_visibility,
         bytes,
         &[u8; 64]
@@ -382,20 +412,19 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             value: self.value().compress(),
             visibility: self.visibility,
             network: self.network.clone(),
-            beaver_source: self.beaver_source.clone()
+            beaver_source: self.beaver_source.clone(),
         }
     }
 
     /// Double and compress a batch of points
-    pub fn double_and_compress_batch<I, T>(_: I) -> Vec<MpcCompressedRistretto<N, S>> where
+    pub fn double_and_compress_batch<I, T>(_: I) -> Vec<MpcCompressedRistretto<N, S>>
+    where
         I: IntoIterator<Item = T>,
-        T: Borrow<MpcRistrettoPoint<N, S>>
+        T: Borrow<MpcRistrettoPoint<N, S>>,
     {
         unimplemented!("double_and_compress_batch not implemented...");
     }
-    
 }
-
 
 /**
  * Generic Trait Implementations
@@ -413,7 +442,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for MpcRistre
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for MpcRistrettoPoint<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
+    for MpcRistrettoPoint<N, S>
+{
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.value().ct_eq(&other.value())
     }
@@ -425,7 +456,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for MpcRistrettoPoin
  * Mul and variants for borrowed, non-borrowed values
  */
 
-/// An implementation of multiplication with the Beaver trick. This involves two openings 
+/// An implementation of multiplication with the Beaver trick. This involves two openings
 /// Panics in case of a network error; see mpc_scalar::MpcScalar::Mul for more info.
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>>
     for &'a MpcRistrettoPoint<N, S>
@@ -436,7 +467,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
     /// is when both lhs and rhs are Shared. If only one is shared, multiplying by a public value
     /// directly leads to an additive sharing. If both are public, we do not need an additive share.
     /// TODO(@joey): What is the correct behavior when one or both of lhs and rhs are private
-    /// 
+    ///
     /// See https://securecomputation.org/docs/pragmaticmpc.pdf (Section 3.4) for the identities this
     /// implementation makes use of.
     #[allow(non_snake_case)]
@@ -452,7 +483,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
             let beta_minus_b = (self - MpcRistrettoPoint::<N, S>::base_point_mul(b.value()))
                 .open()
                 .unwrap();
-            
+
             // Identity [a * bG] = deG + d[bG] + [a]eG + [c]G
             // To construct the secret share, only the king will add the deG term
             // All multiplications here are between a shared value and a public value or
@@ -470,15 +501,9 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
                 beaver_source: self.beaver_source.clone(),
             };
 
-            let mut res = &alpha_minus_a * bG +
-                &a * &beta_minus_b +
-                cG;
-            
-            if self.network
-                .as_ref()
-                .borrow()
-                .am_king()
-            {
+            let mut res = &alpha_minus_a * bG + &a * &beta_minus_b + cG;
+
+            if self.network.as_ref().borrow().am_king() {
                 res += &alpha_minus_a * &beta_minus_b;
             }
 
@@ -499,10 +524,12 @@ macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, 
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, *, Scalar);
 macros::impl_arithmetic_wrapper!(MpcRistrettoPoint<N, S>, Mul, mul, *, MpcScalar<N, S>);
 
-/// Rather than expanding (and complicating) the impl_arithmetic_wrapped macro above to include the case in 
+/// Rather than expanding (and complicating) the impl_arithmetic_wrapped macro above to include the case in
 /// which the LHS type cannot be created from the RHS type (e.g. MpcRistrettoPoint::from_scalar -> MpcScalar
 /// doesn't exist); explicitly implement these methods for this case.
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for &'a MpcRistrettoPoint<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar>
+    for &'a MpcRistrettoPoint<N, S>
+{
     type Output = MpcRistrettoPoint<N, S>;
 
     fn mul(self, rhs: Scalar) -> Self::Output {
@@ -531,11 +558,17 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrett
 
 macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Mul, mul, *, MpcRistrettoPoint<N, S>, Output=MpcRistrettoPoint<N, S>);
 
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint> for &'a MpcScalar<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint>
+    for &'a MpcScalar<N, S>
+{
     type Output = MpcRistrettoPoint<N, S>;
 
     fn mul(self, rhs: RistrettoPoint) -> Self::Output {
-        self * MpcRistrettoPoint::from_public_ristretto_point(rhs, self.network.clone(), self.beaver_source.clone())
+        self * MpcRistrettoPoint::from_public_ristretto_point(
+            rhs,
+            self.network.clone(),
+            self.beaver_source.clone(),
+        )
     }
 }
 
@@ -565,7 +598,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcRistrettoPoint<N
     }
 }
 
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrettoPoint<N, S>> for Scalar {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrettoPoint<N, S>>
+    for Scalar
+{
     type Output = MpcRistrettoPoint<N, S>;
 
     fn mul(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
@@ -576,19 +611,19 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrett
 /**
  * Add and variants for borrowed, non-borrowed values
  */
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcRistrettoPoint<N, S>> 
-    for &'a MpcRistrettoPoint<N, S> 
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcRistrettoPoint<N, S>>
+    for &'a MpcRistrettoPoint<N, S>
 {
     type Output = MpcRistrettoPoint<N, S>;
 
     fn add(self, rhs: &'a MpcRistrettoPoint<N, S>) -> Self::Output {
         // If public + shared, swap the arguments for simplicity
         if self.is_public() && rhs.is_shared() {
-            return rhs + self
+            return rhs + self;
         }
-        
+
         // If both values are public; both parties add the values together to obtain
-        // a public result. 
+        // a public result.
         // If both values are shared; both parties add the shared values together to
         // obtain a shared result.
         // If only one value is public, the king adds the public valid to her share
@@ -597,10 +632,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcRistrett
         // they construct an implicit secret sharing of b where b_1 = b and b_2 = 0
         let am_king = self.network.as_ref().borrow().am_king();
         let res = {
-            if
-                self.is_public() && rhs.is_public() ||  // Both public
+            if self.is_public() && rhs.is_public() ||  // Both public
                 self.is_shared() && rhs.is_shared() ||  // Both shared
-                am_king                                 // King always adds shares
+                am_king
+            // King always adds shares
             {
                 self.value() + rhs.value()
             } else {
@@ -668,30 +703,30 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a MpcRist
 /**
  * Multiscalar Multiplication
  */
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul for MpcRistrettoPoint<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul
+    for MpcRistrettoPoint<N, S>
+{
     type Point = Self;
 
     /// Computes c_1P_1 + c_2P_2 + ... + c_nP_n for scalars c and points P
     fn multiscalar_mul<I, J>(scalars: I, points: J) -> Self::Point
-        where
-            I: IntoIterator,
-            I::Item: Borrow<Scalar>,
-            J: IntoIterator,
-            J::Item: Borrow<Self::Point> 
+    where
+        I: IntoIterator,
+        I::Item: Borrow<Scalar>,
+        J: IntoIterator,
+        J::Item: Borrow<Self::Point>,
     {
-        // Fetch the network and beaver source from the first element          
+        // Fetch the network and beaver source from the first element
         let mut peekable_points = points.into_iter().peekable();
         let (network, beaver_source) = {
             let first_elem: &MpcRistrettoPoint<N, S> = peekable_points.peek().unwrap().borrow();
             (first_elem.network.clone(), first_elem.beaver_source.clone())
         };
 
-        scalars.into_iter()
-            .zip(peekable_points.into_iter())
-            .fold(
-                MpcRistrettoPoint::identity(network, beaver_source), 
-                |acc, pair| acc + pair.0.borrow() * pair.1.borrow() // Pair is a 2-tuple of (c_i, P_i)
-            )
+        scalars.into_iter().zip(peekable_points.into_iter()).fold(
+            MpcRistrettoPoint::identity(network, beaver_source),
+            |acc, pair| acc + pair.0.borrow() * pair.1.borrow(), // Pair is a 2-tuple of (c_i, P_i)
+        )
     }
 }
 
@@ -706,7 +741,7 @@ pub struct MpcCompressedRistretto<N: MpcNetwork + Send, S: SharedValueSource<Sca
     /// The underlying network that the MPC operates on top of
     network: SharedNetwork<N>,
     /// The source for shared values; MAC keys, beaver triplets, etc
-    beaver_source: BeaverSource<S>
+    beaver_source: BeaverSource<S>,
 }
 
 /**
@@ -719,7 +754,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>,
     ) -> Self {
-        Self::from_compressed_ristretto_with_visibility(a, Visibility::Public, network, beaver_source)
+        Self::from_compressed_ristretto_with_visibility(
+            a,
+            Visibility::Public,
+            network,
+            beaver_source,
+        )
     }
 
     /// Convert from a CompressedRistretto point with visibility explicitly defined
@@ -727,7 +767,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
         a: CompressedRistretto,
         visibility: Visibility,
         network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
+        beaver_source: BeaverSource<S>,
     ) -> Self {
         MpcCompressedRistretto {
             value: a,
@@ -739,13 +779,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
 
     /// Convert form a CompressedRistretto point to a RistrettoPoint
     pub fn decompress(&self) -> Option<MpcRistrettoPoint<N, S>> {
-        Some(
-            MpcRistrettoPoint {
-                value: self.value.decompress()?,
-                visibility: self.visibility,
-                network: self.network.clone(),
-                beaver_source: self.beaver_source.clone()
-            }
-        )
+        Some(MpcRistrettoPoint {
+            value: self.value.decompress()?,
+            visibility: self.visibility,
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone(),
+        })
     }
 }

@@ -1,18 +1,18 @@
-use std::{cmp::Ordering, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
 use beaver::SharedValueSource;
 use curve25519_dalek::scalar::Scalar;
 
 use network::MpcNetwork;
 
-pub mod authenticated_scalar;
 pub mod authenticated_ristretto;
+pub mod authenticated_scalar;
 pub mod beaver;
 pub mod commitment;
 pub mod error;
 mod macros;
-pub mod mpc_scalar;
 pub mod mpc_ristretto;
+pub mod mpc_scalar;
 pub mod network;
 
 /// SharedNetwork wraps a network implementation in a borrow-safe container
@@ -39,14 +39,18 @@ pub enum Visibility {
     /// Can be *opened* into Public
     Shared,
     /// Public, both parties know the value
-    Public
+    Public,
 }
 
 /// Convenience methods for comparing visibilities on various types
 impl Visibility {
     /// Returns the minimum visibility between two scalars
     pub(crate) fn min_visibility_two(a: &impl Visible, b: &impl Visible) -> Visibility {
-        if a.visibility().lt(&b.visibility()) { a.visibility() } else { b.visibility() }
+        if a.visibility().lt(&b.visibility()) {
+            a.visibility()
+        } else {
+            b.visibility()
+        }
     }
 }
 
@@ -58,25 +62,23 @@ impl Ord for Visibility {
         match self {
             Visibility::Private => match other {
                 Visibility::Private => Ordering::Equal,
-                _ => Ordering::Less
-            }
+                _ => Ordering::Less,
+            },
             Visibility::Shared => match other {
                 Visibility::Private => Ordering::Greater,
                 Visibility::Shared => Ordering::Equal,
-                _ => Ordering::Less
+                _ => Ordering::Less,
             },
             Visibility::Public => match other {
                 Visibility::Public => Ordering::Equal,
                 _ => Ordering::Greater,
-            }
+            },
         }
     }
 }
 
 impl PartialOrd for Visibility {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(
-            self.cmp(other)
-        )
+        Some(self.cmp(other))
     }
 }

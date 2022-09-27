@@ -1,19 +1,29 @@
 //! Implements an authenticated wrapper around the MpcScalar type for malicious security
 
-use std::{ops::{Index, Add, AddAssign, Neg, Sub, SubAssign, Mul, MulAssign}, borrow::Borrow, iter::{Product, Sum}};
+use std::{
+    borrow::Borrow,
+    iter::{Product, Sum},
+    ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 
 use curve25519_dalek::scalar::Scalar;
 use subtle::ConstantTimeEq;
 
-use crate::{network::MpcNetwork, mpc_scalar::{MpcScalar}, beaver::SharedValueSource, Visibility, SharedNetwork, BeaverSource, macros, error::{MpcNetworkError, MpcError}, Visible};
-
+use crate::{
+    beaver::SharedValueSource,
+    error::{MpcError, MpcNetworkError},
+    macros,
+    mpc_scalar::MpcScalar,
+    network::MpcNetwork,
+    BeaverSource, SharedNetwork, Visibility, Visible,
+};
 
 /// An authenticated scalar, wrapper around an MPC-capable Scalar that supports methods
 /// to authenticate an opened result against a shared global MAC.
 /// See SPDZ (https://eprint.iacr.org/2012/642.pdf) for a detailed explanation.
 #[derive(Debug)]
 pub struct AuthenticatedScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The underlying MpcScalar that this structure authenticates 
+    /// The underlying MpcScalar that this structure authenticates
     value: MpcScalar<N, S>,
     /// The local party's share of the value's MAC. If the value is `x`, then
     /// parties hold an additive share of \delta * x; where \delta is the
@@ -74,7 +84,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     pub(crate) fn beaver_source(&self) -> BeaverSource<S> {
         self.value().beaver_source.clone()
     }
-    
+
     #[inline]
     pub fn to_scalar(&self) -> Scalar {
         self.value().value()
@@ -90,7 +100,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
         MpcScalar<N, S>, from_public_scalar, from_private_scalar, from_scalar_with_visibility, Scalar
     );
 
-    /// Create a new AuthenticatedScalar from an existing private MpcScalar 
+    /// Create a new AuthenticatedScalar from an existing private MpcScalar
     pub fn from_private_mpc_scalar(x: MpcScalar<N, S>, key_share: MpcScalar<N, S>) -> Self {
         Self::from_mpc_scalar_with_visibility(x, Visibility::Private, key_share)
     }
@@ -101,20 +111,25 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     }
 
     /// Used as a helper with extra parameters for the macro creation
-    fn from_mpc_scalar(x: MpcScalar<N, S>, key_share: MpcScalar<N, S>, _: SharedNetwork<N>, _: BeaverSource<S>) -> Self {
+    fn from_mpc_scalar(
+        x: MpcScalar<N, S>,
+        key_share: MpcScalar<N, S>,
+        _: SharedNetwork<N>,
+        _: BeaverSource<S>,
+    ) -> Self {
         Self::from_mpc_scalar_with_visibility(x, Visibility::Public, key_share)
     }
 
     pub(crate) fn from_mpc_scalar_with_visibility(
         x: MpcScalar<N, S>,
         visibility: Visibility,
-        key_share: MpcScalar<N, S>
+        key_share: MpcScalar<N, S>,
     ) -> Self {
         Self {
             value: x,
             visibility,
             key_share,
-            mac_share: None,  // This function should not be used to construct shared values
+            mac_share: None, // This function should not be used to construct shared values
         }
     }
 
@@ -123,9 +138,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     macros::impl_authenticated!(MpcScalar<N, S>, default);
 
     macros::impl_authenticated!(
-        MpcScalar<N, S>, 
-        from_public_bytes_mod_order, 
-        from_private_bytes_mod_order, 
+        MpcScalar<N, S>,
+        from_public_bytes_mod_order,
+        from_private_bytes_mod_order,
         from_bytes_mod_order_with_visibility,
         [u8; 32]
     );
@@ -139,18 +154,25 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     );
 
     pub fn from_public_canonical_bytes_with_visibility(
-        bytes: [u8; 32], visibility: Visibility, key_share: MpcScalar<N, S>, network: SharedNetwork<N>, beaver_source: BeaverSource<S>
+        bytes: [u8; 32],
+        visibility: Visibility,
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
     ) -> Option<Self> {
-        let value = MpcScalar::<N, S>::from_canonical_bytes_with_visibility(bytes, Visibility::Public, network, beaver_source)?;
+        let value = MpcScalar::<N, S>::from_canonical_bytes_with_visibility(
+            bytes,
+            Visibility::Public,
+            network,
+            beaver_source,
+        )?;
 
-        Some(
-            Self {
-                value,
-                visibility,
-                mac_share: None,
-                key_share,
-            }
-        )
+        Some(Self {
+            value,
+            visibility,
+            mac_share: None,
+            key_share,
+        })
     }
 
     macros::impl_authenticated!(
@@ -171,38 +193,36 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
  */
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, S> {
     /// Shares a value with the counterparty, and creates a MAC for it using the global key
-    pub fn share_secret(&self, party_id: u64) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
+    pub fn share_secret(
+        &self,
+        party_id: u64,
+    ) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
         // Share the underlying value then construct a MAC share with the counterparty
         let my_share = self.value.share_secret(party_id)?;
         let my_mac_share = &self.key_share * &my_share;
 
-        Ok(
-            Self {
-                value: my_share,
-                visibility: Visibility::Shared,
-                key_share: self.key_share.clone(),
-                mac_share: Some(my_mac_share),
-            }
-        )
+        Ok(Self {
+            value: my_share,
+            visibility: Visibility::Shared,
+            key_share: self.key_share.clone(),
+            mac_share: Some(my_mac_share),
+        })
     }
 
     /// From a shared value, both parties broadcast their shares and reconstruct the plaintext.
     /// The parties no longer hold a valid secret sharing of the result, they hold the result itself.
     pub fn open(&self) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
         if self.is_public() {
-            return Ok(self.clone())
+            return Ok(self.clone());
         }
 
-        Ok(
-            Self {
-                value: self.value.open()?,
-                visibility: Visibility::Public,
-                key_share: self.key_share.clone(),
-                mac_share: self.mac_share.clone(),
-            }
-        )
+        Ok(Self {
+            value: self.value.open()?,
+            visibility: Visibility::Public,
+            key_share: self.key_share.clone(),
+            mac_share: self.mac_share.clone(),
+        })
     }
-
 
     /// Open the value and authenticate it using the MAC. This works in ___ steps:
     ///     1. The parties open the value
@@ -212,30 +232,31 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     pub fn open_and_authenticate(&self) -> Result<AuthenticatedScalar<N, S>, MpcError> {
         // If the value is not shared, there is nothing to open and authenticate
         if !self.is_shared() {
-            return Ok(self.clone())
+            return Ok(self.clone());
         }
 
         // 1. Open the underlying value
-        let opened_value = self.value().open()
-            .map_err(MpcError::NetworkError)?;
+        let opened_value = self.value().open().map_err(MpcError::NetworkError)?;
 
         // 2. Commit to the value key_share * value - mac_share, then open the values and check commitments
         let mac_check_share = &self.key_share * &opened_value - self.mac().unwrap();
 
         // 3. Verify the authenticated mac check shares sum to zero
-        if mac_check_share.commit_and_open()?.value().ne(&Scalar::zero()) {
-            return Err(MpcError::AuthenticationError)
+        if mac_check_share
+            .commit_and_open()?
+            .value()
+            .ne(&Scalar::zero())
+        {
+            return Err(MpcError::AuthenticationError);
         }
 
         // If authentication check passes, return the opened value
-        Ok(
-            Self {
-                value: opened_value,
-                visibility: Visibility::Public,
-                key_share: self.key_share.clone(),
-                mac_share: None,  // Public value has no MAC
-            }
-        )
+        Ok(Self {
+            value: opened_value,
+            visibility: Visibility::Public,
+            key_share: self.key_share.clone(),
+            mac_share: None, // Public value has no MAC
+        })
     }
 }
 
@@ -255,13 +276,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for Authentic
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for AuthenticatedScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
+    for AuthenticatedScalar<N, S>
+{
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.value.ct_eq(other.value())
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for AuthenticatedScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize>
+    for AuthenticatedScalar<N, S>
+{
     type Output = u8;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -275,27 +300,23 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for Authen
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a AuthenticatedScalar<N, S>>
     for &'a AuthenticatedScalar<N, S>
 {
-    type Output = AuthenticatedScalar<N, S>;    
+    type Output = AuthenticatedScalar<N, S>;
 
     fn mul(self, rhs: &'a AuthenticatedScalar<N, S>) -> Self::Output {
         // If public * shared, swap arguments so public is on the RHS
         if self.is_public() && rhs.is_shared() {
-            return rhs * self
+            return rhs * self;
         }
 
         let value = self.value() * rhs.value();
         let mac = {
             // Public * public results in a public value, which has no MAC
-            if self.is_public() && rhs.is_public() { None }
-            else if rhs.is_public() {
-                Some(
-                    self.mac().unwrap() * rhs.value()
-                )
-            }
-            else {
-                Some(
-                    &value * self.key_share()
-                )
+            if self.is_public() && rhs.is_public() {
+                None
+            } else if rhs.is_public() {
+                Some(self.mac().unwrap() * rhs.value())
+            } else {
+                Some(&value * self.key_share())
             }
         };
 
@@ -303,7 +324,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a Authenticat
             value,
             visibility: Visibility::min_visibility_two(self, rhs),
             mac_share: mac,
-            key_share: self.key_share()
+            key_share: self.key_share(),
         }
     }
 }
@@ -330,7 +351,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a Authenticat
     fn add(self, rhs: &'a AuthenticatedScalar<N, S>) -> Self::Output {
         // For a public value + a scalar value; always put the public value on the RHS
         if self.is_public() && rhs.is_shared() {
-            return rhs + self
+            return rhs + self;
         }
 
         // Public + Public gives no MAC
@@ -340,14 +361,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a Authenticat
             if self.is_public() && rhs.is_public() {
                 None
             } else if rhs.is_public() {
-                Some(
-                    self.mac().unwrap() + &self.key_share * rhs.value() 
-                )
+                Some(self.mac().unwrap() + &self.key_share * rhs.value())
             } else {
                 // Two shared value, directly add
-                Some(
-                    self.mac().unwrap() + rhs.mac().unwrap()
-                )
+                Some(self.mac().unwrap() + rhs.mac().unwrap())
             }
         };
 
@@ -370,14 +387,13 @@ macros::impl_arithmetic_wrapped_authenticated!(
     AuthenticatedScalar<N, S>, Add, add, +, from_mpc_scalar, MpcScalar<N, S>
 );
 
-
 /**
  * Sub and variants for borrowed, non-borrowed, and wrapped types
  */
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a AuthenticatedScalar<N, S>>
     for &'a AuthenticatedScalar<N, S>
 {
-    type Output = AuthenticatedScalar<N, S>; 
+    type Output = AuthenticatedScalar<N, S>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &'a AuthenticatedScalar<N, S>) -> Self::Output {
@@ -422,31 +438,31 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for AuthenticatedSc
 /**
  * Iterator traits
  */
-impl<N, S, T> Product<T> for AuthenticatedScalar<N, S> where
+impl<N, S, T> Product<T> for AuthenticatedScalar<N, S>
+where
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
-    T: Borrow<AuthenticatedScalar<N, S>>
+    T: Borrow<AuthenticatedScalar<N, S>>,
 {
     fn product<I: Iterator<Item = T>>(iter: I) -> Self {
         let mut peekable = iter.peekable();
         let first_elem = peekable.peek().unwrap();
-        let key_share: MpcScalar<N, S> = first_elem.borrow()
-            .key_share
-            .clone();
+        let key_share: MpcScalar<N, S> = first_elem.borrow().key_share.clone();
         let network: SharedNetwork<N> = first_elem.borrow().network();
         let beaver_source: BeaverSource<S> = first_elem.borrow().beaver_source();
-        
+
         peekable.fold(
             AuthenticatedScalar::one(key_share, network, beaver_source),
-            |acc, item| acc * item.borrow()
+            |acc, item| acc * item.borrow(),
         )
-    } 
+    }
 }
 
-impl<N, S, T> Sum<T> for AuthenticatedScalar<N, S> where
+impl<N, S, T> Sum<T> for AuthenticatedScalar<N, S>
+where
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
-    T: Borrow<AuthenticatedScalar<N, S>>
+    T: Borrow<AuthenticatedScalar<N, S>>,
 {
     fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
         let mut peekable = iter.peekable();
@@ -457,7 +473,7 @@ impl<N, S, T> Sum<T> for AuthenticatedScalar<N, S> where
 
         peekable.fold(
             AuthenticatedScalar::zero(key_share, network, beaver_source),
-            |acc, item| acc + item.borrow()
+            |acc, item| acc + item.borrow(),
         )
     }
 }

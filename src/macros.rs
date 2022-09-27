@@ -1,4 +1,3 @@
-
 /**
  * Implementation helper macros
  * In what follows, a "wrapped" type is the underlying type that arithmetic is actually
@@ -8,7 +7,7 @@
  */
 
 /// Used to implement a funciton type that simple calls down to a Scalar function
-/// i.e. calls a function on the underlying scalar 
+/// i.e. calls a function on the underlying scalar
 macro_rules! impl_delegated {
     // Instance methods (&self)
     ($function_name:ident, self, $return_type:ty) => {
@@ -48,7 +47,7 @@ macro_rules! impl_delegated_wrapper {
         }
     };
 
-    // Static methods with public_private 
+    // Static methods with public_private
     ($base_type:ty, $function_name:ident, $private_fn_name:ident, $with_visibility_function:ident) => {
         pub fn $function_name(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
             Self::$with_visibility_function(Visibility::Public, network, beaver_source)
@@ -60,14 +59,14 @@ macro_rules! impl_delegated_wrapper {
 
         fn $with_visibility_function(
             visibility: Visibility,
-            network: SharedNetwork<N>, 
-            beaver_source: BeaverSource<S>
+            network: SharedNetwork<N>,
+            beaver_source: BeaverSource<S>,
         ) -> Self {
             Self {
                 network,
                 visibility,
                 beaver_source,
-                value: <$base_type>::$function_name()
+                value: <$base_type>::$function_name(),
             }
         }
     };
@@ -75,8 +74,8 @@ macro_rules! impl_delegated_wrapper {
     // Static method single param
     ($base_type:ty, $function_name:ident, $with_visibility_function:ident, $param_name:ident, $param_type:ty) => {
         pub fn $function_name(
-            $param_name: $param_type, 
-            network: SharedNetwork<N>, 
+            $param_name: $param_type,
+            network: SharedNetwork<N>,
             beaver_source: BeaverSource<S>,
         ) -> Self {
             Self::$with_visibility_function($param_name, Visibility::Public, network, beaver_source)
@@ -86,7 +85,7 @@ macro_rules! impl_delegated_wrapper {
             $param_name: $param_type,
             visibility: Visibility,
             network: SharedNetwork<N>,
-            beaver_source: BeaverSource<S>
+            beaver_source: BeaverSource<S>,
         ) -> Self {
             Self {
                 visibility,
@@ -102,7 +101,11 @@ macro_rules! impl_delegated_wrapper {
 macro_rules! impl_authenticated {
     // Static methods, public only
     ($base_type:ty, $function_name:ident) => {
-        pub fn $function_name(key_share: MpcScalar<N, S>, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        pub fn $function_name(
+            key_share: MpcScalar<N, S>,
+            network: SharedNetwork<N>,
+            beaver_source: BeaverSource<S>,
+        ) -> Self {
             Self {
                 value: <$base_type>::$function_name(network, beaver_source),
                 visibility: Visibility::Public,
@@ -114,39 +117,54 @@ macro_rules! impl_authenticated {
 
     // Static methods (no &self)
     ($base_type:ty, $public_fn:ident, $private_fn:ident, $with_visibility_function:ident) => {
-        pub fn $public_fn(key_share: MpcScalar<N, S>, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        pub fn $public_fn(
+            key_share: MpcScalar<N, S>,
+            network: SharedNetwork<N>,
+            beaver_source: BeaverSource<S>,
+        ) -> Self {
             Self::$with_visibility_function(Visibility::Public, key_share, network, beaver_source)
         }
 
-        pub fn $private_fn(key_share: MpcScalar<N, S>, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        pub fn $private_fn(
+            key_share: MpcScalar<N, S>,
+            network: SharedNetwork<N>,
+            beaver_source: BeaverSource<S>,
+        ) -> Self {
             Self::$with_visibility_function(Visibility::Private, key_share, network, beaver_source)
         }
 
         fn $with_visibility_function(
             visibility: Visibility,
             key_share: MpcScalar<N, S>,
-            network: SharedNetwork<N>, 
-            beaver_source: BeaverSource<S>
+            network: SharedNetwork<N>,
+            beaver_source: BeaverSource<S>,
         ) -> Self {
-            let value = <$base_type>::$with_visibility_function(Visibility::Public, network, beaver_source);
+            let value =
+                <$base_type>::$with_visibility_function(Visibility::Public, network, beaver_source);
             Self {
                 value,
                 key_share,
                 mac_share: None,
                 visibility: Visibility::Public,
-            } 
+            }
         }
     };
 
     // Static method single param
     ($base_type:ty, $public_fn:ident, $private_fn:ident, $with_visibility_function:ident, $param_type:ty) => {
         pub fn $public_fn(
-            x: $param_type, 
+            x: $param_type,
             key_share: MpcScalar<N, S>,
-            network: SharedNetwork<N>, 
+            network: SharedNetwork<N>,
             beaver_source: BeaverSource<S>,
         ) -> Self {
-            Self::$with_visibility_function(x, Visibility::Public, key_share, network, beaver_source)
+            Self::$with_visibility_function(
+                x,
+                Visibility::Public,
+                key_share,
+                network,
+                beaver_source,
+            )
         }
 
         pub fn $private_fn(
@@ -155,7 +173,13 @@ macro_rules! impl_authenticated {
             network: SharedNetwork<N>,
             beaver_source: BeaverSource<S>,
         ) -> Self {
-            Self::$with_visibility_function(x, Visibility::Private, key_share, network, beaver_source)
+            Self::$with_visibility_function(
+                x,
+                Visibility::Private,
+                key_share,
+                network,
+                beaver_source,
+            )
         }
 
         pub fn $with_visibility_function(
@@ -163,10 +187,15 @@ macro_rules! impl_authenticated {
             visibility: Visibility,
             key_share: MpcScalar<N, S>,
             network: SharedNetwork<N>,
-            beaver_source: BeaverSource<S>
+            beaver_source: BeaverSource<S>,
         ) -> Self {
             Self {
-                value: <$base_type>::$with_visibility_function(x, visibility, network, beaver_source),
+                value: <$base_type>::$with_visibility_function(
+                    x,
+                    visibility,
+                    network,
+                    beaver_source,
+                ),
                 visibility,
                 mac_share: None,
                 key_share,
@@ -183,11 +212,11 @@ macro_rules! impl_arithmetic_assign {
             fn $fn_name(&mut self, rhs: $rhs) {
                 *self = &*self $op rhs
             }
-        } 
+        }
     }
 }
 
-/// Handles arithmetic implementations between a wrapped type and its wrapper type 
+/// Handles arithmetic implementations between a wrapped type and its wrapper type
 macro_rules! impl_arithmetic_wrapped {
     ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $from_fn:ident, $rhs:ty) => {
         /// Default implementation
@@ -207,7 +236,7 @@ macro_rules! impl_arithmetic_wrapped {
                 self $op <$lhs>::$from_fn(rhs, self.network.clone(), self.beaver_source.clone())
             }
         }
-        
+
         /// Reverse implementation with wrapped type on the LHS
         impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$lhs> for $rhs {
             type Output = $lhs;
@@ -233,7 +262,7 @@ macro_rules! impl_arithmetic_wrapper {
     ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty) => {
         macros::impl_arithmetic_wrapper!($lhs, $trait, $fn_name, $op, $rhs, Output=$lhs);
     };
-    
+
     ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty, Output=$out_type:ty) => {
         /// Default implementation
         impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
@@ -272,9 +301,9 @@ macro_rules! impl_arithmetic_wrapped_authenticated {
 
             fn $fn_name(self, rhs: $rhs) -> Self::Output {
                 &self $op <$lhs>::$from_fn(
-                    rhs, 
-                    self.key_share.clone(), 
-                    self.network(), 
+                    rhs,
+                    self.key_share.clone(),
+                    self.network(),
                     self.beaver_source()
                 )
             }
@@ -286,23 +315,23 @@ macro_rules! impl_arithmetic_wrapped_authenticated {
 
             fn $fn_name(self, rhs: $rhs) -> Self::Output {
                 self $op <$lhs>::$from_fn(
-                    rhs, 
-                    self.key_share(), 
-                    self.network(), 
+                    rhs,
+                    self.key_share(),
+                    self.network(),
                     self.beaver_source()
                 )
             }
         }
-        
+
         /// Reverse implementation with wrapped type on the LHS
         impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$lhs> for $rhs {
             type Output = $lhs;
 
             fn $fn_name(self, rhs: $lhs) -> Self::Output {
                 &rhs $op <$lhs>::$from_fn(
-                    self, 
-                    rhs.key_share.clone(), 
-                    rhs.network(), 
+                    self,
+                    rhs.key_share.clone(),
+                    rhs.network(),
                     rhs.beaver_source(),
                 )
             }
@@ -314,9 +343,9 @@ macro_rules! impl_arithmetic_wrapped_authenticated {
 
             fn $fn_name(self, rhs: &'a $lhs) -> Self::Output {
                 rhs $op <$lhs>::$from_fn(
-                    self, 
-                    rhs.key_share(), 
-                    rhs.network(), 
+                    self,
+                    rhs.key_share(),
+                    rhs.network(),
                     rhs.beaver_source()
                 )
             }
@@ -325,10 +354,10 @@ macro_rules! impl_arithmetic_wrapped_authenticated {
 }
 
 // Exports
-pub(crate) use impl_delegated;
-pub(crate) use impl_delegated_wrapper;
-pub(crate) use impl_authenticated;
 pub(crate) use impl_arithmetic_assign;
-pub(crate) use impl_arithmetic_wrapper;
 pub(crate) use impl_arithmetic_wrapped;
 pub(crate) use impl_arithmetic_wrapped_authenticated;
+pub(crate) use impl_arithmetic_wrapper;
+pub(crate) use impl_authenticated;
+pub(crate) use impl_delegated;
+pub(crate) use impl_delegated_wrapper;

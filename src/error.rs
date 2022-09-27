@@ -1,5 +1,5 @@
 //! Errors defined across the MPC implementation
-use quinn::{ConnectionError, ConnectError};
+use quinn::{ConnectError, ConnectionError};
 
 #[derive(Debug)]
 pub enum MpcError {
@@ -30,6 +30,5 @@ pub enum SetupError {
 
 #[derive(Debug)]
 pub enum BroadcastError {
-    TooFewBytes
+    TooFewBytes,
 }
-

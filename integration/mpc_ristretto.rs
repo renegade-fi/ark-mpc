@@ -1,50 +1,65 @@
-
-
-use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, constants::RISTRETTO_BASEPOINT_POINT, traits::MultiscalarMul};
+use curve25519_dalek::{
+    constants::RISTRETTO_BASEPOINT_POINT, ristretto::RistrettoPoint, scalar::Scalar,
+    traits::MultiscalarMul,
+};
 
 use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::MpcScalar};
 
-use crate::{IntegrationTestArgs, IntegrationTest};
+use crate::{IntegrationTest, IntegrationTestArgs};
 
 /// Helper to test equality of Ristretto points; dlog is assumed hard so to test equality
 /// with a u64 we have to perform a base point mul
 pub(crate) fn is_equal_u64(point: RistrettoPoint, value: u64) -> bool {
-    point.eq(
-        &(RISTRETTO_BASEPOINT_POINT * Scalar::from(value))
-    )
+    point.eq(&(RISTRETTO_BASEPOINT_POINT * Scalar::from(value)))
 }
 
 /// Test that sharing and opening a value works properly
 fn test_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // The parties each hold values; they share them and then open
     let (value1, value2) = (5, 6);
-    let my_value = if test_args.party_id == 0 { value1 } else { value2 };
+    let my_value = if test_args.party_id == 0 {
+        value1
+    } else {
+        value2
+    };
 
     // Allocate the value in the network
     let my_mpc_value = MpcRistrettoPoint::from_private_u64(
-        my_value, 
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        my_value,
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
 
     // Parties create secret shares of their values, first party 0, then party 1
-    let secret_share1 = my_mpc_value.share_secret(0 /* party_id */)
+    let secret_share1 = my_mpc_value
+        .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let secret_share2 = my_mpc_value.share_secret(1 /* party_id */)
+    let secret_share2 = my_mpc_value
+        .share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    
+
     // Both parties open their shares
-    let opened_value1 = secret_share1.open()
+    let opened_value1 = secret_share1
+        .open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
-    let opened_value2 = secret_share2.open()
+    let opened_value2 = secret_share2
+        .open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
 
     if !is_equal_u64(opened_value1.value(), value1) {
-        return Err(format!("Expected {}, got {:?}", value1, opened_value1.value()))
+        return Err(format!(
+            "Expected {}, got {:?}",
+            value1,
+            opened_value1.value()
+        ));
     }
 
     if !is_equal_u64(opened_value2.value(), value2) {
-        return Err(format!("Expected {}, got {:?}", value2, opened_value2.value()))
+        return Err(format!(
+            "Expected {}, got {:?}",
+            value2,
+            opened_value2.value()
+        ));
     }
 
     Ok(())
@@ -53,16 +68,19 @@ fn test_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Test that commiting and opening a value works properly
 fn test_commit_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let my_share = MpcRistrettoPoint::from_private_u64(
-        42, test_args.net_ref.clone(), test_args.beaver_source.clone()
+        42,
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     )
-        .share_secret(0 /* party_id */)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    .share_secret(0 /* party_id */)
+    .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let opened = my_share.commit_and_open()
+    let opened = my_share
+        .commit_and_open()
         .map_err(|err| format!("Error committing and opening value: {:?}", err))?;
 
     if !is_equal_u64(opened.value(), 42) {
-        return Err(format!("Expected {}, got {:?}", 42, opened.value()))
+        return Err(format!("Expected {}, got {:?}", 42, opened.value()));
     }
 
     Ok(())
@@ -73,19 +91,24 @@ fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let share = {
         if test_args.party_id == 0 {
             MpcRistrettoPoint::from_private_u64(
-                10, 
-                test_args.net_ref.clone(), 
+                10,
+                test_args.net_ref.clone(),
                 test_args.beaver_source.clone(),
             )
-                .share_secret(0 /* party_id */)
-                .map_err(|err| format!("Error sharing value: {:?}", err))?
+            .share_secret(0 /* party_id */)
+            .map_err(|err| format!("Error sharing value: {:?}", err))?
         } else {
-            MpcRistrettoPoint::receive_value(test_args.net_ref.clone(), test_args.beaver_source.clone())
-                .map_err(|err| format!("Error receiving value: {:?}", err))?
+            MpcRistrettoPoint::receive_value(
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+            .map_err(|err| format!("Error receiving value: {:?}", err))?
         }
     };
 
-    let share_opened = share.open().map_err(|err| format!("Error opening value: {:?}", err))?;
+    let share_opened = share
+        .open()
+        .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(share_opened.value(), 10) {
         return Err(format!("Expected {}, got {:?}", 10, share_opened.value()));
     }
@@ -99,22 +122,23 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value = if test_args.party_id == 0 { 42 } else { 33 };
 
     let my_value = MpcRistrettoPoint::from_private_u64(
-        value, 
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        value,
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
 
-    let value1_shared = my_value.share_secret(0 /* party_id */)
+    let value1_shared = my_value
+        .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-
-    let value2_shared = my_value.share_secret(1 /* party_id */)
+    let value2_shared = my_value
+        .share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let public_value  = MpcRistrettoPoint::from_public_u64(
+    let public_value = MpcRistrettoPoint::from_public_u64(
         58,
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
 
     // Shared value + shared value
@@ -122,7 +146,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(shared_shared.value(), 75) {
-        return Err("".to_string())
+        return Err("".to_string());
         // return Err(format!("Expected {}, got {:?}", 75, shared_shared.value()));
     }
 
@@ -132,7 +156,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(shared_public.value(), 100) {
         // return Err(format!("Expected {}, got {:?}", 100, shared_public.value()));
-        return Err("".to_string())
+        return Err("".to_string());
     }
 
     // Public value + public value
@@ -152,20 +176,22 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value = if test_args.party_id == 0 { 42 } else { 33 };
 
     let my_value = MpcRistrettoPoint::from_private_u64(
-        value, 
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        value,
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
 
-    let value1_shared = my_value.share_secret(0 /* party_id */)
+    let value1_shared = my_value
+        .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let value2_shared = my_value.share_secret(1 /* party_id */)
+    let value2_shared = my_value
+        .share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let public_value  = MpcRistrettoPoint::from_public_u64(
+    let public_value = MpcRistrettoPoint::from_public_u64(
         58,
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
 
     // Shared value - shared value
@@ -173,7 +199,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(shared_shared.value(), 9) {
-        return Err(format!("Expected {}, got {:?}", 9, shared_shared.value()))
+        return Err(format!("Expected {}, got {:?}", 9, shared_shared.value()));
     }
 
     // Public value - shared value
@@ -202,27 +228,31 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Construct a shared point and a shared scalar
     let point_shared = MpcRistrettoPoint::from_private_u64(
-        value, test_args.net_ref.clone(), test_args.beaver_source.clone()
+        value,
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     )
-        .share_secret(0 /* party_id */)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    .share_secret(0 /* party_id */)
+    .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
     let scalar_shared = MpcScalar::from_private_u64(
-        value, test_args.net_ref.clone(), test_args.beaver_source.clone()
+        value,
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     )
-        .share_secret(1 /* party_id */)
-        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+    .share_secret(1 /* party_id */)
+    .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
     // Construct a public point and a public scalar
-    let public_point  = MpcRistrettoPoint::from_public_u64(
+    let public_point = MpcRistrettoPoint::from_public_u64(
         7,
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
     let public_scalar = MpcScalar::from_public_u64(
-        8, 
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        8,
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
 
     // Shared scalar * shared point
@@ -267,22 +297,25 @@ fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     let my_point = MpcRistrettoPoint::from_private_u64(
         my_value,
-        test_args.net_ref.clone(), 
-        test_args.beaver_source.clone()
+        test_args.net_ref.clone(),
+        test_args.beaver_source.clone(),
     );
 
     // Share the values with the peer
-    let shared_point1 = my_point.share_secret(0 /* party_id */)
+    let shared_point1 = my_point
+        .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    let shared_point2 = my_point.share_secret(1 /* party_id */)
+    let shared_point2 = my_point
+        .share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
-    
+
     let res = MpcRistrettoPoint::multiscalar_mul(
-        vec![Scalar::from(1u64), Scalar::from(3u64)], 
-        vec![shared_point1, shared_point2]
+        vec![Scalar::from(1u64), Scalar::from(3u64)],
+        vec![shared_point1, shared_point2],
     );
 
-    let res_open = res.open()
+    let res_open = res
+        .open()
         .map_err(|err| format!("Error opening value: {:?}", err))?;
     if !is_equal_u64(res_open.value(), 14) {
         return Err(format!("Expected {}, got {:?}", 14, res_open.value()));
@@ -291,37 +324,37 @@ fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
-inventory::submit!(IntegrationTest{
+inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_share_and_open",
     test_fn: test_share_and_open,
 });
 
-inventory::submit!(IntegrationTest{
+inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_commit_and_open",
     test_fn: test_commit_and_open,
 });
 
-inventory::submit!(IntegrationTest{
+inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_receive_value",
     test_fn: test_receive_value,
 });
 
-inventory::submit!(IntegrationTest{
+inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_add",
     test_fn: test_add,
 });
 
-inventory::submit!(IntegrationTest{
+inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_sub",
     test_fn: test_sub,
 });
 
-inventory::submit!(IntegrationTest{
+inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_mul",
     test_fn: test_mul,
 });
 
-inventory::submit!(IntegrationTest{
+inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_multiscalar_mul",
     test_fn: test_multiscalar_mul,
 });

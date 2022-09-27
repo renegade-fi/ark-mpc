@@ -22,13 +22,15 @@ pub(crate) struct DummySharedScalarSource;
 
 #[allow(dead_code)]
 impl DummySharedScalarSource {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 impl SharedValueSource<Scalar> for DummySharedScalarSource {
     fn next_shared_value(&mut self) -> Scalar {
         Scalar::one()
-    } 
+    }
 
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
         (Scalar::one(), Scalar::one(), Scalar::one())

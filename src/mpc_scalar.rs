@@ -1,25 +1,25 @@
 //! Groups the definitions and trait implementations for a scalar value within an MPC network
 #![allow(unused_doc_comments)]
 use std::{
-    borrow::Borrow, 
-    iter::{Product, Sum}, 
-    ops::{Add, Index, MulAssign, Mul, AddAssign, SubAssign, Sub, Neg}, convert::TryInto, 
+    borrow::Borrow,
+    convert::TryInto,
+    iter::{Product, Sum},
+    ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use curve25519_dalek::{scalar::{Scalar}};
+use curve25519_dalek::scalar::Scalar;
 use futures::executor::block_on;
-use rand_core::{RngCore, CryptoRng, OsRng};
-use subtle::{ConstantTimeEq};
+use rand_core::{CryptoRng, OsRng, RngCore};
+use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
 use crate::{
-    BeaverSource,
-    beaver::{SharedValueSource},
-    network::MpcNetwork, 
-    error::{MpcNetworkError, MpcError}, 
-    macros, 
-    Visibility, 
-    SharedNetwork, Visible, commitment::PedersenCommitment, 
+    beaver::SharedValueSource,
+    commitment::PedersenCommitment,
+    error::{MpcError, MpcNetworkError},
+    macros,
+    network::MpcNetwork,
+    BeaverSource, SharedNetwork, Visibility, Visible,
 };
 
 /// Represents a scalar value allocated in an MPC network
@@ -41,7 +41,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for MpcScalar<N, 
             value: self.value,
             visibility: self.visibility,
             network: self.network.clone(),
-            beaver_source: self.beaver_source.clone()
+            beaver_source: self.beaver_source.clone(),
         }
     }
 }
@@ -97,46 +97,62 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
      */
 
     /// Create a public network scalar from a u64
-    pub fn from_public_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_public_u64(
+        a: u64,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_u64_with_visibility(a, Visibility::Public, network, beaver_source)
     }
 
     /// Create a private network scalar from a given u64
-    pub fn from_private_u64(a: u64, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_private_u64(
+        a: u64,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_u64_with_visibility(a, Visibility::Private, network, beaver_source)
     }
 
     /// Create a scalar from a given u64 and visibility
     pub(crate) fn from_u64_with_visibility(
-        a: u64, 
+        a: u64,
         visibility: Visibility,
-        network: SharedNetwork<N>, 
-        beaver_source: BeaverSource<S>, 
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
     ) -> Self {
-        Self { 
-            network, 
-            visibility, 
-            beaver_source, 
+        Self {
+            network,
+            visibility,
+            beaver_source,
             value: Scalar::from(a),
         }
     }
 
     /// Allocate a public network value from an underlying scalar
-    pub fn from_public_scalar(value: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_public_scalar(
+        value: Scalar,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_scalar_with_visibility(value, Visibility::Public, network, beaver_source)
     }
 
     /// Allocate a private network value from an underlying scalar
-    pub fn from_private_scalar(value: Scalar, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+    pub fn from_private_scalar(
+        value: Scalar,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
         Self::from_scalar_with_visibility(value, Visibility::Private, network, beaver_source)
     }
 
     /// Allocate an existing scalar in the network with given visibility
     pub(crate) fn from_scalar_with_visibility(
-        value: Scalar, 
+        value: Scalar,
         visibility: Visibility,
         network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>, 
+        beaver_source: BeaverSource<S>,
     ) -> Self {
         Self {
             network,
@@ -148,12 +164,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
 
     /// Generate a random scalar
     /// Random will always be SharedWithOwner(self); two parties cannot reliably generate the same random value
-    pub fn random<R: RngCore + CryptoRng>(rng: &mut R, network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
-        Self { 
-            network, 
+    pub fn random<R: RngCore + CryptoRng>(
+        rng: &mut R,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self {
+            network,
             visibility: Visibility::Private,
             beaver_source,
-            value: Scalar::random(rng) 
+            value: Scalar::random(rng),
         }
     }
 
@@ -163,37 +183,56 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     }
 
     // Build a scalar from bytes
-    macros::impl_delegated_wrapper!(Scalar, from_bytes_mod_order, from_bytes_mod_order_with_visibility, bytes, [u8;32]);
     macros::impl_delegated_wrapper!(
         Scalar,
-        from_bytes_mod_order_wide, 
+        from_bytes_mod_order,
+        from_bytes_mod_order_with_visibility,
+        bytes,
+        [u8; 32]
+    );
+    macros::impl_delegated_wrapper!(
+        Scalar,
+        from_bytes_mod_order_wide,
         from_bytes_mod_order_wide_with_visibility,
-        input, 
+        input,
         &[u8; 64]
     );
 
-    pub fn from_canonical_bytes(bytes: [u8; 32], network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Option<MpcScalar<N, S>> {
-        Self::from_canonical_bytes_with_visibility(bytes, Visibility::Public, network, beaver_source)
+    pub fn from_canonical_bytes(
+        bytes: [u8; 32],
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Option<MpcScalar<N, S>> {
+        Self::from_canonical_bytes_with_visibility(
+            bytes,
+            Visibility::Public,
+            network,
+            beaver_source,
+        )
     }
 
     pub fn from_canonical_bytes_with_visibility(
-        bytes: [u8; 32], 
+        bytes: [u8; 32],
         visibility: Visibility,
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>,
     ) -> Option<MpcScalar<N, S>> {
-        Some(
-            MpcScalar {
-                visibility,
-                network,
-                beaver_source,
-                value: Scalar::from_canonical_bytes(bytes)?,
-            }
-        )
+        Some(MpcScalar {
+            visibility,
+            network,
+            beaver_source,
+            value: Scalar::from_canonical_bytes(bytes)?,
+        })
     }
 
-    macros::impl_delegated_wrapper!(Scalar, from_bits, from_bits_with_visibility, bytes, [u8; 32]);
-    
+    macros::impl_delegated_wrapper!(
+        Scalar,
+        from_bits,
+        from_bits_with_visibility,
+        bytes,
+        [u8; 32]
+    );
+
     // Convert a scalar to bytes
     macros::impl_delegated!(to_bytes, self, [u8; 32]);
     macros::impl_delegated!(as_bytes, self, &[u8; 32]);
@@ -215,15 +254,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// This method is called by both parties, only one of which transmits, the peer will simply
     /// await the sent share
     pub fn share_secret(&self, party_id: u64) -> Result<MpcScalar<N, S>, MpcNetworkError> {
-        let my_party_id = self.network
-            .as_ref()
-            .borrow()
-            .party_id();
+        let my_party_id = self.network.as_ref().borrow().party_id();
 
         if my_party_id == party_id {
             // Sender party
             // Sample a random additive complement
-            let mut rng = OsRng{};
+            let mut rng = OsRng {};
             let random_share = Scalar::random(&mut rng);
 
             // Broadcast the counterparty's share
@@ -231,40 +267,35 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
                 self.network
                     .as_ref()
                     .borrow_mut()
-                    .send_single_scalar(random_share)
+                    .send_single_scalar(random_share),
             )?;
 
             // Do not subtract directly as the random scalar is not directly allocated in the network
             // subtracting directly ties it to the subtraction implementaiton in a fragile way
-            Ok( 
-                MpcScalar { 
-                    value: self.value - random_share, 
-                    visibility: Visibility::Shared,
-                    network: self.network.clone(),
-                    beaver_source: self.beaver_source.clone(),
-                }
-            )
+            Ok(MpcScalar {
+                value: self.value - random_share,
+                visibility: Visibility::Shared,
+                network: self.network.clone(),
+                beaver_source: self.beaver_source.clone(),
+            })
         } else {
             Self::receive_value(self.network.clone(), self.beaver_source.clone())
         }
     }
 
     /// Local party receives a secret share of a value; as opposed to using share_secret, no existing value is needed
-    pub fn receive_value(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Result<MpcScalar<N, S>, MpcNetworkError> {
-        let value = block_on(
-            network.as_ref()
-                .borrow_mut()
-                .receive_single_scalar()
-        )?;
+    pub fn receive_value(
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        let value = block_on(network.as_ref().borrow_mut().receive_single_scalar())?;
 
-        Ok(
-            MpcScalar { 
-                value,
-                visibility: Visibility::Shared,
-                network,
-                beaver_source,
-            }
-        )
+        Ok(MpcScalar {
+            value,
+            visibility: Visibility::Shared,
+            network,
+            beaver_source,
+        })
     }
 
     /// From a shared value, both parties open their shares and construct the plaintext value.
@@ -272,7 +303,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// at the end of a computation
     pub fn open(&self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
         if self.is_public() {
-            return Ok(self.clone())
+            return Ok(self.clone());
         }
 
         // Send my scalar and expect one back
@@ -280,17 +311,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             self.network
                 .as_ref()
                 .borrow_mut()
-                .broadcast_single_scalar(self.value)
+                .broadcast_single_scalar(self.value),
         )?;
 
         // Reconstruct the plaintext from the peer's share
-        Ok(
-            MpcScalar::from_public_scalar(
-                self.value + received_scalar, 
-                self.network.clone(),
-                self.beaver_source.clone()
-            )
-        )
+        Ok(MpcScalar::from_public_scalar(
+            self.value + received_scalar,
+            self.network.clone(),
+            self.beaver_source.clone(),
+        ))
     }
 
     /// From a shared value:
@@ -301,56 +330,67 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         // Only a shared value can be committed and opened
         if !self.is_shared() {
             return Err(MpcError::VisibilityError(
-                "commit_and_open may only be called on shared values".to_string()
-            ))
+                "commit_and_open may only be called on shared values".to_string(),
+            ));
         }
 
         // Compute a Pedersen commitment to the value
         let commitment = PedersenCommitment::commit(self.to_scalar());
         let peer_commitment = block_on(
-            self.network().as_ref()
+            self.network()
+                .as_ref()
                 .borrow_mut()
-                .broadcast_single_point(commitment.get_commitment())
-        ).map_err(MpcError::NetworkError)?;
+                .broadcast_single_point(commitment.get_commitment()),
+        )
+        .map_err(MpcError::NetworkError)?;
 
         // Open the commitment to the underlying value
         let received_scalars = block_on(
-            self.network().as_ref()
+            self.network()
+                .as_ref()
                 .borrow_mut()
-                .broadcast_scalars(vec![
-                    commitment.get_blinding(),
-                    commitment.get_value()
-                ])
-        ).map_err(MpcError::NetworkError)?;
+                .broadcast_scalars(vec![commitment.get_blinding(), commitment.get_value()]),
+        )
+        .map_err(MpcError::NetworkError)?;
 
         let (peer_blinding, peer_value) = (received_scalars[0], received_scalars[1]);
 
         // Verify the commitment and return the opened value
         if !PedersenCommitment::verify_from_values(peer_commitment, peer_blinding, peer_value) {
-            return Err(MpcError::AuthenticationError)
+            return Err(MpcError::AuthenticationError);
         }
 
-        Ok(
-            Self {
-                value: self.value() + peer_value,
-                visibility: Visibility::Public,
-                network: self.network(),
-                beaver_source: self.beaver_source(),
-            }
-        )
+        Ok(Self {
+            value: self.value() + peer_value,
+            visibility: Visibility::Public,
+            network: self.network(),
+            beaver_source: self.beaver_source(),
+        })
     }
 
     /// Retreives the next Beaver triplet from the Beaver source and allocates the values within the network
     fn next_beaver_triplet(&self) -> (MpcScalar<N, S>, MpcScalar<N, S>, MpcScalar<N, S>) {
-        let (a, b, c) = self.beaver_source
-            .as_ref()
-            .borrow_mut()
-            .next_triplet();
-        
+        let (a, b, c) = self.beaver_source.as_ref().borrow_mut().next_triplet();
+
         (
-            MpcScalar::from_scalar_with_visibility(a, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
-            MpcScalar::from_scalar_with_visibility(b, Visibility::Shared, self.network.clone(), self.beaver_source.clone()),
-            MpcScalar::from_scalar_with_visibility(c, Visibility::Shared, self.network.clone(), self.beaver_source.clone())
+            MpcScalar::from_scalar_with_visibility(
+                a,
+                Visibility::Shared,
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
+            MpcScalar::from_scalar_with_visibility(
+                b,
+                Visibility::Shared,
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
+            MpcScalar::from_scalar_with_visibility(
+                c,
+                Visibility::Shared,
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
         )
     }
 }
@@ -373,7 +413,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for MpcScalar
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for MpcScalar<N, S> {
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.value.ct_eq(&other.value)
-    } 
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for MpcScalar<N, S> {
@@ -391,14 +431,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for MpcSca
 /// Implementation of mul with the beaver trick
 /// This implementation panics in the case of a network error.
 /// Ideally this is done in a thread where the panic can be handled by the parent.
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for &'a MpcScalar<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>>
+    for &'a MpcScalar<N, S>
+{
     type Output = MpcScalar<N, S>;
 
     /// Multiplies two (possibly shared) values. The only case in which we need a Beaver trick
     /// is when both lhs and rhs are Shared. If only one is shared, multiplying by a public value
     /// directly leads to an additive sharing. If both are public, we do not need an additive share.
     /// TODO(@joey): What is the correct behavior when one or both of lhs and rhs are private
-    /// 
+    ///
     /// See https://securecomputation.org/docs/pragmaticmpc.pdf (Section 3.4) for the identities this
     /// implementation makes use of.
     fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
@@ -413,27 +455,21 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
             // Identity: [a * b] = de + d[b] + e[a] + [c]
             // All multiplications here are between a public and shared value or
             // two public values, so the recursion will not hit this case
-            let mut res = &lhs_minus_a * &b + 
-                &rhs_minus_b * &a + 
-                c;
-            
-            // Split into additive shares, the king holds de + res 
-            if self.network
-                .as_ref()
-                .borrow()
-                .am_king() 
-            {
+            let mut res = &lhs_minus_a * &b + &rhs_minus_b * &a + c;
+
+            // Split into additive shares, the king holds de + res
+            if self.network.as_ref().borrow().am_king() {
                 res += &lhs_minus_a * &rhs_minus_b;
             }
 
-            res 
+            res
         } else {
             // Directly multiply
             MpcScalar {
                 visibility: Visibility::min_visibility_two(self, rhs),
                 network: self.network.clone(),
                 beaver_source: self.beaver_source.clone(),
-                value: self.value * rhs.value
+                value: self.value * rhs.value,
             }
         }
     }
@@ -449,17 +485,19 @@ macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Mul, mul, *, from_public_scala
 /**
  * Add and variants for: borrowed, non-borrowed, and scalar types
  */
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N, S>> for &'a MpcScalar<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N, S>>
+    for &'a MpcScalar<N, S>
+{
     type Output = MpcScalar<N, S>;
 
     fn add(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
         // If public + shared swap the arguments for simplicity
         if self.is_public() && rhs.is_shared() {
-            return rhs + self
+            return rhs + self;
         }
 
         // If both values are public; both parties add the values together to obtain
-        // a public result. 
+        // a public result.
         // If both values are shared; both parties add the shared values together to
         // obtain a shared result.
         // If only one value is public, the king adds the public valid to her share
@@ -469,10 +507,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
         let am_king = self.network.as_ref().borrow().am_king();
 
         let res = {
-            if 
-                self.is_public() && rhs.is_public() ||  // Both public
+            if self.is_public() && rhs.is_public() ||  // Both public
                 self.is_shared() && rhs.is_shared() ||  // Both shared
-                am_king                                 // One public, but local peer is king
+                am_king
+            // One public, but local peer is king
             {
                 self.value() + rhs.value()
             } else {
@@ -484,7 +522,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
             value: res,
             visibility: Visibility::min_visibility_two(self, rhs),
             network: self.network.clone(),
-            beaver_source: self.beaver_source.clone(), 
+            beaver_source: self.beaver_source.clone(),
         }
     }
 }
@@ -497,7 +535,9 @@ macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Add, add, +, from_public_scala
 /**
  * Sub and variants for: borrowed, non-borrowed, and scalar types
  */
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcScalar<N, S>> for &'a MpcScalar<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcScalar<N, S>>
+    for &'a MpcScalar<N, S>
+{
     type Output = MpcScalar<N, S>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
@@ -512,7 +552,7 @@ macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Sub, sub, -, MpcScalar<N, S>);
 macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Sub, sub, -, from_public_scalar, Scalar);
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S> {
-    type Output = MpcScalar<N, S>; 
+    type Output = MpcScalar<N, S>;
 
     fn neg(self) -> Self::Output {
         (&self).neg()
@@ -536,49 +576,42 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a MpcScal
  * Iterator traits
  */
 
-impl<N, S, T> Product<T> for MpcScalar<N, S> where
+impl<N, S, T> Product<T> for MpcScalar<N, S>
+where
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
-    T: Borrow<MpcScalar<N, S>>
+    T: Borrow<MpcScalar<N, S>>,
 {
     fn product<I: Iterator<Item = T>>(iter: I) -> Self {
         let mut peekable = iter.peekable();
         let first_elem = peekable.peek().unwrap();
-        let network: SharedNetwork<N> = first_elem.borrow()
-            .network
-            .clone();
-        let beaver_source: BeaverSource<S> = first_elem.borrow()
-            .beaver_source
-            .clone();
+        let network: SharedNetwork<N> = first_elem.borrow().network.clone();
+        let beaver_source: BeaverSource<S> = first_elem.borrow().beaver_source.clone();
 
-        peekable.fold(
-            MpcScalar::one(network, beaver_source),
-            |acc, item| (acc * item.borrow())
-        )
+        peekable.fold(MpcScalar::one(network, beaver_source), |acc, item| {
+            acc * item.borrow()
+        })
     }
 }
 
-impl<N, S, T> Sum<T> for MpcScalar<N, S> where
+impl<N, S, T> Sum<T> for MpcScalar<N, S>
+where
     N: MpcNetwork + Send,
     S: SharedValueSource<Scalar>,
-    T: Borrow<MpcScalar<N, S>>
+    T: Borrow<MpcScalar<N, S>>,
 {
     fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
         // This operation is invalid on an empty iterator, unwrap is expected
         let mut peekable = iter.peekable();
         let first_elem = peekable.peek().unwrap();
-        let network = first_elem.borrow()
-            .network
-            .clone();
-        let beaver_source: BeaverSource<S> = first_elem.borrow()
-            .beaver_source
-            .clone();
+        let network = first_elem.borrow().network.clone();
+        let beaver_source: BeaverSource<S> = first_elem.borrow().beaver_source.clone();
 
         peekable.fold(
-            MpcScalar::from_u64_with_visibility(0, Visibility::Shared, network, beaver_source), 
-            |acc, item| acc + item.borrow()
+            MpcScalar::from_u64_with_visibility(0, Visibility::Shared, network, beaver_source),
+            |acc, item| acc + item.borrow(),
         )
-    } 
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Zeroize for MpcScalar<N, S> {
@@ -589,12 +622,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Zeroize for MpcScalar<N
 
 #[cfg(test)]
 mod test {
-    use std::{rc::Rc, cell::RefCell};
+    use std::{cell::RefCell, rc::Rc};
 
     use curve25519_dalek::scalar::Scalar;
     use rand_core::OsRng;
 
-    use crate::{network::dummy_network::DummyMpcNetwork, beaver::DummySharedScalarSource};
+    use crate::{beaver::DummySharedScalarSource, network::dummy_network::DummyMpcNetwork};
 
     use super::{MpcScalar, Visibility};
 
@@ -603,9 +636,8 @@ mod test {
         let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
         let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
 
-        let expected = MpcScalar::from_public_scalar(
-            Scalar::zero(), network.clone(), beaver_source.clone()
-        );
+        let expected =
+            MpcScalar::from_public_scalar(Scalar::zero(), network.clone(), beaver_source.clone());
         let zero = MpcScalar::zero(network, beaver_source);
 
         assert_eq!(zero, expected);
@@ -614,23 +646,22 @@ mod test {
     #[test]
     fn test_open() {
         let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(1u8)]);
-        
+
         let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
 
         let expected = MpcScalar::from_public_scalar(
-            Scalar::from(2u8), network.clone(), beaver_source.clone()
+            Scalar::from(2u8),
+            network.clone(),
+            beaver_source.clone(),
         );
-        
-        // Dummy network opens to the value we send it, so the mock parties each hold Scalar(1) for a 
+
+        // Dummy network opens to the value we send it, so the mock parties each hold Scalar(1) for a
         // shared value of Scalar(2)
-        let my_share = MpcScalar::from_u64_with_visibility(
-            1u64, 
-            Visibility::Shared, 
-            network, 
-            beaver_source
-        );
+        let my_share =
+            MpcScalar::from_u64_with_visibility(1u64, Visibility::Shared, network, beaver_source);
 
         assert_eq!(my_share.open().unwrap(), expected);
     }
@@ -638,21 +669,22 @@ mod test {
     #[test]
     fn test_add() {
         let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(2u8)]);
 
         let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
 
         // Assume that parties hold a secret share of [4] as individual shares of 2 each
         let shared_value1 = MpcScalar::from_u64_with_visibility(
-            2u64, 
-            Visibility::Shared, 
-            network.clone(), 
+            2u64,
+            Visibility::Shared,
+            network.clone(),
             beaver_source.clone(),
         );
-        
+
         // Test adding a scalar value first
-        let res = &shared_value1 + Scalar::from(3u64);  // [4] + 3
+        let res = &shared_value1 + Scalar::from(3u64); // [4] + 3
         assert_eq!(res.visibility, Visibility::Shared);
         assert_eq!(
             res.open().unwrap(),
@@ -663,14 +695,15 @@ mod test {
         // Assume now that parties have additive shares of [5]
         // The peer holds 1, the local party holds 4
         let shared_value2 = MpcScalar::from_u64_with_visibility(
-            4u64, 
-            Visibility::Shared, 
-            network.clone(), 
-            beaver_source.clone()
+            4u64,
+            Visibility::Shared,
+            network.clone(),
+            beaver_source.clone(),
         );
 
-        network.borrow_mut()
-            .add_mock_scalars(vec![Scalar::from(3u8)]);  // The peer's share of [4] + [5]
+        network
+            .borrow_mut()
+            .add_mock_scalars(vec![Scalar::from(3u8)]); // The peer's share of [4] + [5]
 
         let res = shared_value1 + shared_value2;
         assert_eq!(res.visibility, Visibility::Shared);
@@ -686,7 +719,7 @@ mod test {
         let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
 
         // Add two random values, ensure associativity
-        let mut rng = OsRng{};
+        let mut rng = OsRng {};
         let v1 = MpcScalar::random(&mut rng, network, beaver_source);
         let v2 = Scalar::random(&mut rng);
 
@@ -704,14 +737,15 @@ mod test {
         // Subtract a raw scalar from a shared value
         // Assume parties hold secret shares 2 and 1 of [3]
         let shared_value1 = MpcScalar::from_u64_with_visibility(
-            2u64, 
-            Visibility::Shared, 
-            network.clone(), 
-            beaver_source.clone()
+            2u64,
+            Visibility::Shared,
+            network.clone(),
+            beaver_source.clone(),
         );
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(1u8)]);
-        
+
         let res = &shared_value1 - Scalar::from(2u8);
         assert_eq!(res.visibility, Visibility::Shared);
         assert_eq!(
@@ -721,14 +755,15 @@ mod test {
 
         // Subtract two shared values
         let shared_value2 = MpcScalar::from_u64_with_visibility(
-            5, 
-            Visibility::Shared, 
-            network.clone(), 
-            beaver_source.clone()
+            5,
+            Visibility::Shared,
+            network.clone(),
+            beaver_source.clone(),
         );
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(2u8)]);
-        
+
         let res = shared_value2 - shared_value1;
         assert_eq!(res.visibility, Visibility::Shared);
         assert_eq!(
@@ -745,10 +780,10 @@ mod test {
         // Multiply a scalar with a shared value
         // Assume both parties have a sharing of [11], local party holds 6
         let shared_value1 = MpcScalar::from_u64_with_visibility(
-            6u64, 
-            Visibility::Shared, 
-            network.clone(), 
-            beaver_source.clone()
+            6u64,
+            Visibility::Shared,
+            network.clone(),
+            beaver_source.clone(),
         );
 
         // Populate the network mock after the multiplication; this implicitly asserts that
@@ -756,26 +791,24 @@ mod test {
         let res = &shared_value1 * Scalar::from(2u8);
         assert_eq!(res.visibility, Visibility::Shared);
 
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(10u8)]);
-        
+
         assert_eq!(
             res.open().unwrap(),
             MpcScalar::from_public_u64(22, network.clone(), beaver_source.clone())
         );
 
         // Multiply a shared value with a public value
-        let public_value = MpcScalar::from_public_u64(
-            3u64,
-            network.clone(),
-            beaver_source.clone(),
-        );
+        let public_value = MpcScalar::from_public_u64(3u64, network.clone(), beaver_source.clone());
 
         // As above, populate the network mock after the multiplication
         let res = public_value * &shared_value1;
         assert_eq!(res.visibility, Visibility::Shared);
 
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(15u8)]);
         assert_eq!(
             res.open().unwrap(),
@@ -788,27 +821,26 @@ mod test {
         //      2. [shared2 - b]
         // Assume that the parties hold [shared2] = [12] where the peer holds 7 and the local holds 5
         let shared_value2 = MpcScalar::from_u64_with_visibility(
-            5u64, 
-            Visibility::Shared, 
-            network.clone(), 
-            beaver_source.clone()
+            5u64,
+            Visibility::Shared,
+            network.clone(),
+            beaver_source.clone(),
         );
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(5u8), Scalar::from(7u8)]);
-        
+
         // Populate the network with the peer's res share after the computation
         let res = shared_value1 * shared_value2;
         assert_eq!(res.visibility, Visibility::Shared);
 
-        network.borrow_mut()
+        network
+            .borrow_mut()
             .add_mock_scalars(vec![Scalar::from(0u64)]);
-        
+
         assert_eq!(
             res.open().unwrap(),
             MpcScalar::from_public_u64(12 * 11, network, beaver_source)
         )
-
-
     }
-
 }

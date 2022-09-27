@@ -1,18 +1,27 @@
 //! Groups logic for a Ristretto Point that contains an authenticated value
-use std::{ops::{Add, AddAssign, Neg, Sub, SubAssign, Mul, MulAssign}, borrow::Borrow};
+use std::{
+    borrow::Borrow,
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 
-use curve25519_dalek::{scalar::Scalar, ristretto::RistrettoPoint, traits::{Identity, MultiscalarMul}};
-use rand_core::{RngCore, CryptoRng};
+use curve25519_dalek::{
+    ristretto::RistrettoPoint,
+    scalar::Scalar,
+    traits::{Identity, MultiscalarMul},
+};
+use rand_core::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 
 use crate::{
-    network::MpcNetwork, 
-    beaver::SharedValueSource, 
-    mpc_ristretto::{MpcRistrettoPoint, MpcCompressedRistretto}, 
-    mpc_scalar::MpcScalar, Visibility, SharedNetwork, BeaverSource, macros, Visible, 
-    error::{MpcNetworkError, MpcError}, authenticated_scalar::AuthenticatedScalar
+    authenticated_scalar::AuthenticatedScalar,
+    beaver::SharedValueSource,
+    error::{MpcError, MpcNetworkError},
+    macros,
+    mpc_ristretto::{MpcCompressedRistretto, MpcRistrettoPoint},
+    mpc_scalar::MpcScalar,
+    network::MpcNetwork,
+    BeaverSource, SharedNetwork, Visibility, Visible,
 };
-
 
 /// An authenticated Ristretto point, wrapper around an MPC-capable Ristretto point
 /// that supports method to authenticate an opened result against a shared global MAC key.
@@ -96,25 +105,36 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
     );
 
     macros::impl_authenticated!(
-        MpcRistrettoPoint<N, S>, 
-        from_public_ristretto_point, 
-        from_private_ristretto_point, 
+        MpcRistrettoPoint<N, S>,
+        from_public_ristretto_point,
+        from_private_ristretto_point,
         from_ristretto_point_with_visibility,
         RistrettoPoint
     );
 
     /// Create a new AuthenticatedRistretto from an existing private MpcRistrettoPoint
-    pub fn from_private_mpc_ristretto(x: MpcRistrettoPoint<N, S>, key_share: MpcScalar<N, S>) -> Self {
+    pub fn from_private_mpc_ristretto(
+        x: MpcRistrettoPoint<N, S>,
+        key_share: MpcScalar<N, S>,
+    ) -> Self {
         Self::from_mpc_ristretto_with_visibility(x, Visibility::Private, key_share)
     }
 
     /// Create a new AuthenticatedRistretto from an existing public MpcRistrettoPoint
-    pub fn from_public_mpc_ristretto(x: MpcRistrettoPoint<N, S>, key_share: MpcScalar<N, S>) -> Self {
+    pub fn from_public_mpc_ristretto(
+        x: MpcRistrettoPoint<N, S>,
+        key_share: MpcScalar<N, S>,
+    ) -> Self {
         Self::from_mpc_ristretto_with_visibility(x, Visibility::Public, key_share)
     }
 
     /// A helper method that fits the macro interface
-    fn from_mpc_ristretto(x: MpcRistrettoPoint<N, S>, key_share: MpcScalar<N, S>, _: SharedNetwork<N>, _: BeaverSource<S>) -> Self {
+    fn from_mpc_ristretto(
+        x: MpcRistrettoPoint<N, S>,
+        key_share: MpcScalar<N, S>,
+        _: SharedNetwork<N>,
+        _: BeaverSource<S>,
+    ) -> Self {
         Self::from_public_mpc_ristretto(x, key_share)
     }
 
@@ -122,13 +142,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
     pub(crate) fn from_mpc_ristretto_with_visibility(
         x: MpcRistrettoPoint<N, S>,
         visibility: Visibility,
-        key_share: MpcScalar<N, S>
+        key_share: MpcScalar<N, S>,
     ) -> Self {
         Self {
             value: x,
             visibility,
             key_share,
-            mac_share: None,  // Will be filled in when shared
+            mac_share: None, // Will be filled in when shared
         }
     }
 
@@ -137,12 +157,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
         rng: &mut R,
         key_share: MpcScalar<N, S>,
         network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>
+        beaver_source: BeaverSource<S>,
     ) -> Self {
         Self {
             value: MpcRistrettoPoint::random(rng, network, beaver_source),
             visibility: Visibility::Private,
-            mac_share: None,  // Private values don't have MACs
+            mac_share: None, // Private values don't have MACs
             key_share,
         }
     }
@@ -151,7 +171,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
     macros::impl_authenticated!(MpcRistrettoPoint<N, S>, default);
 
     pub fn compress(&self) -> AuthenticatedCompressedRistretto<N, S> {
-        AuthenticatedCompressedRistretto { 
+        AuthenticatedCompressedRistretto {
             value: self.value().compress(),
             visibility: self.visibility,
             mac_share: self.mac().map(|val| val.compress()),
@@ -168,34 +188,33 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
     /// From a private value, the <party_id>'th party distributes additive shares of
     /// their local value to the other parties. Togther they use the Beaver trick
     /// to also obtain a secret sharing of the value's MAC under the shared key
-    pub fn share_secret(&self, party_id: u64) -> Result<AuthenticatedRistretto<N, S>, MpcNetworkError> {
+    pub fn share_secret(
+        &self,
+        party_id: u64,
+    ) -> Result<AuthenticatedRistretto<N, S>, MpcNetworkError> {
         // Share the value and then create the mac
         let my_share = self.value().share_secret(party_id)?;
         let my_mac_share = &self.key_share() * &my_share;
 
-        Ok(
-            Self {
-                value: my_share,
-                visibility: Visibility::Shared,
-                mac_share: Some(my_mac_share),
-                key_share: self.key_share(),
-            }
-        )
+        Ok(Self {
+            value: my_share,
+            visibility: Visibility::Shared,
+            mac_share: Some(my_mac_share),
+            key_share: self.key_share(),
+        })
     }
 
     /// From a shared value, both parties distribute their shares of the underlying value
     /// The parties locally sum all shares to reconstruct the value
     pub fn open(&self) -> Result<AuthenticatedRistretto<N, S>, MpcNetworkError> {
-        Ok(
-            Self {
-                value: self.value().open()?,
-                visibility: Visibility::Public,
-                mac_share: None,  // Public values have no MAC
-                key_share: self.key_share(),
-            }
-        )
+        Ok(Self {
+            value: self.value().open()?,
+            visibility: Visibility::Public,
+            mac_share: None, // Public values have no MAC
+            key_share: self.key_share(),
+        })
     }
-    
+
     /// From a shared value, both parties:
     ///     1. Distribute their shares of the underlying value, compute the sum to reveal the plaintext
     ///     2. Compute and commit to their share of \key_share * value - \mac_share
@@ -203,29 +222,30 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
     pub fn open_and_authenticate(&self) -> Result<AuthenticatedRistretto<N, S>, MpcError> {
         // If the value is not shard, there is nothing to open or authenticate
         if !self.is_shared() {
-            return Ok(self.clone())
+            return Ok(self.clone());
         }
 
         // 1. Open the underlying value
-        let opened_value = self.value().open()
-            .map_err(MpcError::NetworkError)?;
-        
+        let opened_value = self.value().open().map_err(MpcError::NetworkError)?;
+
         // 2. Commit to the value key_share * value - mac_share, then open the values and check commitments
         let mac_check_share = &self.key_share * &opened_value - self.mac().unwrap();
 
         // 3. Verify the authenticated mac check shares sum to zero
-        if mac_check_share.commit_and_open()?.value().ne(&RistrettoPoint::identity()) {
-            return Err(MpcError::AuthenticationError)
+        if mac_check_share
+            .commit_and_open()?
+            .value()
+            .ne(&RistrettoPoint::identity())
+        {
+            return Err(MpcError::AuthenticationError);
         }
 
-        Ok(
-            Self {
-                value: opened_value,
-                visibility: Visibility::Public,
-                key_share: self.key_share(),
-                mac_share: None,  // Public value has no MAC
-            }
-        )
+        Ok(Self {
+            value: opened_value,
+            visibility: Visibility::Public,
+            key_share: self.key_share(),
+            mac_share: None, // Public value has no MAC
+        })
     }
 }
 
@@ -238,7 +258,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Visible for Authenticat
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for AuthenticatedRistretto<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq
+    for AuthenticatedRistretto<N, S>
+{
     fn eq(&self, other: &Self) -> bool {
         self.value().eq(other.value())
     }
@@ -246,7 +268,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for Authentic
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for AuthenticatedRistretto<N, S> {}
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq for AuthenticatedRistretto<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
+    for AuthenticatedRistretto<N, S>
+{
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.value().ct_eq(other.value())
     }
@@ -264,26 +288,20 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a Authenticat
         let value = self.value() * rhs.value();
         let mac = {
             // Public * public results in a public value, which has no MAC
-            if self.is_public() && rhs.is_public() { None }
-            else if self.is_shared() && rhs.is_shared() {
-                Some(
-                    &value * self.key_share()
-                )
-            }
-            else if rhs.is_public() {
-                Some(
-                    self.mac().unwrap() * rhs.value()
-                )
+            if self.is_public() && rhs.is_public() {
+                None
+            } else if self.is_shared() && rhs.is_shared() {
+                Some(&value * self.key_share())
+            } else if rhs.is_public() {
+                Some(self.mac().unwrap() * rhs.value())
             }
             // Left hand side is public
             else {
-                Some(
-                    rhs.mac().unwrap() * self.value()
-                )
+                Some(rhs.mac().unwrap() * self.value())
             }
         };
 
-        Self::Output {  
+        Self::Output {
             value,
             visibility: Visibility::min_visibility_two(self, rhs),
             mac_share: mac,
@@ -296,7 +314,9 @@ macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_ass
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, Scalar);
 macros::impl_arithmetic_wrapper!(AuthenticatedRistretto<N, S>, Mul, mul, *, AuthenticatedScalar<N, S>);
 
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for &'a AuthenticatedRistretto<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar>
+    for &'a AuthenticatedRistretto<N, S>
+{
     type Output = AuthenticatedRistretto<N, S>;
 
     fn mul(self, rhs: Scalar) -> Self::Output {
@@ -309,15 +329,19 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for &'a
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar> for AuthenticatedRistretto<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<Scalar>
+    for AuthenticatedRistretto<N, S>
+{
     type Output = AuthenticatedRistretto<N, S>;
 
     fn mul(self, rhs: Scalar) -> Self::Output {
-        &self * rhs        
+        &self * rhs
     }
 }
 
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for &'a AuthenticatedRistretto<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>>
+    for &'a AuthenticatedRistretto<N, S>
+{
     type Output = AuthenticatedRistretto<N, S>;
 
     fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
@@ -325,7 +349,9 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
     }
 }
 
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>> for &'a AuthenticatedRistretto<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>>
+    for &'a AuthenticatedRistretto<N, S>
+{
     type Output = AuthenticatedRistretto<N, S>;
 
     fn mul(self, rhs: MpcScalar<N, S>) -> Self::Output {
@@ -333,7 +359,9 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>
     }
 }
 
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>> for AuthenticatedRistretto<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N, S>>
+    for AuthenticatedRistretto<N, S>
+{
     type Output = AuthenticatedRistretto<N, S>;
 
     fn mul(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
@@ -341,7 +369,9 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>> for AuthenticatedRistretto<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<MpcScalar<N, S>>
+    for AuthenticatedRistretto<N, S>
+{
     type Output = AuthenticatedRistretto<N, S>;
 
     fn mul(self, rhs: MpcScalar<N, S>) -> Self::Output {
@@ -400,7 +430,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<AuthenticatedRistre
     }
 }
 
-
 /**
  * Add and variants for borrowed, non-borrowed values
  */
@@ -412,7 +441,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a Authenticat
     fn add(self, rhs: &'a AuthenticatedRistretto<N, S>) -> Self::Output {
         // For a public value + a scalar value; always put the public value on the RHS
         if self.is_public() && rhs.is_shared() {
-            return rhs + self
+            return rhs + self;
         }
 
         let mac_share = {
@@ -421,13 +450,9 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a Authenticat
             if self.is_public() && rhs.is_public() {
                 None
             } else if rhs.is_public() {
-                Some (
-                    self.mac().unwrap() + &self.key_share() * rhs.value()
-                )
+                Some(self.mac().unwrap() + &self.key_share() * rhs.value())
             } else {
-                Some(
-                    self.mac().unwrap() + rhs.mac().unwrap()
-                )
+                Some(self.mac().unwrap() + rhs.mac().unwrap())
             }
         };
 
@@ -456,11 +481,11 @@ macros::impl_arithmetic_wrapped_authenticated!(
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a AuthenticatedRistretto<N, S>>
     for &'a AuthenticatedRistretto<N, S>
 {
-    type Output = AuthenticatedRistretto<N, S>;    
+    type Output = AuthenticatedRistretto<N, S>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &'a AuthenticatedRistretto<N, S>) -> Self::Output {
-        self + rhs.neg() 
+        self + rhs.neg()
     }
 }
 
@@ -477,7 +502,9 @@ macros::impl_arithmetic_wrapped_authenticated!(
 /**
  * Neg and variants for borrowed, non-borrowed values
  */
-impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a AuthenticatedRistretto<N, S> {
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg
+    for &'a AuthenticatedRistretto<N, S>
+{
     type Output = AuthenticatedRistretto<N, S>;
 
     fn neg(self) -> Self::Output {
@@ -501,28 +528,32 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for AuthenticatedRi
 /**
  * Iterator traits
  */
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul for AuthenticatedRistretto<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul
+    for AuthenticatedRistretto<N, S>
+{
     type Point = Self;
 
     fn multiscalar_mul<I, J>(scalars: I, points: J) -> Self::Point
-        where
-            I: IntoIterator,
-            I::Item: std::borrow::Borrow<Scalar>,
-            J: IntoIterator,
-            J::Item: std::borrow::Borrow<Self::Point> 
+    where
+        I: IntoIterator,
+        I::Item: std::borrow::Borrow<Scalar>,
+        J: IntoIterator,
+        J::Item: std::borrow::Borrow<Self::Point>,
     {
         let mut peekable = points.into_iter().peekable();
         let (key_share, network, beaver_source) = {
             let first_elem: &AuthenticatedRistretto<N, S> = peekable.peek().unwrap().borrow();
-            (first_elem.key_share(), first_elem.network(), first_elem.beaver_source())
+            (
+                first_elem.key_share(),
+                first_elem.network(),
+                first_elem.beaver_source(),
+            )
         };
 
-        scalars.into_iter()
-            .zip(peekable.into_iter())
-            .fold(
-                AuthenticatedRistretto::identity(key_share, network, beaver_source), 
-                |acc, pair| acc + *pair.0.borrow() * pair.1.borrow()
-            )
+        scalars.into_iter().zip(peekable.into_iter()).fold(
+            AuthenticatedRistretto::identity(key_share, network, beaver_source),
+            |acc, pair| acc + *pair.0.borrow() * pair.1.borrow(),
+        )
     }
 }
 
@@ -546,16 +577,14 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressed
     pub fn decompress(&self) -> Option<AuthenticatedRistretto<N, S>> {
         let new_mac = match &self.mac_share {
             None => None,
-            Some(val) => Some(val.decompress()?)
+            Some(val) => Some(val.decompress()?),
         };
 
-        Some(
-            AuthenticatedRistretto {
-                value: self.value.decompress()?,
-                visibility: self.visibility,
-                mac_share: new_mac,
-                key_share: self.key_share.clone()
-            }
-        )
+        Some(AuthenticatedRistretto {
+            value: self.value.decompress()?,
+            visibility: self.visibility,
+            mac_share: new_mac,
+            key_share: self.key_share.clone(),
+        })
     }
 }
