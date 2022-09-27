@@ -7,7 +7,7 @@ use std::{
 use curve25519_dalek::{
     ristretto::RistrettoPoint,
     scalar::Scalar,
-    traits::{Identity, MultiscalarMul},
+    traits::{Identity, IsIdentity, MultiscalarMul},
 };
 use rand_core::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
@@ -592,5 +592,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressed
     /// View this CompressedRistretto as an array of bytes
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.value.as_bytes()
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> IsIdentity
+    for AuthenticatedCompressedRistretto<N, S>
+{
+    fn is_identity(&self) -> bool {
+        self.value.is_identity()
     }
 }

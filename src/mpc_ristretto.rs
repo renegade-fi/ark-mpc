@@ -9,7 +9,7 @@ use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_POINT,
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
-    traits::{Identity, MultiscalarMul},
+    traits::{Identity, IsIdentity, MultiscalarMul},
 };
 use futures::executor::block_on;
 use rand_core::{CryptoRng, OsRng, RngCore};
@@ -790,5 +790,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
     /// View this CompressedRistretto as an array of bytes
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.value.as_bytes()
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> IsIdentity
+    for MpcCompressedRistretto<N, S>
+{
+    fn is_identity(&self) -> bool {
+        self.value.is_identity()
     }
 }
