@@ -10,7 +10,7 @@ use curve25519_dalek::{
     traits::{Identity, IsIdentity, MultiscalarMul},
 };
 use rand_core::{CryptoRng, RngCore};
-use subtle::ConstantTimeEq;
+use subtle::{Choice, ConstantTimeEq};
 
 use crate::{
     authenticated_scalar::AuthenticatedScalar,
@@ -593,6 +593,20 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressed
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.value.as_bytes()
     }
+
+    /// Create the identity point wrapped in an AuthenticatedRistretto
+    pub fn identity(
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> AuthenticatedCompressedRistretto<N, S> {
+        AuthenticatedCompressedRistretto {
+            value: MpcCompressedRistretto::identity(network, beaver_source),
+            visibility: Visibility::Public,
+            mac_share: None,
+            key_share,
+        }
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> IsIdentity
@@ -600,5 +614,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> IsIdentity
 {
     fn is_identity(&self) -> bool {
         self.value.is_identity()
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
+    for AuthenticatedCompressedRistretto<N, S>
+{
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.value.ct_eq(&other.value)
     }
 }

@@ -13,7 +13,7 @@ use curve25519_dalek::{
 };
 use futures::executor::block_on;
 use rand_core::{CryptoRng, OsRng, RngCore};
-use subtle::ConstantTimeEq;
+use subtle::{Choice, ConstantTimeEq};
 
 use crate::{
     beaver::SharedValueSource,
@@ -791,6 +791,19 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.value.as_bytes()
     }
+
+    /// Create the identity point wrapped in an MpcCompressedRistretto
+    pub fn identity(
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> MpcCompressedRistretto<N, S> {
+        MpcCompressedRistretto {
+            value: CompressedRistretto::identity(),
+            visibility: Visibility::Public,
+            network,
+            beaver_source,
+        }
+    }
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> IsIdentity
@@ -798,5 +811,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> IsIdentity
 {
     fn is_identity(&self) -> bool {
         self.value.is_identity()
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
+    for MpcCompressedRistretto<N, S>
+{
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.value.ct_eq(&other.value)
     }
 }
