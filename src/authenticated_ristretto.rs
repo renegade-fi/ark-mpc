@@ -562,6 +562,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul
  */
 
 /// An authenticated CompressedRistrettoPoint where authentication is over the decompressed version
+#[derive(Clone, Debug)]
 pub struct AuthenticatedCompressedRistretto<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying value that this structure authenticates
     value: MpcCompressedRistretto<N, S>,
@@ -586,5 +587,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressed
             mac_share: new_mac,
             key_share: self.key_share.clone(),
         })
+    }
+
+    /// View this CompressedRistretto as an array of bytes
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        self.value.as_bytes()
     }
 }

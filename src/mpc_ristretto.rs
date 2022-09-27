@@ -786,4 +786,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
             beaver_source: self.beaver_source.clone(),
         })
     }
+
+    /// View this CompressedRistretto as an array of bytes
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        self.value.as_bytes()
+    }
 }
