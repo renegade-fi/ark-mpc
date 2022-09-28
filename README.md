@@ -10,6 +10,7 @@ The core of the library lives in `src/`, and the integration tests live in `inte
 - `commitment.rs` defines commitment implementations for both `Scalar` values (Pedersen) and `RistrettoPoint` values (`SHA3_512` hash commitment).
 - `macros.rs` defines a series of macros used to aid in arithmetic implementation for borrowed values, wrapped values, etc.
 - `beaver.rs` defines an interface the library expects to receive Beaver triplets through. Because the preprocessing functionality is largely an infrastructural burden, only dummy implementations are given. The consumer of this library should implement an appropriate pre-processing functionality.
+- `fabric.rs` defines an "MPC Fabric" that effectively acts as a dependency injection layer on top of the network. That is, the `MpcFabric` holds network references, beaver source implementations, and MAC keys; allowing the consumer of the library to allocate secret shared values without passing around these dependencies.
 
 ## Tests
 Unit tests for isolated parts of the library are available via
