@@ -430,6 +430,32 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<AuthenticatedRistre
     }
 }
 
+/// Multiplication of an authenticated scalar with an unwrapped Ristretto point
+impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint>
+    for &'a AuthenticatedScalar<N, S>
+{
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: RistrettoPoint) -> Self::Output {
+        self * AuthenticatedRistretto::from_public_ristretto_point(
+            rhs,
+            self.key_share(),
+            self.network(),
+            self.beaver_source(),
+        )
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<RistrettoPoint>
+    for AuthenticatedScalar<N, S>
+{
+    type Output = AuthenticatedRistretto<N, S>;
+
+    fn mul(self, rhs: RistrettoPoint) -> Self::Output {
+        &self * rhs
+    }
+}
+
 /**
  * Add and variants for borrowed, non-borrowed values
  */
