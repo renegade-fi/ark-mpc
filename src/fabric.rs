@@ -8,10 +8,13 @@
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 
 use async_std::task::block_on;
-use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
+use curve25519_dalek::{
+    ristretto::{CompressedRistretto, RistrettoPoint},
+    scalar::Scalar,
+};
 
 use crate::{
-    authenticated_ristretto::AuthenticatedRistretto,
+    authenticated_ristretto::{AuthenticatedCompressedRistretto, AuthenticatedRistretto},
     authenticated_scalar::AuthenticatedScalar,
     beaver::SharedValueSource,
     error::MpcError,
@@ -120,6 +123,20 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         )
     }
 
+    /// Allocate a scalar from a u64 as a private input to the MPC protocol
+    pub fn allocate_private_u64(
+        &self,
+        owning_party: u64,
+        value: u64,
+    ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+        self.allocate_private_scalar(owning_party, Scalar::from(value))
+    }
+
+    /// Allocate a scalar from a u64 as a public input to the MPC protocol
+    pub fn allocate_public_u64(&self, value: u64) -> AuthenticatedScalar<N, S> {
+        self.allocate_public_scalar(Scalar::from(value))
+    }
+
     /// Allocate a RistrettoPoint that acts as one of the given party's private inputs to the protocol
     ///
     /// If the local party is the specified party, then this method will construct an additive sharing
@@ -153,6 +170,19 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         value: RistrettoPoint,
     ) -> AuthenticatedRistretto<N, S> {
         AuthenticatedRistretto::from_public_ristretto_point(
+            value,
+            self.key_share.clone(),
+            self.network.clone(),
+            self.beaver_source.clone(),
+        )
+    }
+
+    /// Allocate a private compressed ristretto point in the MPC network
+    pub fn allocate_public_compressed_ristretto(
+        &self,
+        value: CompressedRistretto,
+    ) -> AuthenticatedCompressedRistretto<N, S> {
+        AuthenticatedCompressedRistretto::from_public_compressed_ristretto(
             value,
             self.key_share.clone(),
             self.network.clone(),

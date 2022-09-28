@@ -5,7 +5,7 @@ use std::{
 };
 
 use curve25519_dalek::{
-    ristretto::RistrettoPoint,
+    ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
     traits::{Identity, IsIdentity, MultiscalarMul},
 };
@@ -575,6 +575,104 @@ pub struct AuthenticatedCompressedRistretto<N: MpcNetwork + Send, S: SharedValue
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressedRistretto<N, S> {
+    /// Allocate a public AuthenticatedCompressedRistretto value from a byte buffer
+    pub fn from_public_bytes(
+        buf: &[u8; 32],
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self::from_bytes_with_visibility(buf, Visibility::Public, key_share, network, beaver_source)
+    }
+
+    /// Allocate a private AuthenticatedCompressedRistretto value from a byte buffer
+    pub fn from_private_bytes(
+        buf: &[u8; 32],
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self::from_bytes_with_visibility(
+            buf,
+            Visibility::Private,
+            key_share,
+            network,
+            beaver_source,
+        )
+    }
+
+    pub(crate) fn from_bytes_with_visibility(
+        buf: &[u8; 32],
+        visibility: Visibility,
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self {
+            value: MpcCompressedRistretto::from_bytes_with_visibility(
+                buf,
+                visibility,
+                network,
+                beaver_source,
+            ),
+            visibility,
+            key_share,
+            mac_share: None, // Filled in when value is shared
+        }
+    }
+
+    /// Allocate from a public CompressedRistretto point
+    pub fn from_public_compressed_ristretto(
+        value: CompressedRistretto,
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self::from_compressed_ristretto_with_visibility(
+            value,
+            Visibility::Public,
+            key_share,
+            network,
+            beaver_source,
+        )
+    }
+
+    /// Allocate from a private CompressedRistretto point
+    pub fn from_private_compressed_ristretto(
+        value: CompressedRistretto,
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self::from_compressed_ristretto_with_visibility(
+            value,
+            Visibility::Private,
+            key_share,
+            network,
+            beaver_source,
+        )
+    }
+
+    pub(crate) fn from_compressed_ristretto_with_visibility(
+        value: CompressedRistretto,
+        visibility: Visibility,
+        key_share: MpcScalar<N, S>,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self {
+            value: MpcCompressedRistretto::from_compressed_ristretto_with_visibility(
+                value,
+                visibility,
+                network,
+                beaver_source,
+            ),
+            visibility,
+            key_share,
+            mac_share: None, // Filled in after sharing
+        }
+    }
+
     pub fn decompress(&self) -> Option<AuthenticatedRistretto<N, S>> {
         let new_mac = match &self.mac_share {
             None => None,

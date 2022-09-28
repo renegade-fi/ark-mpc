@@ -748,8 +748,8 @@ pub struct MpcCompressedRistretto<N: MpcNetwork + Send, S: SharedValueSource<Sca
  * Wrapper type implementation
  */
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<N, S> {
-    // Convert from a CompressedRistretto point; visibility assumed public
-    pub fn from_compressed_ristretto(
+    /// Convert from a public CompressedRistretto point
+    pub fn from_public_compressed_ristretto(
         a: CompressedRistretto,
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>,
@@ -762,8 +762,22 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
         )
     }
 
+    /// Convert from a private CompressedRistretto point
+    pub fn from_private_compressed_ristretto(
+        value: CompressedRistretto,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Self {
+        Self::from_compressed_ristretto_with_visibility(
+            value,
+            Visibility::Private,
+            network,
+            beaver_source,
+        )
+    }
+
     /// Convert from a CompressedRistretto point with visibility explicitly defined
-    pub fn from_compressed_ristretto_with_visibility(
+    pub(crate) fn from_compressed_ristretto_with_visibility(
         a: CompressedRistretto,
         visibility: Visibility,
         network: SharedNetwork<N>,
@@ -785,6 +799,38 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(),
         })
+    }
+
+    /// Construct a public network allocated compressed point from a byte array
+    pub fn from_public_bytes(
+        buf: &[u8; 32],
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> MpcCompressedRistretto<N, S> {
+        Self::from_bytes_with_visibility(buf, Visibility::Public, network, beaver_source)
+    }
+
+    /// Construct a private network allocated compressed point from a byte array
+    pub fn from_private_bytes(
+        buf: &[u8; 32],
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> MpcCompressedRistretto<N, S> {
+        Self::from_bytes_with_visibility(buf, Visibility::Private, network, beaver_source)
+    }
+
+    pub(crate) fn from_bytes_with_visibility(
+        buf: &[u8; 32],
+        visibility: Visibility,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> MpcCompressedRistretto<N, S> {
+        MpcCompressedRistretto {
+            value: CompressedRistretto(*buf),
+            visibility,
+            network,
+            beaver_source,
+        }
     }
 
     /// View this CompressedRistretto as an array of bytes
