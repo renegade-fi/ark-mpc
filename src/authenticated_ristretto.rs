@@ -7,7 +7,7 @@ use std::{
 use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
-    traits::{Identity, IsIdentity, MultiscalarMul},
+    traits::{Identity, IsIdentity},
 };
 use rand_core::{CryptoRng, RngCore};
 use subtle::{Choice, ConstantTimeEq};
@@ -528,17 +528,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for AuthenticatedRi
 /**
  * Iterator traits
  */
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul
-    for AuthenticatedRistretto<N, S>
-{
-    type Point = Self;
-
-    fn multiscalar_mul<I, J>(scalars: I, points: J) -> Self::Point
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<N, S> {
+    /// Multiscalar multiplication, for scalars a_1, ..., a_n and points
+    /// B_1, ..., B_n; this function computes a_1 * B_1 + ... + a_n * B_n
+    pub fn multiscalar_mul<I, J>(scalars: I, points: J) -> Self
     where
         I: IntoIterator,
-        I::Item: std::borrow::Borrow<Scalar>,
+        I::Item: std::borrow::Borrow<AuthenticatedScalar<N, S>>,
         J: IntoIterator,
-        J::Item: std::borrow::Borrow<Self::Point>,
+        J::Item: std::borrow::Borrow<Self>,
     {
         let mut peekable = points.into_iter().peekable();
         let (key_share, network, beaver_source) = {
@@ -552,7 +550,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul
 
         scalars.into_iter().zip(peekable.into_iter()).fold(
             AuthenticatedRistretto::identity(key_share, network, beaver_source),
-            |acc, pair| acc + *pair.0.borrow() * pair.1.borrow(),
+            |acc, pair| acc + pair.0.borrow() * pair.1.borrow(),
         )
     }
 }

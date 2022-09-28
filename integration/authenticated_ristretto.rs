@@ -1,5 +1,4 @@
 use ::mpc_ristretto::{Visibility, Visible};
-use curve25519_dalek::{scalar::Scalar, traits::MultiscalarMul};
 use mpc_ristretto::{
     authenticated_ristretto::AuthenticatedRistretto, authenticated_scalar::AuthenticatedScalar,
     mpc_ristretto::MpcRistrettoPoint, network::QuicTwoPartyNet,
@@ -315,10 +314,23 @@ fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .share_secret(1 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
 
-    let mut res = AuthenticatedRistretto::multiscalar_mul(
-        vec![Scalar::from(1u64), Scalar::from(3u64)],
-        vec![shared_point1, shared_point2],
-    );
+    let scalars = vec![
+        AuthenticatedScalar::from_public_u64(
+            1u64,
+            test_args.mac_key.clone(),
+            test_args.net_ref.clone(),
+            test_args.beaver_source.clone(),
+        ),
+        AuthenticatedScalar::from_public_u64(
+            3u64,
+            test_args.mac_key.clone(),
+            test_args.net_ref.clone(),
+            test_args.beaver_source.clone(),
+        ),
+    ];
+
+    let mut res =
+        AuthenticatedRistretto::multiscalar_mul(scalars, vec![shared_point1, shared_point2]);
 
     let res_open = res
         .open_and_authenticate()
