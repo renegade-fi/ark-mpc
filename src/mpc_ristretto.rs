@@ -791,6 +791,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcCompressedRistretto<
         }
     }
 
+    /// Get the underlying CompressedRistretto point
+    pub fn value(&self) -> CompressedRistretto {
+        self.value
+    }
+
     /// Convert form a CompressedRistretto point to a RistrettoPoint
     pub fn decompress(&self) -> Option<MpcRistrettoPoint<N, S>> {
         Some(MpcRistrettoPoint {

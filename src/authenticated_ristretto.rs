@@ -599,6 +599,11 @@ pub struct AuthenticatedCompressedRistretto<N: MpcNetwork + Send, S: SharedValue
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressedRistretto<N, S> {
+    /// Get the underlying CompressedRistretto point
+    pub fn value(&self) -> CompressedRistretto {
+        self.value.value()
+    }
+
     /// Allocate a public AuthenticatedCompressedRistretto value from a byte buffer
     pub fn from_public_bytes(
         buf: &[u8; 32],
