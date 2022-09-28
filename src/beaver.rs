@@ -9,9 +9,9 @@ use curve25519_dalek::scalar::Scalar;
 ///     2. Beaver triplets; additively shared values [a], [b], [c] such
 ///        that a * b = c
 pub trait SharedValueSource<T> {
-    // Fetch the next shared single value
+    /// Fetch the next shared single value
     fn next_shared_value(&mut self) -> T;
-    // Fetch the next beaver triplet
+    /// Fetch the next beaver triplet
     fn next_triplet(&mut self) -> (T, T, T);
 }
 

@@ -10,6 +10,7 @@ pub mod authenticated_scalar;
 pub mod beaver;
 pub mod commitment;
 pub mod error;
+pub mod fabric;
 mod macros;
 pub mod mpc_ristretto;
 pub mod mpc_scalar;
