@@ -4,6 +4,7 @@ use mpc_ristretto::{
     beaver::SharedValueSource,
     error::MpcNetworkError,
     mpc_scalar::{scalar_to_u64, MpcScalar},
+    network::QuicTwoPartyNet,
 };
 
 use crate::{IntegrationTest, IntegrationTestArgs};
@@ -293,6 +294,62 @@ fn test_commit_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Test that sharing a batch of values works properly
+fn test_open_batch(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 shares values with party 1
+    let values: Vec<MpcScalar<QuicTwoPartyNet, PartyIDBeaverSource>> = vec![1u64, 2u64, 3u64]
+        .into_iter()
+        .map(|value| {
+            MpcScalar::from_private_u64(
+                value,
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+        })
+        .collect();
+
+    let shared_values = MpcScalar::batch_share_secrets(0 /* party_id */, &values)
+        .map_err(|err| format!("Error sharing values: {:?}", err))?;
+
+    // Open the batch and verify equality
+    let opened_values = MpcScalar::open_batch(&shared_values)
+        .map_err(|err| format!("Error opening values: {:?}", err))?;
+
+    if opened_values.ne(&values) {
+        return Err(format!("Expected: {:?}, Got: {:?}", values, opened_values));
+    }
+
+    Ok(())
+}
+
+/// Tests that committing and opening in a batch works properly
+fn test_commit_and_open_batch(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 shares a vector of values, both parties commit and open
+    let values: Vec<MpcScalar<QuicTwoPartyNet, PartyIDBeaverSource>> = vec![1u64, 2u64, 3u64]
+        .into_iter()
+        .map(|value| {
+            MpcScalar::from_private_u64(
+                value,
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+        })
+        .collect();
+
+    let shared_values = MpcScalar::batch_share_secrets(0 /* party_id */, &values)
+        .map_err(|err| format!("Error sharing values: {:?}", err))?;
+
+    // Open validly and verify that opening passes
+    let opened_values = MpcScalar::batch_commit_and_open(&shared_values)
+        .map_err(|err| format!("Error committing and opening values: {:?}", err))?;
+
+    if opened_values.ne(&values) {
+        return Err(format!("Expected: {:?}, Got: {:?}", values, opened_values));
+    }
+
+    Ok(())
+}
+
 /// Party 0 sends a value and party 1 receives
 fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let share = {
@@ -574,6 +631,16 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "mpc-scalar::test_commit_and_open",
     test_fn: test_commit_and_open,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "mpc-scalar::test_open_batch",
+    test_fn: test_open_batch,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "mpc-scalar::test_commit_and_open_batch",
+    test_fn: test_commit_and_open_batch,
 });
 
 inventory::submit!(IntegrationTest {

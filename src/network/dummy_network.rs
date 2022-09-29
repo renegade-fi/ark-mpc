@@ -42,7 +42,7 @@ impl MpcNetwork for DummyMpcNetwork {
         0
     }
 
-    async fn send_scalars(&mut self, _: Vec<Scalar>) -> Result<(), MpcNetworkError> {
+    async fn send_scalars(&mut self, _: &[Scalar]) -> Result<(), MpcNetworkError> {
         Ok(())
     }
 
@@ -55,12 +55,12 @@ impl MpcNetwork for DummyMpcNetwork {
 
     async fn broadcast_points(
         &mut self,
-        points: Vec<RistrettoPoint>,
+        points: &[RistrettoPoint],
     ) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
         Ok(self.mock_points.drain(0..points.len()).as_slice().to_vec())
     }
 
-    async fn send_points(&mut self, _: Vec<RistrettoPoint>) -> Result<(), MpcNetworkError> {
+    async fn send_points(&mut self, _: &[RistrettoPoint]) -> Result<(), MpcNetworkError> {
         Ok(())
     }
 
@@ -73,7 +73,7 @@ impl MpcNetwork for DummyMpcNetwork {
 
     async fn broadcast_scalars(
         &mut self,
-        scalars: Vec<Scalar>,
+        scalars: &[Scalar],
     ) -> Result<Vec<Scalar>, MpcNetworkError> {
         Ok(self
             .mock_scalars

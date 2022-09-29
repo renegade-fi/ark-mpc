@@ -7,7 +7,7 @@ use std::{
     ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 use futures::executor::block_on;
 use rand_core::{CryptoRng, OsRng, RngCore};
 use subtle::ConstantTimeEq;
@@ -283,6 +283,44 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         }
     }
 
+    /// Share a batch of privately held secrets by constructing additive shares
+    pub fn batch_share_secrets(
+        party_id: u64,
+        secrets: &[MpcScalar<N, S>],
+    ) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
+        assert!(
+            !secrets.is_empty(),
+            "Cannot batch share an empty vector of values"
+        );
+        let network = secrets[0].network();
+        let beaver_source = secrets[0].beaver_source();
+        let my_party_id = network.as_ref().borrow().party_id();
+
+        if my_party_id == party_id {
+            // Sender party
+            let mut rng = OsRng {};
+            let random_shares: Vec<Scalar> = (0..secrets.len())
+                .map(|_| Scalar::random(&mut rng))
+                .collect();
+
+            // Broadcast the random shares to the peer
+            block_on(network.as_ref().borrow_mut().send_scalars(&random_shares))?;
+
+            Ok(secrets
+                .iter()
+                .zip(random_shares.iter())
+                .map(|(secret, blinding)| MpcScalar {
+                    value: secret.value() - blinding,
+                    visibility: Visibility::Shared,
+                    network: network.clone(),
+                    beaver_source: beaver_source.clone(),
+                })
+                .collect())
+        } else {
+            Self::receive_values_batch(secrets.len(), network, beaver_source)
+        }
+    }
+
     /// Local party receives a secret share of a value; as opposed to using share_secret, no existing value is needed
     pub fn receive_value(
         network: SharedNetwork<N>,
@@ -296,6 +334,25 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             network,
             beaver_source,
         })
+    }
+
+    /// Local party receives a batch of shared values
+    pub fn receive_values_batch(
+        num_expected: usize,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
+        let values = block_on(network.as_ref().borrow_mut().receive_scalars(num_expected))?;
+
+        Ok(values
+            .iter()
+            .map(|value| MpcScalar {
+                value: *value,
+                visibility: Visibility::Shared,
+                network: network.clone(),
+                beaver_source: beaver_source.clone(),
+            })
+            .collect())
     }
 
     /// From a shared value, both parties open their shares and construct the plaintext value.
@@ -320,6 +377,38 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             self.network.clone(),
             self.beaver_source.clone(),
         ))
+    }
+
+    /// Open a batch of shared values
+    pub fn open_batch(values: &[MpcScalar<N, S>]) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
+        assert!(
+            !values.is_empty(),
+            "Cannot batch open an empty vector of values"
+        );
+        let network = values[0].network();
+        let beaver_source = values[0].beaver_source();
+
+        // Both parties share their values
+        let received_scalars = block_on(
+            network.as_ref().borrow_mut().broadcast_scalars(
+                &values
+                    .iter()
+                    .map(|value| value.value())
+                    .collect::<Vec<Scalar>>(),
+            ),
+        )?;
+
+        Ok(values
+            .iter()
+            .zip(received_scalars.iter())
+            .map(|(my_share, peer_share)| {
+                MpcScalar::from_public_scalar(
+                    my_share.value() + peer_share,
+                    network.clone(),
+                    beaver_source.clone(),
+                )
+            })
+            .collect())
     }
 
     /// From a shared value:
@@ -349,7 +438,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             self.network()
                 .as_ref()
                 .borrow_mut()
-                .broadcast_scalars(vec![commitment.get_blinding(), commitment.get_value()]),
+                .broadcast_scalars(&[commitment.get_blinding(), commitment.get_value()]),
         )
         .map_err(MpcError::NetworkError)?;
 
@@ -366,6 +455,78 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             network: self.network(),
             beaver_source: self.beaver_source(),
         })
+    }
+
+    /// Commit to and open a batch of secret shared values
+    pub fn batch_commit_and_open(
+        values: &[MpcScalar<N, S>],
+    ) -> Result<Vec<MpcScalar<N, S>>, MpcError> {
+        assert!(
+            !values.is_empty(),
+            "Cannot batch commit and open an empty vector of values"
+        );
+        let network = values[0].network();
+        let beaver_source = values[0].beaver_source();
+
+        // Generate commitments to the values and share them with the peer
+        let commitments: Vec<PedersenCommitment> = values
+            .iter()
+            .map(|value| PedersenCommitment::commit(value.to_scalar()))
+            .collect();
+        let peer_commitments = block_on(
+            network.as_ref().borrow_mut().broadcast_points(
+                &commitments
+                    .iter()
+                    .map(|comm| comm.get_commitment())
+                    .collect::<Vec<RistrettoPoint>>(),
+            ),
+        )
+        .map_err(MpcError::NetworkError)?;
+
+        // Open both the underlying values and the blinding factos
+        let mut commitment_data: Vec<Scalar> = Vec::new();
+        commitments.iter().for_each(|comm| {
+            commitment_data.push(comm.get_blinding());
+            commitment_data.push(comm.get_value());
+        });
+
+        let received_values = block_on(
+            network
+                .as_ref()
+                .borrow_mut()
+                .broadcast_scalars(&commitment_data),
+        )
+        .map_err(MpcError::NetworkError)?;
+
+        // Verify the peer's commitments
+        let mut peer_values: Vec<Scalar> = Vec::new();
+        received_values
+            .chunks(2 /* chunk_size */) // Fetch each pair of blinding, value
+            .zip(peer_commitments.into_iter())
+            .try_for_each(|(revealed_values, comm)| {
+                // Destructure the received payload and append to the peer values vector
+                let (blinding, value) = (revealed_values[0], revealed_values[1]);
+                peer_values.push(value);
+
+                // Verify the Pedersen commitment, report an authentication error if opening fails
+                if !PedersenCommitment::verify_from_values(comm, blinding, value) {
+                    return Err(MpcError::AuthenticationError);
+                }
+
+                Ok(())
+            })?;
+
+        // If the commitments open properly then add shares together to recover cleartext
+        Ok(values
+            .iter()
+            .zip(peer_values)
+            .map(|(my_value, peer_value)| MpcScalar {
+                value: my_value.value() + peer_value,
+                visibility: Visibility::Public,
+                network: network.clone(),
+                beaver_source: beaver_source.clone(),
+            })
+            .collect())
     }
 
     /// Retreives the next Beaver triplet from the Beaver source and allocates the values within the network
