@@ -144,7 +144,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         rng: &mut R,
     ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
         // Randomly sample a value and distribute secret shares
-        // TODO(joey): update this so that both parties contribute to randomness
+        // TODO: update this so that both parties contribute to randomness
         let random_scalar = AuthenticatedScalar::from_private_scalar(
             Scalar::random(rng),
             self.key_share.clone(),
@@ -154,6 +154,27 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
 
         random_scalar
             .share_secret(0 /* party_id */)
+            .map_err(MpcError::NetworkError)
+    }
+
+    /// Allocate a batch of random scalars in the network and construct secret shares of them
+    pub fn allocate_random_scalars_batch<R: RngCore + CryptoRng>(
+        &self,
+        num_scalars: usize,
+        rng: &mut R,
+    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
+        let random_scalars = (0..num_scalars)
+            .map(|_| {
+                AuthenticatedScalar::from_private_scalar(
+                    Scalar::random(rng),
+                    self.key_share.clone(),
+                    self.network.clone(),
+                    self.beaver_source.clone(),
+                )
+            })
+            .collect::<Vec<AuthenticatedScalar<N, S>>>();
+
+        AuthenticatedScalar::batch_share_secrets(0 /* party_id */, &random_scalars)
             .map_err(MpcError::NetworkError)
     }
 
