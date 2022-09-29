@@ -1,14 +1,14 @@
 //! Errors defined across the MPC implementation
 use quinn::{ConnectError, ConnectionError};
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MpcError {
     NetworkError(MpcNetworkError),
     AuthenticationError,
     VisibilityError(String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MpcNetworkError {
     SendError,
     RecvError,
@@ -19,7 +19,7 @@ pub enum MpcNetworkError {
     SerializationError,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SetupError {
     ConnectError(ConnectError),
     ConnectionError(ConnectionError),
@@ -28,7 +28,7 @@ pub enum SetupError {
     ServerSetupError,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BroadcastError {
     TooFewBytes,
 }
