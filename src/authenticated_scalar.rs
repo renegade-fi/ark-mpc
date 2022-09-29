@@ -209,6 +209,43 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
         })
     }
 
+    /// Secret share a batch of privately held AuthenticatedScalars
+    pub fn batch_share_secrets(
+        party_id: u64,
+        secrets: &[AuthenticatedScalar<N, S>],
+    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcNetworkError> {
+        assert!(
+            !secrets.is_empty(),
+            "Cannot batch share secrets of empty vector"
+        );
+
+        // Construct secret shares from the underlying values
+        let key_share = secrets[0].key_share();
+        let my_shares: Vec<MpcScalar<N, S>> = secrets
+            .iter()
+            .map(|secret| secret.value().share_secret(party_id))
+            .collect::<Result<Vec<MpcScalar<N, S>>, MpcNetworkError>>()?;
+
+        // Construct the MACs for the newly shared values
+        #[allow(clippy::needless_collect)]
+        let my_mac_shares: Vec<MpcScalar<N, S>> = my_shares
+            .iter()
+            .map(|share| &key_share.clone() * share)
+            .collect();
+
+        // Build these values into AuthenticatedScalars
+        Ok(my_shares
+            .into_iter()
+            .zip(my_mac_shares.into_iter())
+            .map(|(share, mac)| AuthenticatedScalar {
+                value: share,
+                visibility: Visibility::Shared,
+                key_share: key_share.clone(),
+                mac_share: Some(mac),
+            })
+            .collect())
+    }
+
     /// From a shared value, both parties broadcast their shares and reconstruct the plaintext.
     /// The parties no longer hold a valid secret sharing of the result, they hold the result itself.
     pub fn open(&self) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
@@ -222,6 +259,38 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
             key_share: self.key_share.clone(),
             mac_share: self.mac_share.clone(),
         })
+    }
+
+    /// Open a batch of authenticated values, do not authenticated via MACs
+    pub fn batch_open(
+        values: &[AuthenticatedScalar<N, S>],
+    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcNetworkError> {
+        assert!(
+            !values.is_empty(),
+            "Cannot batch open an empty vector of values"
+        );
+        let key_share = values[0].key_share();
+
+        // Open the values
+        let opened_values = MpcScalar::batch_open(
+            &values
+                .iter()
+                .map(|shared_value| shared_value.value().clone())
+                .collect::<Vec<MpcScalar<N, S>>>(),
+        )?;
+
+        // Reconstruct `AuthenticatedScalar`s
+        Ok(opened_values
+            .iter()
+            .map(|opened_value| {
+                AuthenticatedScalar {
+                    value: opened_value.clone(),
+                    visibility: Visibility::Public,
+                    key_share: key_share.clone(),
+                    mac_share: None, // Opened values have no MAC
+                }
+            })
+            .collect())
     }
 
     /// Open the value and authenticate it using the MAC. This works in ___ steps:
@@ -257,6 +326,59 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
             key_share: self.key_share.clone(),
             mac_share: None, // Public value has no MAC
         })
+    }
+
+    /// Open a batch of `AuthenticatedScalar`s and authenticate the result with the given MACs
+    pub fn batch_open_and_authenticate(
+        values: &[AuthenticatedScalar<N, S>],
+    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
+        assert!(
+            !values.is_empty(),
+            "Cannot batch open and authenticate an empty vector"
+        );
+        let key_share = values[0].key_share();
+
+        // 1. Open the underlying values
+        let opened_values = MpcScalar::batch_open(
+            &values
+                .iter()
+                .map(|shared_value| shared_value.value().clone())
+                .collect::<Vec<MpcScalar<N, S>>>(),
+        )
+        .map_err(MpcError::NetworkError)?;
+
+        // 2. Commit to the value key_share * value - mac_share, hten open the values and check commitments
+        let mac_check_shares = opened_values
+            .iter()
+            .zip(values.iter())
+            .map(|(opened_value, original_value)| {
+                &key_share * opened_value - &original_value.mac().unwrap()
+            })
+            .collect::<Vec<MpcScalar<N, S>>>();
+
+        // 3. Verify that the MACs pass the authentication check
+        MpcScalar::batch_commit_and_open(&mac_check_shares)?
+            .iter()
+            .try_for_each(|commit_result| {
+                if commit_result.value().ne(&Scalar::zero()) {
+                    return Err(MpcError::AuthenticationError);
+                }
+
+                Ok(())
+            })?;
+
+        // Construct result values from opened shares
+        Ok(opened_values
+            .iter()
+            .map(|opened_value| {
+                AuthenticatedScalar {
+                    value: opened_value.clone(),
+                    visibility: Visibility::Public,
+                    key_share: key_share.clone(),
+                    mac_share: None, // Public values have no MAC
+                }
+            })
+            .collect::<Vec<AuthenticatedScalar<N, S>>>())
     }
 }
 

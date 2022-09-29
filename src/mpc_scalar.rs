@@ -317,7 +317,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
                 })
                 .collect())
         } else {
-            Self::receive_values_batch(secrets.len(), network, beaver_source)
+            Self::batch_receive_values(secrets.len(), network, beaver_source)
         }
     }
 
@@ -337,7 +337,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     }
 
     /// Local party receives a batch of shared values
-    pub fn receive_values_batch(
+    pub fn batch_receive_values(
         num_expected: usize,
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>,
@@ -380,7 +380,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     }
 
     /// Open a batch of shared values
-    pub fn open_batch(values: &[MpcScalar<N, S>]) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
+    pub fn batch_open(values: &[MpcScalar<N, S>]) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
         assert!(
             !values.is_empty(),
             "Cannot batch open an empty vector of values"

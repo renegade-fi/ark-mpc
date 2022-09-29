@@ -101,6 +101,46 @@ fn test_authenticated_open(test_args: &IntegrationTestArgs) -> Result<(), String
     Ok(())
 }
 
+/// Tests the ability to batch open and authenticate values
+fn test_batch_open_and_authenticate(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 shares a vector of values with party 1
+    let values: Vec<AuthenticatedScalar<QuicTwoPartyNet, PartyIDBeaverSource>> =
+        vec![1u64, 2u64, 3u64]
+            .into_iter()
+            .map(|value| {
+                AuthenticatedScalar::from_private_u64(
+                    value,
+                    test_args.mac_key.clone(),
+                    test_args.net_ref.clone(),
+                    test_args.beaver_source.clone(),
+                )
+            })
+            .collect();
+
+    // Share the values, open them, and verify the result
+    let mut shared_values =
+        AuthenticatedScalar::batch_share_secrets(0 /* party_id */, &values)
+            .map_err(|err| format!("Error sharing values: {:?}", err))?;
+
+    let opened_values = AuthenticatedScalar::batch_open_and_authenticate(&shared_values)
+        .map_err(|err| format!("Error opening and authenticating: {:?}", err))?;
+
+    if opened_values.ne(&values) {
+        return Err(format!("Expected: {:?}, got {:?}", values, shared_values));
+    }
+
+    // Now party 1 tries to corrupt a shared value, verify that opening fails
+    if test_args.party_id == 1 {
+        shared_values[1] += Scalar::from(5u64);
+    }
+
+    AuthenticatedScalar::batch_open_and_authenticate(&shared_values).map_or(Ok(()), |_| {
+        Err("Expected authentication error, authentication succeeded...".to_string())
+    })?;
+
+    Ok(())
+}
+
 fn test_authenticated_open_failure(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 tries to add an extra value to the result
     let value = if test_args.party_id == 0 { 2 } else { 3 };
@@ -506,6 +546,11 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated-scalar::test_authenticated_open",
     test_fn: test_authenticated_open
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated-scalar::test_batch_open_and_authenticate",
+    test_fn: test_batch_open_and_authenticate,
 });
 
 inventory::submit!(IntegrationTest {

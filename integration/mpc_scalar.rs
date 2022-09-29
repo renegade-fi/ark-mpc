@@ -312,7 +312,7 @@ fn test_open_batch(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .map_err(|err| format!("Error sharing values: {:?}", err))?;
 
     // Open the batch and verify equality
-    let opened_values = MpcScalar::open_batch(&shared_values)
+    let opened_values = MpcScalar::batch_open(&shared_values)
         .map_err(|err| format!("Error opening values: {:?}", err))?;
 
     if opened_values.ne(&values) {
