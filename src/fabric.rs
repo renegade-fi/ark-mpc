@@ -12,6 +12,7 @@ use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
+use rand_core::{CryptoRng, RngCore};
 
 use crate::{
     authenticated_ristretto::{AuthenticatedCompressedRistretto, AuthenticatedRistretto},
@@ -135,6 +136,25 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
     /// Allocate a scalar from a u64 as a public input to the MPC protocol
     pub fn allocate_public_u64(&self, value: u64) -> AuthenticatedScalar<N, S> {
         self.allocate_public_scalar(Scalar::from(value))
+    }
+
+    /// Allocate a random scalar in the network and construct secret shares of it
+    pub fn allocate_random_shared_scalar<R: RngCore + CryptoRng>(
+        &self,
+        rng: &mut R,
+    ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
+        // Randomly sample a value and distribute secret shares
+        // TODO(joey): update this so that both parties contribute to randomness
+        let random_scalar = AuthenticatedScalar::from_private_scalar(
+            Scalar::random(rng),
+            self.key_share.clone(),
+            self.network.clone(),
+            self.beaver_source.clone(),
+        );
+
+        random_scalar
+            .share_secret(0 /* party_id */)
+            .map_err(MpcError::NetworkError)
     }
 
     /// Allocate a RistrettoPoint that acts as one of the given party's private inputs to the protocol
