@@ -417,13 +417,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize>
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for AuthenticatedScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for &mut AuthenticatedScalar<N, S> {
+    #[allow(clippy::needless_borrow)]
     fn clear(&mut self) {
-        self.value.clear();
-        if self.mac().is_some() {
-            self.mac().unwrap().clear();
-        }
-        self.key_share().clear()
+        (&mut self.value).clear();
+        (&mut self.mac_share).clear();
+        (&mut self.key_share).clear()
     }
 }
 
@@ -608,5 +607,41 @@ where
             AuthenticatedScalar::zero(key_share, network, beaver_source),
             |acc, item| acc + item.borrow(),
         )
+    }
+}
+
+#[cfg(test)]
+mod authenticated_scalar_tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use clear_on_drop::clear::Clear;
+    use curve25519_dalek::scalar::Scalar;
+
+    use crate::{
+        beaver::DummySharedScalarSource, mpc_scalar::MpcScalar,
+        network::dummy_network::DummyMpcNetwork,
+    };
+
+    use super::AuthenticatedScalar;
+
+    #[test]
+    fn test_clear() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+        let key_share = MpcScalar::from_public_u64(2, network.clone(), beaver_source.clone());
+
+        let mut value = AuthenticatedScalar::from_public_u64(
+            3,
+            key_share,
+            network.clone(),
+            beaver_source.clone(),
+        );
+        value.mac_share = Some(MpcScalar::from_public_u64(4u64, network, beaver_source));
+
+        (&mut value).clear();
+
+        assert_eq!(value.to_scalar(), Scalar::zero());
+        assert_eq!(value.mac_share, None);
+        assert_eq!(value.key_share().to_scalar(), Scalar::zero());
     }
 }

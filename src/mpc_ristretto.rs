@@ -454,8 +454,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for MpcRistrettoPoint<N, S> {}
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for MpcRistrettoPoint<N, S> {
+    #[allow(clippy::needless_borrow)]
     fn clear(&mut self) {
-        self.value().clear();
+        (&mut self.value).clear();
     }
 }
 
@@ -881,7 +882,32 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for MpcCompressedRistretto<N, S> {
+    #[allow(clippy::needless_borrow)]
     fn clear(&mut self) {
-        self.value().clear();
+        (&mut self.value).clear();
+    }
+}
+
+#[cfg(test)]
+mod mpc_ristretto_tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use clear_on_drop::clear::Clear;
+    use curve25519_dalek::{ristretto::RistrettoPoint, traits::Identity};
+
+    use crate::{beaver::DummySharedScalarSource, network::dummy_network::DummyMpcNetwork};
+
+    use super::MpcRistrettoPoint;
+
+    #[test]
+    fn test_clear() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+
+        let mut value = MpcRistrettoPoint::from_public_u64(2, network, beaver_source);
+        #[allow(clippy::needless_borrow)]
+        (&mut value).clear();
+
+        assert_eq!(value.value, RistrettoPoint::identity());
     }
 }

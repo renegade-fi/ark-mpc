@@ -586,9 +586,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for MpcSca
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for MpcScalar<N, S> {
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for &mut MpcScalar<N, S> {
+    #[allow(clippy::needless_borrow)]
     fn clear(&mut self) {
-        self.value().clear();
+        (&mut self.value).clear();
     }
 }
 
@@ -792,6 +793,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Zeroize for MpcScalar<N
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
+    use clear_on_drop::clear::Clear;
     use curve25519_dalek::scalar::Scalar;
     use rand_core::OsRng;
 
@@ -1010,5 +1012,15 @@ mod test {
             res.open().unwrap(),
             MpcScalar::from_public_u64(12 * 11, network, beaver_source)
         )
+    }
+
+    #[test]
+    fn test_clear() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+        let mut value = MpcScalar::from_public_u64(2, network, beaver_source);
+
+        (&mut value).clear();
+        assert_eq!(value.value(), Scalar::zero());
     }
 }

@@ -278,12 +278,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 }
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for AuthenticatedRistretto<N, S> {
+    #[allow(clippy::needless_borrow)]
     fn clear(&mut self) {
-        self.value.clear();
-        if self.mac().is_some() {
-            self.mac().unwrap().clear()
-        }
-        self.key_share().clear()
+        (&mut self.value).clear();
+        (&mut self.mac_share).clear();
+        (&mut self.key_share).clear();
     }
 }
 
@@ -766,11 +765,48 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear
     for AuthenticatedCompressedRistretto<N, S>
 {
+    #[allow(clippy::needless_borrow)]
     fn clear(&mut self) {
-        self.value.clear();
-        if self.mac_share.is_some() {
-            self.mac_share.clear()
-        }
-        self.key_share.clear();
+        (&mut self.value).clear();
+    }
+}
+
+#[cfg(test)]
+mod authenticated_ristretto_tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use clear_on_drop::clear::Clear;
+    use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar, traits::Identity};
+
+    use crate::{
+        beaver::DummySharedScalarSource, mpc_ristretto::MpcRistrettoPoint, mpc_scalar::MpcScalar,
+        network::dummy_network::DummyMpcNetwork,
+    };
+
+    use super::AuthenticatedRistretto;
+
+    #[test]
+    fn test_clear() {
+        let network = Rc::new(RefCell::new(DummyMpcNetwork::new()));
+        let beaver_source = Rc::new(RefCell::new(DummySharedScalarSource::new()));
+        let key_share = MpcScalar::from_public_u64(2, network.clone(), beaver_source.clone());
+        let mut value = AuthenticatedRistretto::from_public_u64(
+            3,
+            key_share,
+            network.clone(),
+            beaver_source.clone(),
+        );
+        value.mac_share = Some(MpcRistrettoPoint::from_public_u64(
+            5,
+            network,
+            beaver_source,
+        ));
+
+        #[allow(clippy::needless_borrow)]
+        (&mut value).clear();
+
+        assert_eq!(value.to_ristretto(), RistrettoPoint::identity());
+        assert_eq!(value.mac(), None);
+        assert_eq!(value.key_share().to_scalar(), Scalar::zero())
     }
 }
