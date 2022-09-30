@@ -2,7 +2,7 @@
 //! communicate during the course of an MPC
 mod cert_verifier;
 mod config;
-pub(crate) mod dummy_network;
+pub mod dummy_network;
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};

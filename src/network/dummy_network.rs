@@ -9,8 +9,8 @@ use crate::error::MpcNetworkError;
 
 use super::MpcNetwork;
 
-#[derive(Clone, Debug)]
-pub(crate) struct DummyMpcNetwork {
+#[derive(Clone, Debug, Default)]
+pub struct DummyMpcNetwork {
     /// Append to mock a scalar sent from a peer
     mock_scalars: Vec<Scalar>,
     /// Append to mock a Ristretto point sent from a peer
