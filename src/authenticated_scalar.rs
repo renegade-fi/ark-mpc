@@ -6,6 +6,7 @@ use std::{
     ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use clear_on_drop::clear::Clear;
 use curve25519_dalek::scalar::Scalar;
 use subtle::ConstantTimeEq;
 
@@ -413,6 +414,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize>
 
     fn index(&self, index: usize) -> &Self::Output {
         self.value.index(index)
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for AuthenticatedScalar<N, S> {
+    fn clear(&mut self) {
+        self.value.clear();
+        if self.mac().is_some() {
+            self.mac().unwrap().clear();
+        }
+        self.key_share().clear()
     }
 }
 

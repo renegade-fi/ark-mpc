@@ -4,6 +4,7 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use clear_on_drop::clear::Clear;
 use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
@@ -273,6 +274,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 {
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.value().ct_eq(other.value())
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for AuthenticatedRistretto<N, S> {
+    fn clear(&mut self) {
+        self.value.clear();
+        if self.mac().is_some() {
+            self.mac().unwrap().clear()
+        }
+        self.key_share().clear()
     }
 }
 
@@ -749,5 +760,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 {
     fn ct_eq(&self, other: &Self) -> Choice {
         self.value.ct_eq(&other.value)
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear
+    for AuthenticatedCompressedRistretto<N, S>
+{
+    fn clear(&mut self) {
+        self.value.clear();
+        if self.mac_share.is_some() {
+            self.mac_share.clear()
+        }
+        self.key_share.clear();
     }
 }

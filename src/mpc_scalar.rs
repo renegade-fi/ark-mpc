@@ -7,6 +7,7 @@ use std::{
     ops::{Add, AddAssign, Index, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use clear_on_drop::clear::Clear;
 use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 use futures::executor::block_on;
 use rand_core::{CryptoRng, OsRng, RngCore};
@@ -582,6 +583,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Index<usize> for MpcSca
 
     fn index(&self, index: usize) -> &Self::Output {
         self.value.index(index)
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for MpcScalar<N, S> {
+    fn clear(&mut self) {
+        self.value().clear();
     }
 }
 

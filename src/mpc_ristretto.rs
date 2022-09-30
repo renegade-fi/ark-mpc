@@ -5,6 +5,7 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use clear_on_drop::clear::Clear;
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_POINT,
     ristretto::{CompressedRistretto, RistrettoPoint},
@@ -452,6 +453,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for MpcRistrettoPoint<N, S> {}
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for MpcRistrettoPoint<N, S> {
+    fn clear(&mut self) {
+        self.value().clear();
+    }
+}
+
 /**
  * Mul and variants for borrowed, non-borrowed values
  */
@@ -870,5 +877,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
 {
     fn ct_eq(&self, other: &Self) -> Choice {
         self.value.ct_eq(&other.value)
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clear for MpcCompressedRistretto<N, S> {
+    fn clear(&mut self) {
+        self.value().clear();
     }
 }
