@@ -11,8 +11,16 @@ use curve25519_dalek::scalar::Scalar;
 pub trait SharedValueSource<T> {
     /// Fetch the next shared single value
     fn next_shared_value(&mut self) -> T;
+    /// Fetch a batch of shared single values
+    fn next_shared_value_batch(&mut self, num_values: usize) -> Vec<T> {
+        (0..num_values).map(|_| self.next_shared_value()).collect()
+    }
     /// Fetch the next beaver triplet
     fn next_triplet(&mut self) -> (T, T, T);
+    /// Fetch a batch of beaver triplets
+    fn next_triplet_batch(&mut self, num_triplets: usize) -> Vec<(T, T, T)> {
+        (0..num_triplets).map(|_| self.next_triplet()).collect()
+    }
 }
 
 /// A dummy value source that outputs only ones

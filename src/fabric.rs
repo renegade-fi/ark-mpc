@@ -12,7 +12,6 @@ use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
-use rand_core::{CryptoRng, RngCore};
 
 use crate::{
     authenticated_ristretto::{AuthenticatedCompressedRistretto, AuthenticatedRistretto},
@@ -139,43 +138,39 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
     }
 
     /// Allocate a random scalar in the network and construct secret shares of it
-    pub fn allocate_random_shared_scalar<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-    ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
-        // Randomly sample a value and distribute secret shares
-        // TODO: update this so that both parties contribute to randomness
-        let random_scalar = AuthenticatedScalar::from_private_scalar(
-            Scalar::random(rng),
+    /// Uses the beaver source to generate the random scalar
+    pub fn allocate_random_shared_scalar(&self) -> AuthenticatedScalar<N, S> {
+        // The pre-processing functionality provides a set of additive shares of random values
+        // pull one from the source.
+        let random_scalar = self.beaver_source.as_ref().borrow_mut().next_shared_value();
+        AuthenticatedScalar::from_private_scalar(
+            random_scalar,
             self.key_share.clone(),
             self.network.clone(),
             self.beaver_source.clone(),
-        );
-
-        random_scalar
-            .share_secret(0 /* party_id */)
-            .map_err(MpcError::NetworkError)
+        )
     }
 
     /// Allocate a batch of random scalars in the network and construct secret shares of them
-    pub fn allocate_random_scalars_batch<R: RngCore + CryptoRng>(
+    /// Uses the beaver source to generate the random scalar
+    pub fn allocate_random_scalars_batch(
         &self,
         num_scalars: usize,
-        rng: &mut R,
-    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
-        let random_scalars = (0..num_scalars)
-            .map(|_| {
+    ) -> Vec<AuthenticatedScalar<N, S>> {
+        self.beaver_source
+            .as_ref()
+            .borrow_mut()
+            .next_shared_value_batch(num_scalars)
+            .iter()
+            .map(|value| {
                 AuthenticatedScalar::from_private_scalar(
-                    Scalar::random(rng),
+                    *value,
                     self.key_share.clone(),
                     self.network.clone(),
                     self.beaver_source.clone(),
                 )
             })
-            .collect::<Vec<AuthenticatedScalar<N, S>>>();
-
-        AuthenticatedScalar::batch_share_secrets(0 /* party_id */, &random_scalars)
-            .map_err(MpcError::NetworkError)
+            .collect::<Vec<AuthenticatedScalar<N, S>>>()
     }
 
     /// Allocate a RistrettoPoint that acts as one of the given party's private inputs to the protocol
