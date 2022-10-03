@@ -85,6 +85,19 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         self.party_id
     }
 
+    /// Allocate a vector of zero valued authenticated scalars
+    pub fn allocate_zeros(&self, n: usize) -> Vec<AuthenticatedScalar<N, S>> {
+        (0..n)
+            .map(|_| {
+                AuthenticatedScalar::zero(
+                    self.key_share.clone(),
+                    self.network.clone(),
+                    self.beaver_source.clone(),
+                )
+            })
+            .collect()
+    }
+
     /// Allocate a scalar that acts as one of the given party's private inputs to the protocol
     ///
     /// If the local party is the specified party, then this method will construct an additive sharing
