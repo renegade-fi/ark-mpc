@@ -205,6 +205,46 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
         })
     }
 
+    /// Secret share a batch of privately held `AuthenticatedRistretto`s
+    pub fn batch_share_secrets(
+        party_id: u64,
+        secrets: &[AuthenticatedRistretto<N, S>],
+    ) -> Result<Vec<AuthenticatedRistretto<N, S>>, MpcNetworkError> {
+        assert!(
+            !secrets.is_empty(),
+            "Cannot batch share secrets of empty vector"
+        );
+
+        let key_share = secrets[0].key_share();
+
+        // Batch secret share the underlying values
+        let my_shares = MpcRistrettoPoint::batch_share_secrets(
+            party_id,
+            &secrets
+                .iter()
+                .map(|secret| secret.value().clone())
+                .collect::<Vec<MpcRistrettoPoint<_, _>>>(),
+        )?;
+
+        // Compute the MACs for the newly shared values
+        #[allow(clippy::needless_collect)]
+        let my_mac_shares: Vec<MpcRistrettoPoint<N, S>> = my_shares
+            .iter()
+            .map(|share| &key_share.clone() * share)
+            .collect();
+
+        Ok(my_shares
+            .into_iter()
+            .zip(my_mac_shares.into_iter())
+            .map(|(value, mac)| AuthenticatedRistretto {
+                value,
+                visibility: Visibility::Shared,
+                key_share: key_share.clone(),
+                mac_share: Some(mac),
+            })
+            .collect())
+    }
+
     /// From a shared value, both parties distribute their shares of the underlying value
     /// The parties locally sum all shares to reconstruct the value
     pub fn open(&self) -> Result<AuthenticatedRistretto<N, S>, MpcNetworkError> {
@@ -214,6 +254,36 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
             mac_share: None, // Public values have no MAC
             key_share: self.key_share(),
         })
+    }
+
+    /// Open a batch of shared values
+    pub fn batch_open(
+        values: &[AuthenticatedRistretto<N, S>],
+    ) -> Result<Vec<AuthenticatedRistretto<N, S>>, MpcNetworkError> {
+        assert!(!values.is_empty(), "Cannot batch open an empty vector");
+
+        let key_share = values[0].key_share();
+
+        // Open the values
+        let opened_values = MpcRistrettoPoint::batch_open(
+            &values
+                .iter()
+                .map(|shared_value| shared_value.value().clone())
+                .collect::<Vec<MpcRistrettoPoint<_, _>>>(),
+        )?;
+
+        // Reconstruct from opened shares
+        Ok(opened_values
+            .into_iter()
+            .map(|value| {
+                AuthenticatedRistretto {
+                    value,
+                    visibility: Visibility::Public,
+                    key_share: key_share.clone(),
+                    mac_share: None, // Public values have no mac
+                }
+            })
+            .collect())
     }
 
     /// From a shared value, both parties:
@@ -247,6 +317,58 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
             key_share: self.key_share(),
             mac_share: None, // Public value has no MAC
         })
+    }
+
+    /// Open and authenticate a batch of shared values
+    pub fn batch_open_and_authenticate(
+        values: &[AuthenticatedRistretto<N, S>],
+    ) -> Result<Vec<AuthenticatedRistretto<N, S>>, MpcError> {
+        assert!(
+            !values.is_empty(),
+            "Cannot batch open and authenticate an empty vector"
+        );
+
+        let key_share = values[0].key_share();
+
+        // 1. Open the underlying values
+        let opened_values = MpcRistrettoPoint::batch_open(
+            &values
+                .iter()
+                .map(|shared_value| shared_value.value().clone())
+                .collect::<Vec<MpcRistrettoPoint<_, _>>>(),
+        )
+        .map_err(MpcError::NetworkError)?;
+
+        // 2. Commit to the value key_share * value - mac_share, then open the values and check commitments
+        let mac_check_shares = opened_values
+            .iter()
+            .zip(values.iter())
+            .map(|(opened_value, original_value)| {
+                &key_share * opened_value - &original_value.mac().unwrap()
+            })
+            .collect::<Vec<MpcRistrettoPoint<_, _>>>();
+
+        // 3. Verify that the MACs pass the authentication check
+        MpcRistrettoPoint::batch_commit_and_open(&mac_check_shares)?
+            .iter()
+            .try_for_each(|commit_result| {
+                if commit_result.value().ne(&RistrettoPoint::identity()) {
+                    return Err(MpcError::AuthenticationError);
+                }
+
+                Ok(())
+            })?;
+
+        // Reconstruct the plaintext from the shared values
+        Ok(opened_values
+            .into_iter()
+            .map(|value| AuthenticatedRistretto {
+                value,
+                visibility: Visibility::Public,
+                key_share: key_share.clone(),
+                mac_share: None, // Public values have no MAC
+            })
+            .collect::<Vec<AuthenticatedRistretto<_, _>>>())
     }
 }
 

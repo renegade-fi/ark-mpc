@@ -351,7 +351,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
         )
         .map_err(MpcError::NetworkError)?;
 
-        // 2. Commit to the value key_share * value - mac_share, hten open the values and check commitments
+        // 2. Commit to the value key_share * value - mac_share, then open the values and check commitments
         let mac_check_shares = opened_values
             .iter()
             .zip(values.iter())

@@ -53,6 +53,43 @@ fn test_authenticated_open(test_args: &IntegrationTestArgs) -> Result<(), String
     Ok(())
 }
 
+/// Tests that sharing and opening a batch of values works
+fn test_batch_authenticated_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 shares a vector of values with party 1
+    let values: Vec<AuthenticatedRistretto<_, _>> = vec![1u64, 2u64, 3u64]
+        .into_iter()
+        .map(|value| {
+            AuthenticatedRistretto::from_private_u64(
+                value,
+                test_args.mac_key.clone(),
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+        })
+        .collect();
+
+    // Share the values
+    let shared_values = AuthenticatedRistretto::batch_share_secrets(0 /* party_id */, &values)
+        .map_err(|err| format!("Error sharing values: {:?}", err))?;
+
+    // Open the values and verify equality
+    let opened_values = AuthenticatedRistretto::batch_open_and_authenticate(&shared_values)
+        .map_err(|err| format!("Error openingn and authenticating values: {:?}", err))?;
+
+    opened_values
+        .into_iter()
+        .zip(1..4)
+        .try_for_each(|(opened_value, expected)| {
+            if !is_equal_u64(opened_value.to_ristretto(), expected) {
+                return Err(format!("Expected: {:?}, got {:?}", expected, opened_value));
+            }
+
+            Ok(())
+        })?;
+
+    Ok(())
+}
+
 /// Tests that a cheating party is caught in authentication stage when modifying MPC circuit
 fn test_authenticated_open_failure(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let value = if test_args.party_id == 0 { 5 } else { 6 };
@@ -363,6 +400,11 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated-ristretto::test_authenticated_open",
     test_fn: test_authenticated_open
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated-ristretto::test_batch_authenticated_open",
+    test_fn: test_batch_authenticated_open,
 });
 
 inventory::submit!(IntegrationTest {
