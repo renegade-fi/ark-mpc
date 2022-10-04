@@ -86,6 +86,46 @@ fn test_commit_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Test that batch opening works properly
+fn test_batch_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Peer 0 shares a vector of values with peer 1
+    let values: Vec<MpcRistrettoPoint<_, _>> = vec![1u64, 2u64, 3u64]
+        .into_iter()
+        .map(|value| {
+            MpcRistrettoPoint::from_private_u64(
+                value,
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+        })
+        .collect();
+
+    // Share the values
+    let shared_values = MpcRistrettoPoint::batch_share_secrets(0 /* party_id */, &values)
+        .map_err(|err| format!("Error sharing value: {:?}", err))?;
+
+    // Open the values then verify they are as expected
+    let opened_values = MpcRistrettoPoint::batch_commit_and_open(&shared_values)
+        .map_err(|err| format!("Error committing and opening values: {:?}", err))?;
+
+    opened_values
+        .iter()
+        .zip(1..4)
+        .try_for_each(|(opened_value, expected)| {
+            if !is_equal_u64(opened_value.value(), expected) {
+                return Err(format!(
+                    "Expected {:?}, got {:?}",
+                    expected,
+                    opened_value.value()
+                ));
+            }
+
+            Ok(())
+        })?;
+
+    Ok(())
+}
+
 /// Test that receiving a value from the sending party works
 fn test_receive_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let share = {
@@ -327,6 +367,11 @@ fn test_multiscalar_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 inventory::submit!(IntegrationTest {
     name: "mpc-ristretto::test_share_and_open",
     test_fn: test_share_and_open,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "mpc-ristretto::test_batch_open",
+    test_fn: test_batch_open,
 });
 
 inventory::submit!(IntegrationTest {

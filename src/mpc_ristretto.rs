@@ -13,6 +13,7 @@ use curve25519_dalek::{
     traits::{Identity, IsIdentity, MultiscalarMul},
 };
 use futures::executor::block_on;
+use itertools::izip;
 use rand_core::{CryptoRng, OsRng, RngCore};
 use subtle::{Choice, ConstantTimeEq};
 
@@ -105,19 +106,78 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         }
     }
 
+    /// Share a batch of privately held values
+    pub fn batch_share_secrets(
+        party_id: u64,
+        values: &[MpcRistrettoPoint<N, S>],
+    ) -> Result<Vec<MpcRistrettoPoint<N, S>>, MpcNetworkError> {
+        assert!(!values.is_empty(), "Cannot batch share an empty vector");
+        let network = values[0].network();
+        let beaver_source = values[0].beaver_source();
+        let my_party_id = network.as_ref().borrow().party_id();
+
+        if my_party_id == party_id {
+            // Sending party
+            let mut rng = OsRng {};
+            let random_shares = (0..values.len())
+                .map(|_| RistrettoPoint::random(&mut rng))
+                .collect::<Vec<RistrettoPoint>>();
+
+            // Broadcast the peer's share
+            block_on(network.as_ref().borrow_mut().send_points(&random_shares))?;
+
+            // Local party takes the share a - R for each a
+            Ok(values
+                .iter()
+                .zip(random_shares.iter())
+                .map(|(value, random_share)| MpcRistrettoPoint {
+                    value: value.value() - random_share,
+                    visibility: Visibility::Shared,
+                    network: network.clone(),
+                    beaver_source: beaver_source.clone(),
+                })
+                .collect())
+        } else {
+            Ok(Self::batch_receive_values(
+                values.len(),
+                network,
+                beaver_source,
+            )?)
+        }
+    }
+
     /// Local party receives a secret share of a value; as opposed to using share_secret, no existing value is needed
     pub fn receive_value(
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>,
     ) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
-        let received_point = block_on(network.as_ref().borrow_mut().receive_single_point())?;
+        let value = block_on(network.as_ref().borrow_mut().receive_single_point())?;
 
         Ok(MpcRistrettoPoint {
-            value: received_point,
-            visibility: Visibility::Shared,
+            value,
             network,
             beaver_source,
+            visibility: Visibility::Shared,
         })
+    }
+
+    /// Receive a batch of values
+    pub fn batch_receive_values(
+        num_expected: usize,
+        network: SharedNetwork<N>,
+        beaver_source: BeaverSource<S>,
+    ) -> Result<Vec<MpcRistrettoPoint<N, S>>, MpcNetworkError> {
+        let values = block_on(network.as_ref().borrow_mut().receive_points(num_expected))?;
+
+        Ok(values
+            .into_iter()
+            .map(|value| MpcRistrettoPoint {
+                value,
+                visibility: Visibility::Shared,
+                network: network.clone(),
+                beaver_source: beaver_source.clone(),
+            })
+            .collect())
     }
 
     /// From a shared value, both parties call this function to distribute their shares to the counterparty
@@ -143,6 +203,37 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             network: self.network.clone(),
             beaver_source: self.beaver_source.clone(),
         })
+    }
+
+    /// Open a batch of `MpcRistrettoPoint`s
+    pub fn batch_open(
+        values: &[MpcRistrettoPoint<N, S>],
+    ) -> Result<Vec<MpcRistrettoPoint<N, S>>, MpcNetworkError> {
+        assert!(!values.is_empty(), "Cannot open an empty vector of values");
+        let network = values[0].network();
+        let beaver_source = values[0].beaver_source();
+
+        // Both parties share their values
+        let received_points = block_on(
+            network.as_ref().borrow_mut().broadcast_points(
+                &values
+                    .iter()
+                    .map(|value| value.value())
+                    .collect::<Vec<RistrettoPoint>>(),
+            ),
+        )?;
+
+        Ok(values
+            .iter()
+            .zip(received_points.iter())
+            .map(|(my_share, peer_share)| {
+                MpcRistrettoPoint::from_public_ristretto_point(
+                    my_share.value() + peer_share,
+                    network.clone(),
+                    beaver_source.clone(),
+                )
+            })
+            .collect())
     }
 
     /// From a shared value:
@@ -193,6 +284,83 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             network: self.network(),
             beaver_source: self.beaver_source(),
         })
+    }
+
+    /// Commit to and open a batch of secret shared values
+    pub fn batch_commit_and_open(
+        values: &[MpcRistrettoPoint<N, S>],
+    ) -> Result<Vec<MpcRistrettoPoint<N, S>>, MpcError> {
+        assert!(
+            !values.is_empty(),
+            "Cannot batch commit and open an empty vector"
+        );
+
+        let network = values[0].network();
+        let beaver_source = values[0].beaver_source();
+
+        // Generate commitments to the points and share them with the peer
+        let commitments: Vec<RistrettoCommitment> = values
+            .iter()
+            .map(|value| RistrettoCommitment::commit(value.value()))
+            .collect();
+        let peer_commitments = block_on(
+            network.as_ref().borrow_mut().broadcast_scalars(
+                &commitments
+                    .iter()
+                    .map(|comm| comm.get_commitment())
+                    .collect::<Vec<Scalar>>(),
+            ),
+        )
+        .map_err(MpcError::NetworkError)?;
+
+        // Peers open the blinding factors for the commitments
+        let peer_blinding = block_on(
+            network.as_ref().borrow_mut().broadcast_scalars(
+                &commitments
+                    .iter()
+                    .map(|comm| comm.get_blinding())
+                    .collect::<Vec<Scalar>>(),
+            ),
+        )
+        .map_err(MpcError::NetworkError)?;
+
+        // Peers open the points they committed to
+        let peer_points = block_on(
+            network.as_ref().borrow_mut().broadcast_points(
+                &commitments
+                    .iter()
+                    .map(|comm| comm.get_value())
+                    .collect::<Vec<RistrettoPoint>>(),
+            ),
+        )
+        .map_err(MpcError::NetworkError)?;
+
+        // Verify the commitments
+        izip!(
+            peer_commitments.iter(),
+            peer_blinding.iter(),
+            peer_points.iter()
+        )
+        .try_for_each(|(comm, blinding, point)| {
+            if !RistrettoCommitment::verify_from_values(*comm, *blinding, *point) {
+                return Err(MpcError::AuthenticationError);
+            }
+
+            Ok(())
+        })?;
+
+        // Lastly, add the peer's shares to the local share for the final opened result
+        Ok(values
+            .iter()
+            .zip(peer_points)
+            .map(|(my_value, peer_value)| {
+                MpcRistrettoPoint::from_public_ristretto_point(
+                    my_value.value() + peer_value,
+                    network.clone(),
+                    beaver_source.clone(),
+                )
+            })
+            .collect())
     }
 
     /// Fetch the next Beaver triplet from the source and cast them as MpcScalars

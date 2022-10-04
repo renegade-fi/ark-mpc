@@ -222,10 +222,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
 
         // Construct secret shares from the underlying values
         let key_share = secrets[0].key_share();
-        let my_shares: Vec<MpcScalar<N, S>> = secrets
-            .iter()
-            .map(|secret| secret.value().share_secret(party_id))
-            .collect::<Result<Vec<MpcScalar<N, S>>, MpcNetworkError>>()?;
+        let my_shares = MpcScalar::batch_share_secrets(
+            party_id,
+            &secrets
+                .iter()
+                .map(|secret| secret.value().clone())
+                .collect::<Vec<MpcScalar<_, _>>>(),
+        )?;
 
         // Construct the MACs for the newly shared values
         #[allow(clippy::needless_collect)]
