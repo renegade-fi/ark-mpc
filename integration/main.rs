@@ -56,7 +56,7 @@ struct Args {
     docker: bool,
 }
 
-#[allow(unused_doc_comments)]
+#[allow(unused_doc_comments, clippy::await_holding_refcell_ref)]
 #[tokio::main]
 async fn main() {
     /**
@@ -133,7 +133,7 @@ async fn main() {
     }
 
     // Close the network
-    #[allow(clippy::await_holding_refcell_ref, unused_must_use)]
+    #[allow(unused_must_use)]
     if test_args
         .net_ref
         .as_ref()

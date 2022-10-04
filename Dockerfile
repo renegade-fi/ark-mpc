@@ -1,5 +1,4 @@
 # Used for running integration tests on a simulated MPC network
-# Builder stage 
 FROM rust:1.63-slim-buster AS builder
 
 WORKDIR /build
@@ -27,7 +26,5 @@ COPY src ./src
 COPY integration ./integration
 
 RUN cargo build --test integration
-
-# Move the executable into the $PATH
 
 CMD [ "cargo", "test" ]
