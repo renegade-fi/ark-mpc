@@ -64,6 +64,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
      * Helper methods
      */
     #[inline]
+    pub(crate) fn is_private(&self) -> bool {
+        self.visibility == Visibility::Private
+    }
+
+    #[inline]
     pub(crate) fn is_shared(&self) -> bool {
         self.visibility == Visibility::Shared
     }
@@ -293,6 +298,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             !secrets.is_empty(),
             "Cannot batch share an empty vector of values"
         );
+        assert!(
+            secrets.iter().all(|secret| secret.is_private()),
+            "Values to be shared must be in private state"
+        );
+
         let network = secrets[0].network();
         let beaver_source = secrets[0].beaver_source();
         let my_party_id = network.as_ref().borrow().party_id();
@@ -360,6 +370,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// Note that the parties no longer hold valid additive secret shares of the value, this is used
     /// at the end of a computation
     pub fn open(&self) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        assert!(!self.is_private(), "Private values may not be opened...");
         if self.is_public() {
             return Ok(self.clone());
         }
@@ -386,6 +397,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             !values.is_empty(),
             "Cannot batch open an empty vector of values"
         );
+        assert!(
+            values.iter().all(|value| !value.is_private()),
+            "Private values may not be opened..."
+        );
+
         let network = values[0].network();
         let beaver_source = values[0].beaver_source();
 
@@ -403,6 +419,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             .iter()
             .zip(received_scalars.iter())
             .map(|(my_share, peer_share)| {
+                if my_share.is_public() {
+                    return my_share.clone();
+                }
+
                 MpcScalar::from_public_scalar(
                     my_share.value() + peer_share,
                     network.clone(),
@@ -417,11 +437,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     ///     2. Open those commitments to the underlying value
     ///     3. Verify that the peer's opening matches their commitment
     pub fn commit_and_open(&self) -> Result<MpcScalar<N, S>, MpcError> {
-        // Only a shared value can be committed and opened
-        if !self.is_shared() {
-            return Err(MpcError::VisibilityError(
-                "commit_and_open may only be called on shared values".to_string(),
-            ));
+        assert!(!self.is_private(), "Private values may not be opened...");
+        if self.is_public() {
+            return Ok(self.clone());
         }
 
         // Compute a Pedersen commitment to the value
@@ -466,6 +484,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             !values.is_empty(),
             "Cannot batch commit and open an empty vector of values"
         );
+        assert!(
+            values.iter().all(|value| !value.is_private()),
+            "Private values may not be opened...",
+        );
+
         let network = values[0].network();
         let beaver_source = values[0].beaver_source();
 
@@ -521,11 +544,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         Ok(values
             .iter()
             .zip(peer_values)
-            .map(|(my_value, peer_value)| MpcScalar {
-                value: my_value.value() + peer_value,
-                visibility: Visibility::Public,
-                network: network.clone(),
-                beaver_source: beaver_source.clone(),
+            .map(|(my_value, peer_value)| {
+                if my_value.is_public() {
+                    return my_value.clone();
+                }
+
+                MpcScalar {
+                    value: my_value.value() + peer_value,
+                    visibility: Visibility::Public,
+                    network: network.clone(),
+                    beaver_source: beaver_source.clone(),
+                }
             })
             .collect())
     }

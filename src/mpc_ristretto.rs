@@ -78,6 +78,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     /// point. The local party gives R to the peer, and holds a - R for herself.
     /// This method is called by both parties, only one of which transmits
     pub fn share_secret(&self, party_id: u64) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
+        assert!(self.is_private(), "Only private values may be shared...");
         let my_party_id = self.network.as_ref().borrow().party_id();
 
         if my_party_id == party_id {
@@ -112,6 +113,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         values: &[MpcRistrettoPoint<N, S>],
     ) -> Result<Vec<MpcRistrettoPoint<N, S>>, MpcNetworkError> {
         assert!(!values.is_empty(), "Cannot batch share an empty vector");
+        assert!(
+            values.iter().all(|value| value.is_private()),
+            "Only private values may be shared..."
+        );
         let network = values[0].network();
         let beaver_source = values[0].beaver_source();
         let my_party_id = network.as_ref().borrow().party_id();
@@ -184,11 +189,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     /// The result is the sum of the shares of both parties and is a public value, so the result is no longer
     /// and additive secret sharing of some underlying Ristretto point
     pub fn open(&self) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
-        // Public values should not be opened, simply clone the value
+        assert!(!self.is_private(), "Private values may not be opened...");
         if self.is_public() {
             return Ok(self.clone());
         }
-
         // Send a Ristretto point and receive one in return
         let received_point = block_on(
             self.network
@@ -210,6 +214,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         values: &[MpcRistrettoPoint<N, S>],
     ) -> Result<Vec<MpcRistrettoPoint<N, S>>, MpcNetworkError> {
         assert!(!values.is_empty(), "Cannot open an empty vector of values");
+        assert!(
+            values.iter().all(|value| !value.is_private()),
+            "Private values may not be opened..."
+        );
+
         let network = values[0].network();
         let beaver_source = values[0].beaver_source();
 
@@ -227,6 +236,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             .iter()
             .zip(received_points.iter())
             .map(|(my_share, peer_share)| {
+                if my_share.is_public() {
+                    return my_share.clone();
+                }
+
                 MpcRistrettoPoint::from_public_ristretto_point(
                     my_share.value() + peer_share,
                     network.clone(),
@@ -240,11 +253,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     ///     1. Each party commits to their share of the underlying value
     ///     2. The parties exchange openings and verify the peer's opening
     pub fn commit_and_open(&self) -> Result<MpcRistrettoPoint<N, S>, MpcError> {
-        // Only a shared value can be committed and opened
-        if !self.is_shared() {
-            return Err(MpcError::VisibilityError(
-                "commit_and_open may only be called on shared values".to_string(),
-            ));
+        assert!(!self.is_private(), "Private values may not be opened");
+        if self.is_public() {
+            return Ok(self.clone());
         }
 
         let commitment = RistrettoCommitment::commit(self.value());
@@ -293,6 +304,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         assert!(
             !values.is_empty(),
             "Cannot batch commit and open an empty vector"
+        );
+        assert!(
+            values.iter().all(|value| !value.is_private()),
+            "Private values may not be opened..."
         );
 
         let network = values[0].network();
@@ -354,6 +369,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             .iter()
             .zip(peer_points)
             .map(|(my_value, peer_value)| {
+                if my_value.is_public() {
+                    return my_value.clone();
+                }
+
                 MpcRistrettoPoint::from_public_ristretto_point(
                     my_value.value() + peer_value,
                     network.clone(),
@@ -421,6 +440,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
     #[inline]
     fn is_shared(&self) -> bool {
         self.visibility() == Visibility::Shared
+    }
+
+    #[inline]
+    fn is_private(&self) -> bool {
+        self.visibility() == Visibility::Private
     }
 
     /**
