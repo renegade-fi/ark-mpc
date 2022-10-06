@@ -12,6 +12,7 @@ use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
+use itertools::Itertools;
 
 use crate::{
     authenticated_ristretto::{AuthenticatedCompressedRistretto, AuthenticatedRistretto},
@@ -123,6 +124,28 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             .map_err(MpcError::NetworkError)
     }
 
+    /// Allocate a batch of private scalars
+    pub fn batch_allocate_private_scalars(
+        &self,
+        owning_party: u64,
+        values: &[Scalar],
+    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
+        let authenticated_values = values
+            .iter()
+            .map(|value| {
+                AuthenticatedScalar::from_private_scalar(
+                    *value,
+                    self.key_share.clone(),
+                    self.network.clone(),
+                    self.beaver_source.clone(),
+                )
+            })
+            .collect_vec();
+
+        AuthenticatedScalar::batch_share_secrets(owning_party, &authenticated_values)
+            .map_err(MpcError::NetworkError)
+    }
+
     /// Allocate a scalar that acts as a public value within the MPC protocol
     ///
     /// No secret shares are constructed from this, it is assumed that all parties call this method
@@ -136,6 +159,17 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         )
     }
 
+    /// Allocate a batch of public scalars
+    pub fn batch_allocate_public_scalar(
+        &self,
+        values: &[Scalar],
+    ) -> Vec<AuthenticatedScalar<N, S>> {
+        values
+            .iter()
+            .map(|value| self.allocate_public_scalar(*value))
+            .collect_vec()
+    }
+
     /// Allocate a scalar from a u64 as a private input to the MPC protocol
     pub fn allocate_private_u64(
         &self,
@@ -145,9 +179,29 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         self.allocate_private_scalar(owning_party, Scalar::from(value))
     }
 
+    /// Allocate a batch of private u64s
+    pub fn batch_allocate_private_u64s(
+        &self,
+        owning_party: u64,
+        values: &[u64],
+    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
+        self.batch_allocate_private_scalars(
+            owning_party,
+            &values.iter().map(|a| Scalar::from(*a)).collect_vec(),
+        )
+    }
+
     /// Allocate a scalar from a u64 as a public input to the MPC protocol
     pub fn allocate_public_u64(&self, value: u64) -> AuthenticatedScalar<N, S> {
         self.allocate_public_scalar(Scalar::from(value))
+    }
+
+    /// Allocate a batch of public u64s
+    pub fn batch_allocate_public_u64s(&self, values: &[u64]) -> Vec<AuthenticatedScalar<N, S>> {
+        values
+            .iter()
+            .map(|x| self.allocate_public_u64(*x))
+            .collect_vec()
     }
 
     /// Allocate a random scalar in the network and construct secret shares of it
@@ -205,7 +259,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
     ///
     /// If the local party is not the specified party, this method will await a share distributed by
     /// the owner of the input value.
-    pub fn allocate_private_ristretto_point(
+    pub fn allocate_private_ristretto(
         &self,
         owning_party: u64,
         value: RistrettoPoint,
@@ -222,14 +276,33 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             .map_err(MpcError::NetworkError)
     }
 
+    /// Allocate a batch of private ristretto points
+    pub fn batch_allocate_private_ristrettos(
+        &self,
+        owning_party: u64,
+        values: &[RistrettoPoint],
+    ) -> Result<Vec<AuthenticatedRistretto<N, S>>, MpcError> {
+        let authenticated_values = values
+            .iter()
+            .map(|value| {
+                AuthenticatedRistretto::from_private_ristretto_point(
+                    *value,
+                    self.key_share.clone(),
+                    self.network.clone(),
+                    self.beaver_source.clone(),
+                )
+            })
+            .collect_vec();
+
+        AuthenticatedRistretto::batch_share_secrets(owning_party, &authenticated_values)
+            .map_err(MpcError::NetworkError)
+    }
+
     /// Allocate a RistrettoPoint that acts as a public value within the MPC protocol
     ///
     /// No secret shares are constructed from this, it is assumed that all parties call this method
     /// with the same (known) value
-    pub fn allocate_public_ristretto_point(
-        &self,
-        value: RistrettoPoint,
-    ) -> AuthenticatedRistretto<N, S> {
+    pub fn allocate_public_ristretto(&self, value: RistrettoPoint) -> AuthenticatedRistretto<N, S> {
         AuthenticatedRistretto::from_public_ristretto_point(
             value,
             self.key_share.clone(),
@@ -238,7 +311,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         )
     }
 
-    /// Allocate a private compressed ristretto point in the MPC network
+    /// Allocate a batch of public Ristretto points
+    pub fn batch_allocate_public_ristretto(
+        &self,
+        values: &[RistrettoPoint],
+    ) -> Vec<AuthenticatedRistretto<N, S>> {
+        values
+            .iter()
+            .map(|value| self.allocate_public_ristretto(*value))
+            .collect_vec()
+    }
+
+    /// Allocate a public compressed ristretto point in the MPC network
     pub fn allocate_public_compressed_ristretto(
         &self,
         value: CompressedRistretto,
@@ -249,5 +333,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             self.network.clone(),
             self.beaver_source.clone(),
         )
+    }
+
+    /// Allocate a batch of public compressed Ristretto points
+    pub fn batch_allocate_public_compressed_ristretto(
+        &self,
+        values: &[CompressedRistretto],
+    ) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
+        values
+            .iter()
+            .map(|value| self.allocate_public_compressed_ristretto(*value))
+            .collect_vec()
     }
 }
