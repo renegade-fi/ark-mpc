@@ -402,6 +402,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> PartialEq for Authentic
     }
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Eq for AuthenticatedScalar<N, S> {}
+
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> ConstantTimeEq
     for AuthenticatedScalar<N, S>
 {
