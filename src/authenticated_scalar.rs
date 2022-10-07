@@ -356,7 +356,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
             .iter()
             .zip(values.iter())
             .map(|(opened_value, original_value)| {
-                &key_share * opened_value - &original_value.mac().unwrap()
+                // If the value is public (already opened, add a dummy value for the mac check)
+                if original_value.is_public() {
+                    MpcScalar::from_public_u64(
+                        0,
+                        original_value.network(),
+                        original_value.beaver_source(),
+                    )
+                } else {
+                    &key_share * opened_value - &original_value.mac().unwrap()
+                }
             })
             .collect::<Vec<MpcScalar<N, S>>>();
 

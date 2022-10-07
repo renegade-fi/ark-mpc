@@ -344,7 +344,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
             .iter()
             .zip(values.iter())
             .map(|(opened_value, original_value)| {
-                &key_share * opened_value - &original_value.mac().unwrap()
+                // If the value is public (already opened) add a dummy value for the MAC
+                if original_value.is_public() {
+                    MpcRistrettoPoint::identity(
+                        original_value.network(),
+                        original_value.beaver_source(),
+                    )
+                } else {
+                    &key_share * opened_value - &original_value.mac().unwrap()
+                }
             })
             .collect::<Vec<MpcRistrettoPoint<_, _>>>();
 
