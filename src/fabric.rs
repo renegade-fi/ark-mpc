@@ -21,7 +21,7 @@ use crate::{
     error::MpcError,
     mpc_scalar::MpcScalar,
     network::{MpcNetwork, QuicTwoPartyNet},
-    BeaverSource, SharedNetwork,
+    BeaverSource, SharedNetwork, Visibility,
 };
 
 #[derive(Clone, Debug)]
@@ -210,12 +210,18 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         // The pre-processing functionality provides a set of additive shares of random values
         // pull one from the source.
         let random_scalar = self.beaver_source.as_ref().borrow_mut().next_shared_value();
-        AuthenticatedScalar::from_private_scalar(
+        let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
             random_scalar,
+            Visibility::Shared,
             self.key_share.clone(),
             self.network.clone(),
             self.beaver_source.clone(),
-        )
+        );
+
+        // No MAC exists on the value when it is created from a shared pre-processing value
+        // explicitly compute the MAC so that it can be validly used
+        shared_value.recompute_mac();
+        shared_value
     }
 
     /// Allocate a batch of random scalars in the network and construct secret shares of them
@@ -224,20 +230,30 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         &self,
         num_scalars: usize,
     ) -> Vec<AuthenticatedScalar<N, S>> {
-        self.beaver_source
+        let mut shared_values = self
+            .beaver_source
             .as_ref()
             .borrow_mut()
             .next_shared_value_batch(num_scalars)
             .iter()
             .map(|value| {
-                AuthenticatedScalar::from_private_scalar(
+                AuthenticatedScalar::from_scalar_with_visibility(
                     *value,
+                    Visibility::Shared,
                     self.key_share.clone(),
                     self.network.clone(),
                     self.beaver_source.clone(),
                 )
             })
-            .collect::<Vec<AuthenticatedScalar<N, S>>>()
+            .collect::<Vec<AuthenticatedScalar<N, S>>>();
+
+        // Recompute the MACs in a separate step (i.e. outside map) to allow the mutable borrow
+        // of `self.beaver_source` to be released.
+        // `recompute_mac` requires a `Mul` which obtains a mutable borrow of the beaver source
+        shared_values
+            .iter_mut()
+            .for_each(|value| value.recompute_mac());
+        shared_values
     }
 
     /// Allocates an `AuthenticatedScalar` from a value that is presumed to be a valid additive Shamir

@@ -96,6 +96,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
         self.value().value()
     }
 
+    #[inline]
+    /// Recompute the MAC of the given value
+    pub(crate) fn recompute_mac(&mut self) {
+        self.mac_share = Some(&self.key_share * &self.value)
+    }
+
     /// Create a new AuthenticatedRistretto from a public/private u64 constant
     macros::impl_authenticated!(
         MpcRistrettoPoint<N, S>, from_public_u64, from_private_u64, from_u64_with_visibility, u64
