@@ -3,6 +3,7 @@
 
 #[cfg(test)]
 use curve25519_dalek::scalar::Scalar;
+use itertools::Itertools;
 
 /// SharedValueSource implements both the functionality for:
 ///     1. Single additively shared values [x] where party 1 holds
@@ -10,17 +11,27 @@ use curve25519_dalek::scalar::Scalar;
 ///     2. Beaver triplets; additively shared values [a], [b], [c] such
 ///        that a * b = c
 pub trait SharedValueSource<T> {
+    /// Fetch the next shared single bit
+    fn next_shared_bit(&mut self) -> T;
+    /// Fetch the next shared batch of bits
+    fn next_shared_bit_batch(&mut self, num_values: usize) -> Vec<T> {
+        (0..num_values)
+            .map(|_| self.next_shared_bit())
+            .collect_vec()
+    }
     /// Fetch the next shared single value
     fn next_shared_value(&mut self) -> T;
     /// Fetch a batch of shared single values
     fn next_shared_value_batch(&mut self, num_values: usize) -> Vec<T> {
-        (0..num_values).map(|_| self.next_shared_value()).collect()
+        (0..num_values)
+            .map(|_| self.next_shared_value())
+            .collect_vec()
     }
     /// Fetch the next beaver triplet
     fn next_triplet(&mut self) -> (T, T, T);
     /// Fetch a batch of beaver triplets
     fn next_triplet_batch(&mut self, num_triplets: usize) -> Vec<(T, T, T)> {
-        (0..num_triplets).map(|_| self.next_triplet()).collect()
+        (0..num_triplets).map(|_| self.next_triplet()).collect_vec()
     }
 }
 
@@ -40,6 +51,10 @@ impl DummySharedScalarSource {
 
 #[cfg(test)]
 impl SharedValueSource<Scalar> for DummySharedScalarSource {
+    fn next_shared_bit(&mut self) -> Scalar {
+        Scalar::one()
+    }
+
     fn next_shared_value(&mut self) -> Scalar {
         Scalar::one()
     }
