@@ -5,7 +5,11 @@
 //! cleaner interface for consumers of the library; i.e. clients do not have to hold onto
 //! references of the network layer or the beaver sources to allocate values.
 
-use std::{cell::RefCell, net::SocketAddr, rc::Rc};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    net::SocketAddr,
+    rc::Rc,
+};
 
 use async_std::task::block_on;
 use curve25519_dalek::{
@@ -84,6 +88,16 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
     /// Read the party_id field
     pub fn party_id(&self) -> u64 {
         self.party_id
+    }
+
+    /// Borrow the beaver source from the fabric
+    pub fn borrow_beaver_source(&self) -> Ref<S> {
+        self.beaver_source.as_ref().borrow()
+    }
+
+    /// Mutably borrow the beaver source from the fabric
+    pub fn borrow_beaver_source_mut(&self) -> RefMut<S> {
+        self.beaver_source.as_ref().borrow_mut()
     }
 
     /// Allocate a vector of zero valued authenticated scalars
