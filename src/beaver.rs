@@ -1,6 +1,7 @@
 //! Defines the Beaver value generation interface
 //! as well as a dummy beaver interface for testing
 
+#[cfg(test)]
 use curve25519_dalek::scalar::Scalar;
 
 /// SharedValueSource implements both the functionality for:
@@ -25,9 +26,11 @@ pub trait SharedValueSource<T> {
 
 /// A dummy value source that outputs only ones
 /// Used for testing
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub struct DummySharedScalarSource;
 
+#[cfg(test)]
 #[allow(dead_code)]
 impl DummySharedScalarSource {
     pub fn new() -> Self {
@@ -35,6 +38,7 @@ impl DummySharedScalarSource {
     }
 }
 
+#[cfg(test)]
 impl SharedValueSource<Scalar> for DummySharedScalarSource {
     fn next_shared_value(&mut self) -> Scalar {
         Scalar::one()

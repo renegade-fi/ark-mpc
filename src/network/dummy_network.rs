@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Implements a dummy network used for testing
 
 use std::vec;
@@ -17,7 +18,6 @@ pub struct DummyMpcNetwork {
     mock_points: Vec<RistrettoPoint>,
 }
 
-#[allow(unused)]
 impl DummyMpcNetwork {
     pub fn new() -> Self {
         Self {
