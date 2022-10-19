@@ -218,12 +218,57 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             .collect_vec()
     }
 
+    /// Allocate a random shared bit in the network from the pre-processing functionality (beaver source)
+    ///
+    /// Returns a scalar representing a shared bit
+    pub fn allocate_random_shared_bit(&self) -> AuthenticatedScalar<N, S> {
+        let random_bit = self.borrow_beaver_source_mut().next_shared_bit();
+        let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
+            random_bit,
+            Visibility::Shared,
+            self.key_share.clone(),
+            self.network.clone(),
+            self.beaver_source.clone(),
+        );
+
+        // The value comes from the pre-processing functionality without a MAC, compute one on the fly
+        shared_value.recompute_mac();
+        shared_value
+    }
+
+    /// Allocate a batch of random bits in the network from the beaver source
+    ///
+    /// Returns a vector of scalars, each one representing a shared bit
+    pub fn allocate_random_shared_bit_batch(
+        &self,
+        num_scalars: usize,
+    ) -> Vec<AuthenticatedScalar<N, S>> {
+        let random_bits = self
+            .borrow_beaver_source_mut()
+            .next_shared_bit_batch(num_scalars);
+        random_bits
+            .into_iter()
+            .map(|bit| {
+                let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
+                    bit,
+                    Visibility::Shared,
+                    self.key_share.clone(),
+                    self.network.clone(),
+                    self.beaver_source.clone(),
+                );
+                shared_value.recompute_mac();
+                shared_value
+            })
+            .collect_vec()
+    }
+
     /// Allocate a random scalar in the network and construct secret shares of it
     /// Uses the beaver source to generate the random scalar
     pub fn allocate_random_shared_scalar(&self) -> AuthenticatedScalar<N, S> {
         // The pre-processing functionality provides a set of additive shares of random values
         // pull one from the source.
         let random_scalar = self.beaver_source.as_ref().borrow_mut().next_shared_value();
+
         let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
             random_scalar,
             Visibility::Shared,
