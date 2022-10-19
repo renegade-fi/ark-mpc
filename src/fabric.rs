@@ -100,6 +100,15 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         self.beaver_source.as_ref().borrow_mut()
     }
 
+    /// Allocate a single zero valued authenticated scalar
+    pub fn allocate_zero(&self) -> AuthenticatedScalar<N, S> {
+        AuthenticatedScalar::zero(
+            self.key_share.clone(),
+            self.network.clone(),
+            self.beaver_source.clone(),
+        )
+    }
+
     /// Allocate a vector of zero valued authenticated scalars
     pub fn allocate_zeros(&self, n: usize) -> Vec<AuthenticatedScalar<N, S>> {
         (0..n)
