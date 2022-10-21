@@ -57,7 +57,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for Authenticated
 #[allow(unused_doc_comments, dead_code)]
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<N, S> {
     #[inline]
-    pub(crate) fn is_public(&self) -> bool {
+    pub fn is_public(&self) -> bool {
         self.visibility == Visibility::Public
     }
 
