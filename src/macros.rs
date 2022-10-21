@@ -242,7 +242,7 @@ macro_rules! impl_arithmetic_wrapped {
             type Output = $lhs;
 
             fn $fn_name(self, rhs: $lhs) -> Self::Output {
-                &rhs $op <$lhs>::$from_fn(self, rhs.network.clone(), rhs.beaver_source.clone())
+                <$lhs>::$from_fn(self, rhs.network.clone(), rhs.beaver_source.clone()) $op rhs
             }
         }
 
@@ -251,7 +251,7 @@ macro_rules! impl_arithmetic_wrapped {
             type Output = $lhs;
 
             fn $fn_name(self, rhs: &'a $lhs) -> Self::Output {
-                rhs $op <$lhs>::$from_fn(self, rhs.network.clone(), rhs.beaver_source.clone())
+                <$lhs>::$from_fn(self, rhs.network.clone(), rhs.beaver_source.clone()) $op rhs
             }
         }
     };
@@ -328,12 +328,12 @@ macro_rules! impl_arithmetic_wrapped_authenticated {
             type Output = $lhs;
 
             fn $fn_name(self, rhs: $lhs) -> Self::Output {
-                &rhs $op <$lhs>::$from_fn(
+                <$lhs>::$from_fn(
                     self,
                     rhs.key_share.clone(),
                     rhs.network(),
                     rhs.beaver_source(),
-                )
+                ) $op &rhs
             }
         }
 
@@ -342,12 +342,12 @@ macro_rules! impl_arithmetic_wrapped_authenticated {
             type Output = $lhs;
 
             fn $fn_name(self, rhs: &'a $lhs) -> Self::Output {
-                rhs $op <$lhs>::$from_fn(
+                <$lhs>::$from_fn(
                     self,
                     rhs.key_share(),
                     rhs.network(),
                     rhs.beaver_source()
-                )
+                ) $op rhs
             }
         }
     };
