@@ -547,7 +547,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
             })
         }
 
-        Err(MpcNetworkError::SendError)
+        Ok(res)
     }
 }
 

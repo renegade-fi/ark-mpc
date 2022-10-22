@@ -805,11 +805,6 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
     fn add(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
         // If public + shared swap the arguments for simplicity
         if self.is_public() && rhs.is_shared() {
-            println!(
-                "publicly add: {:?} + {:?}",
-                scalar_to_u64(&self.to_scalar()),
-                scalar_to_u64(&rhs.to_scalar()),
-            );
             return rhs + self;
         }
 
