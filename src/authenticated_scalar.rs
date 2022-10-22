@@ -491,6 +491,66 @@ macros::impl_arithmetic_wrapped_authenticated!(
     AuthenticatedScalar<N, S>, Mul, mul, *, from_mpc_scalar, MpcScalar<N, S>
 );
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, S> {
+    /// Batch multiply; computes a resul [a_1 * b_1, ..., a_n * b_n]
+    pub fn batch_mul(
+        a: &[AuthenticatedScalar<N, S>],
+        b: &[AuthenticatedScalar<N, S>],
+    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcNetworkError> {
+        assert_eq!(a.len(), b.len(), "batch_mul requires equal length inputs");
+
+        // First multiply the underlying values
+        let values_batch_mul = MpcScalar::batch_mul(
+            &a.iter().map(|val| val.value().clone()).collect::<Vec<_>>(),
+            &b.iter().map(|val| val.value().clone()).collect::<Vec<_>>(),
+        )?;
+
+        // Now compute the updated MACs:
+        //      1. Find all pairs of a_i, b_i where neither value is public
+        //      2. Their MACs must be computed using a full beaver mul key_share * value, so batch_mul them
+        //      3. Recombine the batch_mul result with the MACs that can be updated locally
+        // TODO: We can optimize this because all values are multiplied by the same value (key_share)
+        // i.e. We can open a single beaver subtraction (key_share - beaver_a) and reuse it across muls
+        let mut mac_mul_a = Vec::new();
+        let mut mac_mul_b = Vec::new();
+        for i in 0..a.len() {
+            if !a[i].is_public() && !b[i].is_public() {
+                mac_mul_a.push(a[0].key_share());
+                mac_mul_b.push(values_batch_mul[i].clone());
+            }
+        }
+
+        // Multiply the MAC keys with the values
+        let mut mac_key_mul_res = MpcScalar::batch_mul(&mac_mul_a, &mac_mul_b)?;
+
+        // Loop over values and recombine either by direct multiplication or from the MAC batch mul
+        let mut res = Vec::with_capacity(a.len());
+        for i in 0..a.len() {
+            let mac = {
+                if a[i].is_public() && b[i].is_public() {
+                    None
+                } else if a[i].is_public() && b[i].is_shared() {
+                    Some(a[i].value() * b[i].mac().unwrap())
+                } else if a[i].is_shared() && b[i].is_public() {
+                    Some(a[i].mac().unwrap() * b[i].value())
+                } else {
+                    // Pop from the pre-computed list of key_share * value results
+                    Some(mac_key_mul_res.remove(0))
+                }
+            };
+
+            res.push(AuthenticatedScalar {
+                value: values_batch_mul[i].clone(),
+                visibility: Visibility::min_visibility_two(&a[i], &b[i]),
+                mac_share: mac,
+                key_share: a[0].key_share(),
+            })
+        }
+
+        Err(MpcNetworkError::SendError)
+    }
+}
+
 /**
  * Add and variants for borrowed, non-borrowed, wrapped values
  */
