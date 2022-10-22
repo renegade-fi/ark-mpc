@@ -584,6 +584,46 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             ),
         )
     }
+
+    /// Retrieves the next Beaver triplet batch from the Beaver source and allocates the value in the network
+    #[allow(clippy::type_complexity)]
+    fn next_beaver_triplet_batch(
+        &self,
+        num_triplets: usize,
+    ) -> Vec<(MpcScalar<N, S>, MpcScalar<N, S>, MpcScalar<N, S>)> {
+        let triplet_batch = self
+            .beaver_source
+            .as_ref()
+            .borrow_mut()
+            .next_triplet_batch(num_triplets);
+
+        // Allocate values as shared in the network
+        triplet_batch
+            .iter()
+            .map(|(a, b, c)| {
+                (
+                    MpcScalar::from_scalar_with_visibility(
+                        *a,
+                        Visibility::Shared,
+                        self.network.clone(),
+                        self.beaver_source.clone(),
+                    ),
+                    MpcScalar::from_scalar_with_visibility(
+                        *b,
+                        Visibility::Shared,
+                        self.network.clone(),
+                        self.beaver_source.clone(),
+                    ),
+                    MpcScalar::from_scalar_with_visibility(
+                        *c,
+                        Visibility::Shared,
+                        self.network.clone(),
+                        self.beaver_source.clone(),
+                    ),
+                )
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 /**
@@ -645,19 +685,19 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
         if self.is_shared() && rhs.is_shared() {
             let (a, b, c) = self.next_beaver_triplet();
 
-            // Open the value d = [lhs - a].open()
-            let lhs_minus_a = (self - &a).open().unwrap();
-            // Open the value e = [rhs - b].open()
-            let rhs_minus_b = (rhs - &b).open().unwrap();
+            // Open the values d = [lhs - a] and e = [rhs - b]
+            let opened_values = MpcScalar::batch_open(&[(self - &a), (rhs - &b)]).unwrap();
+            let lhs_minus_a = &opened_values[0];
+            let rhs_minus_b = &opened_values[1];
 
             // Identity: [a * b] = de + d[b] + e[a] + [c]
             // All multiplications here are between a public and shared value or
             // two public values, so the recursion will not hit this case
-            let mut res = &lhs_minus_a * &b + &rhs_minus_b * &a + c;
+            let mut res = lhs_minus_a * &b + rhs_minus_b * &a + c;
 
             // Split into additive shares, the king holds de + res
             if self.network.as_ref().borrow().am_king() {
-                res += &lhs_minus_a * &rhs_minus_b;
+                res += lhs_minus_a * rhs_minus_b;
             }
 
             res
@@ -681,6 +721,80 @@ macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Mul, mul, *, MpcScalar<N, S>);
 macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Mul, mul, *, from_public_scalar, Scalar);
 
 /**
+ * Batch multiply allowing for batches of communication
+ */
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
+    /// Returns the result [a_1 * b_1, ..., a_n * b_n]
+    ///
+    /// This method is not meant to be used directly, instead, it should be called
+    /// through the MPC fabric which will inject `am_king` and `beaver_source`
+    pub fn batch_mul(
+        a: &[MpcScalar<N, S>],
+        b: &[MpcScalar<N, S>],
+    ) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "input arrays to batch_mul must be of equal length"
+        );
+
+        let n = a.len();
+        let mut res = Vec::with_capacity(n);
+
+        // If one (or both) of a and b is public, it can be multiplied locally
+        // so we first separate out these values to avoid unnecssary computation/communication
+        let mut beaver_mul_pairs = Vec::new();
+        for i in 0..a.len() {
+            if !a[i].is_public() && !b[i].is_public() {
+                beaver_mul_pairs.push((&a[i], &b[i]))
+            }
+        }
+
+        // For each of the multiplications that requires a beaver-style mul; sample a multiplication triplet
+        let num_beaver_muls = beaver_mul_pairs.len();
+        let mut beaver_triplets = a[0].next_beaver_triplet_batch(num_beaver_muls);
+
+        // Tile a payload buffer with the beaver openings then share
+        let mut beaver_subs = Vec::with_capacity(2 * n);
+        beaver_mul_pairs
+            .iter()
+            .zip(beaver_triplets.iter())
+            .for_each(|((a_val, b_val), (beaver_a, beaver_b, _))| {
+                beaver_subs.push(*a_val - beaver_a);
+                beaver_subs.push(*b_val - beaver_b);
+            });
+
+        // Open the tiled beaver subtractions
+        let mut opened_beaver_subs = MpcScalar::batch_open(&beaver_subs)?;
+        for i in 0..n {
+            if a[i].is_public() || b[i].is_public() {
+                res.push(&a[i] * &b[i])
+            } else {
+                // Fetch the next opening of a beaver sub
+                let (lhs_minus_a, rhs_minus_b) =
+                    (opened_beaver_subs.remove(0), opened_beaver_subs.remove(0));
+
+                let (beaver_a, beaver_b, beaver_c) = beaver_triplets.remove(0);
+
+                // Perform the multiplication and place it in the result
+                // Identity: [a * b] = de + d[b] + e[a] + [c]
+                // All multiplications here are between a public and shared value or
+                // two public values, so the recursion will not hit this case
+                let result = &lhs_minus_a * &beaver_b
+                    + &rhs_minus_b * &beaver_a
+                    + lhs_minus_a * rhs_minus_b
+                    + &beaver_c;
+
+                res.push(result);
+            }
+        }
+
+        Ok(res)
+    }
+}
+
+/**
  * Add and variants for: borrowed, non-borrowed, and scalar types
  */
 impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N, S>>
@@ -691,6 +805,11 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
     fn add(self, rhs: &'a MpcScalar<N, S>) -> Self::Output {
         // If public + shared swap the arguments for simplicity
         if self.is_public() && rhs.is_shared() {
+            println!(
+                "publicly add: {:?} + {:?}",
+                scalar_to_u64(&self.to_scalar()),
+                scalar_to_u64(&rhs.to_scalar()),
+            );
             return rhs + self;
         }
 

@@ -245,6 +245,47 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests batch multiplication
+fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Intersperse private and public values
+    let values = (0..10)
+        .map(|val| {
+            if val % 2 == 0 {
+                MpcScalar::from_public_u64(
+                    val,
+                    test_args.net_ref.clone(),
+                    test_args.beaver_source.clone(),
+                )
+            } else {
+                let val = MpcScalar::from_private_u64(
+                    val as u64,
+                    test_args.net_ref.clone(),
+                    test_args.beaver_source.clone(),
+                );
+
+                val.share_secret(0 /* party_id */).unwrap()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Multiply the values array with itself
+    let res = MpcScalar::batch_mul(&values, &values)
+        .map_err(|err| format!("Error performing batch_mul: {:?}", err))?;
+
+    // Convert to u64 for comparison
+    let res_u64 = res
+        .iter()
+        .map(|val| scalar_to_u64(&val.open().unwrap().to_scalar()))
+        .collect::<Vec<_>>();
+
+    let expected = (0..10).map(|x| (x * x) as u64).collect::<Vec<_>>();
+    if expected.ne(&res_u64) {
+        return Err(format!("Expected: {:?}, got {:?}", expected, res_u64));
+    }
+
+    Ok(())
+}
+
 /// Party 0 shares a value then opens it, the result should be the initial value
 fn test_open_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val: u64 = 42;
@@ -627,6 +668,11 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "mpc-scalar::test_mul",
     test_fn: test_mul
+});
+
+inventory::submit!(IntegrationTest {
+    name: "mpc-scalar::test_batch_mul",
+    test_fn: test_batch_mul,
 });
 
 inventory::submit!(IntegrationTest {
