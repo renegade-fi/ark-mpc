@@ -4,6 +4,7 @@ use mpc_ristretto::{
     authenticated_scalar::AuthenticatedScalar, error::MpcNetworkError, mpc_scalar::scalar_to_u64,
     network::QuicTwoPartyNet,
 };
+use rand::{thread_rng, RngCore};
 
 use crate::{mpc_scalar::PartyIDBeaverSource, IntegrationTest, IntegrationTestArgs};
 
@@ -550,31 +551,102 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
         .map_err(|err| format!("Error sharing values: {:?}", err))?;
 
     // Correctly open the linear combination
-    let mut linear_comb = shared_coefficients.iter().zip(shared_values.iter()).fold(
-        AuthenticatedScalar::zero(
-            test_args.mac_key.clone(),
-            test_args.net_ref.clone(),
-            test_args.beaver_source.clone(),
-        ),
-        |acc, pair| acc + pair.0 * pair.1,
-    );
-    let linear_comb_open = linear_comb
+    let mut res = AuthenticatedScalar::linear_combination(&shared_values, &shared_coefficients)
+        .map_err(|err| format!("Error computing linear combination: {:?}", err))?;
+    let res_open = res
         .open_and_authenticate()
-        .map_err(|err| format!("Error opening and authenticating value: {:?}", err))?;
-    if linear_comb_open.to_scalar().ne(&Scalar::from(32u64)) {
+        .map_err(|err| format!("Error opening linear combination result: {:?}", err))?;
+
+    if res_open.to_scalar().ne(&Scalar::from(32u64)) {
         return Err(format!(
             "Expected {}, got {}",
             32,
-            scalar_to_u64(&linear_comb_open.to_scalar())
+            scalar_to_u64(&res.to_scalar())
         ));
     }
 
     // Party 1 now tries to corrupt the linear combination, verify that authentication of the result fails
     if test_args.party_id == 1 {
-        linear_comb *= Scalar::from(5u64);
+        res *= Scalar::from(5u64);
     }
 
-    linear_comb.open_and_authenticate().map_or(Ok(()), |_| {
+    res.open_and_authenticate().map_or(Ok(()), |_| {
+        Err("Expected authentication failure, authentication passed...".to_string())
+    })?;
+
+    Ok(())
+}
+
+/// Tests a random linear combination
+fn test_random_linear_comb(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Parties take turns allocating coefficients and values
+    let n = 15;
+    let mut rng = thread_rng();
+
+    let mut values = Vec::new();
+    let mut coeffs = Vec::new();
+    for i in 0..n {
+        values.push(
+            AuthenticatedScalar::from_private_u64(
+                (rng.next_u32() / 2) as u64,
+                test_args.mac_key.clone(),
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+            .share_secret(i % 2 /* party_id */)
+            .unwrap(),
+        );
+
+        coeffs.push(
+            AuthenticatedScalar::from_private_u64(
+                (rng.next_u32() / 2) as u64,
+                test_args.mac_key.clone(),
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+            .share_secret(1 - (i % 2) /* party_id */)
+            .unwrap(),
+        );
+    }
+
+    // Compute linear combination
+    let mut res = AuthenticatedScalar::linear_combination(&values, &coeffs)
+        .map_err(|err| format!("Error computing linear combination: {:?}", err))?;
+    let res_open = res
+        .open_and_authenticate()
+        .map_err(|err| format!("Error opening linear combination result: {:?}", err))?;
+
+    // Open the coeffs and scalars to compute the expected result
+    let opened_scalars = AuthenticatedScalar::batch_open_and_authenticate(&values)
+        .map_err(|err| format!("Error opening values: {:?}", err))?
+        .iter()
+        .map(|scalar| scalar_to_u64(&scalar.to_scalar()))
+        .collect::<Vec<_>>();
+    let opened_coeffs = AuthenticatedScalar::batch_open_and_authenticate(&coeffs)
+        .map_err(|err| format!("Error opening coeffs: {:?}", err))?
+        .iter()
+        .map(|scalar| scalar_to_u64(&scalar.to_scalar()))
+        .collect::<Vec<_>>();
+
+    let mut expected_res = 0u128;
+    for (scalar, coeff) in opened_scalars.iter().zip(opened_coeffs.iter()) {
+        expected_res += (scalar * coeff) as u128;
+    }
+
+    if res_open.to_scalar().ne(&Scalar::from(expected_res)) {
+        return Err(format!(
+            "Expected {:?}, got {:?}",
+            expected_res,
+            scalar_to_u64(&res.to_scalar())
+        ));
+    }
+
+    // Party 0 tries to corrupt the linear combination, verify that opening fails
+    if test_args.party_id == 0 {
+        res += Scalar::from(5u64);
+    }
+
+    res.open_and_authenticate().map_or(Ok(()), |_| {
         Err("Expected authentication failure, authentication passed...".to_string())
     })?;
 
@@ -634,4 +706,9 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated-scalar::test_linear_combination",
     test_fn: test_linear_combination,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated-scalar::test_random_linear_comb",
+    test_fn: test_random_linear_comb,
 });

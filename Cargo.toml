@@ -37,4 +37,5 @@ clap = { version = "3.2.8", features = ["derive"] }
 colored = "2"
 dns-lookup = "1.0"
 inventory = "0.3"
+rand = "0.8"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }

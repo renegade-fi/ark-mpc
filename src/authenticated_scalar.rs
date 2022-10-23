@@ -690,6 +690,18 @@ where
     }
 }
 
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, S> {
+    /// Computes a linear combination of the given scalars
+    pub fn linear_combination(
+        scalars: &[AuthenticatedScalar<N, S>],
+        coeffs: &[AuthenticatedScalar<N, S>],
+    ) -> Result<AuthenticatedScalar<N, S>, MpcNetworkError> {
+        Ok(AuthenticatedScalar::batch_mul(scalars, coeffs)?
+            .iter()
+            .sum())
+    }
+}
+
 #[cfg(test)]
 mod authenticated_scalar_tests {
     use std::{cell::RefCell, rc::Rc};

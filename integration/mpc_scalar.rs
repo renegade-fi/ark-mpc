@@ -6,6 +6,7 @@ use mpc_ristretto::{
     mpc_scalar::{scalar_to_u64, MpcScalar},
     network::QuicTwoPartyNet,
 };
+use rand::{thread_rng, RngCore};
 
 use crate::{IntegrationTest, IntegrationTestArgs};
 
@@ -576,18 +577,10 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
         .collect::<Result<Vec<MpcScalar<_, _>>, MpcNetworkError>>()
         .map_err(|err| format!("Error sharing coefficients: {:?}", err))?;
 
-    let shared_combination = shared_values.iter().zip(shared_coeffs.iter()).fold(
-        MpcScalar::from_public_u64(
-            0u64,
-            test_args.net_ref.clone(),
-            test_args.beaver_source.clone(),
-        ),
-        |acc, pair| acc + pair.0 * pair.1,
-    );
-
-    let res = shared_combination
+    let res = MpcScalar::linear_combination(&shared_values, &shared_coeffs)
+        .map_err(|err| format!("Error computing linear combination: {:?}", err))?
         .open()
-        .map_err(|err| format!("Error opening value: {:?}", err))?;
+        .map_err(|err| format!("Error openign linear combination result: {:?}", err))?;
 
     // The expected value
     let linear_comb = (1..6).zip(7..12).fold(0, |acc, val| acc + val.0 * val.1);
@@ -607,6 +600,70 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
             res.value()
         ))
     }
+}
+
+/// Tests a random linear combination
+fn test_random_linear_comb(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Parties take turns allocating coefficients and values
+    let n = 15;
+    let mut rng = thread_rng();
+
+    let mut values = Vec::new();
+    let mut coeffs = Vec::new();
+    for i in 0..n {
+        values.push(
+            MpcScalar::from_private_u64(
+                (rng.next_u32() / 2) as u64,
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+            .share_secret(i % 2 /* party_id */)
+            .unwrap(),
+        );
+
+        coeffs.push(
+            MpcScalar::from_private_u64(
+                (rng.next_u32() / 2) as u64,
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+            .share_secret(1 - (i % 2) /* party_id */)
+            .unwrap(),
+        );
+    }
+
+    // Compute linear combination
+    let res = MpcScalar::linear_combination(&values, &coeffs)
+        .map_err(|err| format!("Error computing linear combination: {:?}", err))?
+        .open()
+        .map_err(|err| format!("Error opening linear combination result: {:?}", err))?;
+
+    // Open the coeffs and scalars to compute the expected result
+    let opened_scalars = MpcScalar::batch_open(&values)
+        .map_err(|err| format!("Error opening values: {:?}", err))?
+        .iter()
+        .map(|scalar| scalar_to_u64(&scalar.to_scalar()))
+        .collect::<Vec<_>>();
+    let opened_coeffs = MpcScalar::batch_open(&coeffs)
+        .map_err(|err| format!("Error opening coeffs: {:?}", err))?
+        .iter()
+        .map(|scalar| scalar_to_u64(&scalar.to_scalar()))
+        .collect::<Vec<_>>();
+
+    let mut expected_res = 0u128;
+    for (scalar, coeff) in opened_scalars.iter().zip(opened_coeffs.iter()) {
+        expected_res += (scalar * coeff) as u128;
+    }
+
+    if res.to_scalar().ne(&Scalar::from(expected_res)) {
+        return Err(format!(
+            "Expected {:?}, got {:?}",
+            expected_res,
+            scalar_to_u64(&res.to_scalar())
+        ));
+    }
+
+    Ok(())
 }
 
 /// Each party inputs their party_id + 1 and the two together compute the square
@@ -713,6 +770,11 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "mpc-scalar::test_linear_combination",
     test_fn: test_linear_combination,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "mpc-scalar::test_random_linear_comb",
+    test_fn: test_random_linear_comb
 });
 
 inventory::submit!(IntegrationTest {

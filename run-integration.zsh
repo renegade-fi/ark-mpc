@@ -10,3 +10,4 @@ docker-compose up \
   --build \
   --force-recreate \
   --renew-anon-volumes \
+  --timeout 1

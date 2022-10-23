@@ -888,6 +888,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for &'a MpcScal
  * Iterator traits
  */
 
+/// TODO: Optimize this to use tree-structured round parallelism
 impl<N, S, T> Product<T> for MpcScalar<N, S>
 where
     N: MpcNetwork + Send,
@@ -923,6 +924,16 @@ where
             MpcScalar::from_u64_with_visibility(0, Visibility::Shared, network, beaver_source),
             |acc, item| acc + item.borrow(),
         )
+    }
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
+    /// Takes a linear combination of the input scalars
+    pub fn linear_combination(
+        scalars: &[MpcScalar<N, S>],
+        coeffs: &[MpcScalar<N, S>],
+    ) -> Result<MpcScalar<N, S>, MpcNetworkError> {
+        Ok(MpcScalar::batch_mul(scalars, coeffs)?.iter().sum())
     }
 }
 
