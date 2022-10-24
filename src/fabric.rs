@@ -315,6 +315,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             })
             .collect::<Vec<AuthenticatedScalar<N, S>>>();
 
+        // TODO: This can be done as a batch_mul
         // Recompute the MACs in a separate step (i.e. outside map) to allow the mutable borrow
         // of `self.beaver_source` to be released.
         // `recompute_mac` requires a `Mul` which obtains a mutable borrow of the beaver source
@@ -322,6 +323,81 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             .iter_mut()
             .for_each(|value| value.recompute_mac());
         shared_values
+    }
+
+    /// Allocate a random pair of multiplicative inverses using the beaver source; i.e. (b, b^-1)
+    pub fn allocate_random_inverse_pair(
+        &self,
+    ) -> (AuthenticatedScalar<N, S>, AuthenticatedScalar<N, S>) {
+        let inverse_pair = self
+            .beaver_source
+            .as_ref()
+            .borrow_mut()
+            .next_shared_inverse_pair();
+
+        let mut shared_scalars = (
+            AuthenticatedScalar::from_scalar_with_visibility(
+                inverse_pair.0,
+                Visibility::Shared,
+                self.key_share.clone(),
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
+            AuthenticatedScalar::from_scalar_with_visibility(
+                inverse_pair.1,
+                Visibility::Shared,
+                self.key_share.clone(),
+                self.network.clone(),
+                self.beaver_source.clone(),
+            ),
+        );
+
+        // The values from the beaver source have no MAC, compute them now
+        shared_scalars.0.recompute_mac();
+        shared_scalars.1.recompute_mac();
+        shared_scalars
+    }
+
+    /// TODO: Optimize MAC recomputation to use batch mul interface (in a single round)
+    /// Allocate a batch of random pairs of multipicative inverses from the beaver source, i.e.:
+    ///     [(b_1, b_1^-1), ..., (b_n, b_n^-1)]
+    pub fn allocate_random_inverse_pair_batch(
+        &self,
+        num_inverses: usize,
+    ) -> Vec<(AuthenticatedScalar<N, S>, AuthenticatedScalar<N, S>)> {
+        let inverse_pairs = self
+            .beaver_source
+            .as_ref()
+            .borrow_mut()
+            .next_shared_invers_pair_batch(num_inverses);
+
+        let mut shared_scalars = inverse_pairs
+            .into_iter()
+            .map(|(b, b_inv)| {
+                (
+                    AuthenticatedScalar::from_scalar_with_visibility(
+                        b,
+                        Visibility::Shared,
+                        self.key_share.clone(),
+                        self.network.clone(),
+                        self.beaver_source.clone(),
+                    ),
+                    AuthenticatedScalar::from_scalar_with_visibility(
+                        b_inv,
+                        Visibility::Shared,
+                        self.key_share.clone(),
+                        self.network.clone(),
+                        self.beaver_source.clone(),
+                    ),
+                )
+            })
+            .collect_vec();
+        shared_scalars.iter_mut().for_each(|(b, b_inv)| {
+            b.recompute_mac();
+            b_inv.recompute_mac();
+        });
+
+        shared_scalars
     }
 
     /// Allocates an `AuthenticatedScalar` from a value that is presumed to be a valid additive Shamir
