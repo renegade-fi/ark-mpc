@@ -39,6 +39,10 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
         }
     }
 
+    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
+        (Scalar::one(), Scalar::one())
+    }
+
     fn next_shared_value(&mut self) -> Scalar {
         Scalar::from(self.party_id)
     }

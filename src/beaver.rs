@@ -27,6 +27,14 @@ pub trait SharedValueSource<T> {
             .map(|_| self.next_shared_value())
             .collect_vec()
     }
+    /// Fetch the next pair of values that are multiplicative inverses of one another
+    fn next_shared_inverse_pair(&mut self) -> (T, T);
+    /// Fetch the next batch of multiplicative inverse pairs
+    fn next_shared_invers_pair_batch(&mut self, num_pairs: usize) -> Vec<(T, T)> {
+        (0..num_pairs)
+            .map(|_| self.next_shared_inverse_pair())
+            .collect_vec()
+    }
     /// Fetch the next beaver triplet
     fn next_triplet(&mut self) -> (T, T, T);
     /// Fetch a batch of beaver triplets
@@ -57,6 +65,10 @@ impl SharedValueSource<Scalar> for DummySharedScalarSource {
 
     fn next_shared_value(&mut self) -> Scalar {
         Scalar::one()
+    }
+
+    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
+        (Scalar::one(), Scalar::one())
     }
 
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
