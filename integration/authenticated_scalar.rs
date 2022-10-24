@@ -427,6 +427,33 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// Tests the batch mul method on all public values
+fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let values = (0..10)
+        .map(|x| {
+            AuthenticatedScalar::from_public_u64(
+                x,
+                test_args.mac_key.clone(),
+                test_args.net_ref.clone(),
+                test_args.beaver_source.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let res = AuthenticatedScalar::batch_mul(&values, &values)
+        .map_err(|err| format!("Error computing batch mul: {:?}", err))?
+        .iter()
+        .map(|val| scalar_to_u64(&val.to_scalar()))
+        .collect::<Vec<_>>();
+
+    let expected_res = (0u64..10).map(|x| x * x).collect::<Vec<_>>();
+
+    if res.ne(&expected_res) {
+        return Err(format!("Expected {:?}, got {:?}", expected_res, res));
+    }
+
+    Ok(())
+}
+
 fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let values: Vec<u64> = if test_args.party_id == 0 {
         vec![1, 2, 3]
@@ -691,6 +718,11 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated-scalar::test_batch_mul",
     test_fn: test_batch_mul,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated-scalar::test_batch_mul_public",
+    test_fn: test_batch_mul_public,
 });
 
 inventory::submit!(IntegrationTest {

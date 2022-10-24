@@ -221,10 +221,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
         party_id: u64,
         secrets: &[AuthenticatedScalar<N, S>],
     ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcNetworkError> {
-        assert!(
-            !secrets.is_empty(),
-            "Cannot batch share secrets of empty vector"
-        );
+        if secrets.is_empty() {
+            return Ok(Vec::new());
+        }
 
         // Construct secret shares from the underlying values
         let key_share = secrets[0].key_share();
@@ -275,10 +274,9 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     pub fn batch_open(
         values: &[AuthenticatedScalar<N, S>],
     ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcNetworkError> {
-        assert!(
-            !values.is_empty(),
-            "Cannot batch open an empty vector of values"
-        );
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
         let key_share = values[0].key_share();
 
         // Open the values
@@ -342,10 +340,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     pub fn batch_open_and_authenticate(
         values: &[AuthenticatedScalar<N, S>],
     ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
-        assert!(
-            !values.is_empty(),
-            "Cannot batch open and authenticate an empty vector"
-        );
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let key_share = values[0].key_share();
 
         // 1. Open the underlying values

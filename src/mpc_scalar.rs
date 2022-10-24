@@ -295,13 +295,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         secrets: &[MpcScalar<N, S>],
     ) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
         assert!(
-            !secrets.is_empty(),
-            "Cannot batch share an empty vector of values"
-        );
-        assert!(
             secrets.iter().all(|secret| secret.is_private()),
             "Values to be shared must be in private state"
         );
+
+        if secrets.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let network = secrets[0].network();
         let beaver_source = secrets[0].beaver_source();
@@ -394,13 +394,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
     /// Open a batch of shared values
     pub fn batch_open(values: &[MpcScalar<N, S>]) -> Result<Vec<MpcScalar<N, S>>, MpcNetworkError> {
         assert!(
-            !values.is_empty(),
-            "Cannot batch open an empty vector of values"
-        );
-        assert!(
             values.iter().all(|value| !value.is_private()),
             "Private values may not be opened..."
         );
+
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let network = values[0].network();
         let beaver_source = values[0].beaver_source();
@@ -481,13 +481,13 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         values: &[MpcScalar<N, S>],
     ) -> Result<Vec<MpcScalar<N, S>>, MpcError> {
         assert!(
-            !values.is_empty(),
-            "Cannot batch commit and open an empty vector of values"
-        );
-        assert!(
             values.iter().all(|value| !value.is_private()),
             "Private values may not be opened...",
         );
+
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let network = values[0].network();
         let beaver_source = values[0].beaver_source();
@@ -739,6 +739,10 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             "input arrays to batch_mul must be of equal length"
         );
 
+        if a.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let n = a.len();
         let mut res = Vec::with_capacity(n);
 
@@ -766,7 +770,11 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             });
 
         // Open the tiled beaver subtractions
-        let mut opened_beaver_subs = MpcScalar::batch_open(&beaver_subs)?;
+        let mut opened_beaver_subs = if num_beaver_muls == 0 {
+            Vec::new()
+        } else {
+            MpcScalar::batch_open(&beaver_subs)?
+        };
         for i in 0..n {
             if a[i].is_public() || b[i].is_public() {
                 res.push(&a[i] * &b[i])
