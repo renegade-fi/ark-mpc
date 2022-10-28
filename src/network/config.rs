@@ -9,7 +9,10 @@ use rustls::{Certificate, ClientConfig as CryptoClientConfig};
 use crate::error::SetupError;
 use crate::network::cert_verifier::PassThroughCertVerifier;
 
+#[cfg(not(test))]
 const MAX_IDLE_TIMEOUT: u32 = 10_000; // milliseconds
+#[cfg(test)]
+const MAX_IDLE_TIMEOUT: u32 = 0; // No timeout
 const KEEP_ALIVE_INTERVAL: u64 = 3_000; // milliseconds
 pub(crate) const SERVER_NAME: &str = "otter.cash"; // dummy value
 
