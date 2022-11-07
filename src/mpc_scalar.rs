@@ -18,7 +18,7 @@ use crate::{
     beaver::SharedValueSource,
     commitment::PedersenCommitment,
     error::{MpcError, MpcNetworkError},
-    macros,
+    macros::{self},
     network::MpcNetwork,
     BeaverSource, SharedNetwork, Visibility, Visible,
 };
@@ -715,10 +715,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
 
 // Multiplication with a scalar value is equivalent to a public multiplication, no Beaver
 // trick needed
-macros::impl_arithmetic_assign!(MpcScalar<N, S>, MulAssign, mul_assign, *, Scalar);
+macros::impl_operator_variants!(MpcScalar<N, S>, Mul, mul, *, MpcScalar<N, S>);
+macros::impl_wrapper_type!(MpcScalar<N, S>, Scalar, from_public_scalar, Mul, mul, *, authenticated=false);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
-macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Mul, mul, *, MpcScalar<N, S>);
-macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Mul, mul, *, from_public_scalar, Scalar);
+macros::impl_arithmetic_assign!(MpcScalar<N, S>, MulAssign, mul_assign, *, Scalar);
 
 /**
  * Batch multiply allowing for batches of communication
@@ -847,10 +847,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcScalar<N
     }
 }
 
+macros::impl_operator_variants!(MpcScalar<N, S>, Add, add, +, MpcScalar<N, S>);
+macros::impl_wrapper_type!(MpcScalar<N, S>, Scalar, from_public_scalar, Add, add, +, authenticated=false);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, AddAssign, add_assign, +, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, AddAssign, add_assign, +, Scalar);
-macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Add, add, +, MpcScalar<N, S>);
-macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Add, add, +, from_public_scalar, Scalar);
 
 /**
  * Sub and variants for: borrowed, non-borrowed, and scalar types
@@ -866,10 +866,10 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcScalar<N
     }
 }
 
+macros::impl_operator_variants!(MpcScalar<N, S>, Sub, sub, -, MpcScalar<N, S>);
+macros::impl_wrapper_type!(MpcScalar<N, S>, Scalar, from_public_scalar, Sub, sub, -, authenticated=false);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, SubAssign, sub_assign, -, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(MpcScalar<N, S>, SubAssign, sub_assign, -, Scalar);
-macros::impl_arithmetic_wrapper!(MpcScalar<N, S>, Sub, sub, -, MpcScalar<N, S>);
-macros::impl_arithmetic_wrapped!(MpcScalar<N, S>, Sub, sub, -, from_public_scalar, Scalar);
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Neg for MpcScalar<N, S> {
     type Output = MpcScalar<N, S>;
