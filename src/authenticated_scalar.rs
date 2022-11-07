@@ -118,7 +118,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedScalar<N, 
     }
 
     /// Used as a helper with extra parameters for the macro creation
-    fn from_mpc_scalar(
+    pub(crate) fn from_mpc_scalar(
         x: MpcScalar<N, S>,
         key_share: MpcScalar<N, S>,
         _: SharedNetwork<N>,
@@ -480,8 +480,24 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a Authenticat
 }
 
 macros::impl_operator_variants!(AuthenticatedScalar<N, S>, Mul, mul, *, AuthenticatedScalar<N, S>);
-macros::impl_wrapper_type!(AuthenticatedScalar<N, S>, MpcScalar<N, S>, from_mpc_scalar, Mul, mul, *, authenticated=true);
-macros::impl_wrapper_type!(AuthenticatedScalar<N, S>, Scalar, from_public_scalar, Mul, mul, *, authenticated=true);
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    MpcScalar<N, S>,
+    AuthenticatedScalar::from_mpc_scalar,
+    Mul,
+    mul,
+    *,
+    authenticated=true
+);
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    Scalar,
+    AuthenticatedScalar::from_public_scalar,
+    Mul,
+    mul,
+    *,
+    authenticated=true
+);
 macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, MulAssign, mul_assign, *, AuthenticatedScalar<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, MulAssign, mul_assign, *, Scalar);
 
@@ -584,8 +600,24 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a Authenticat
 }
 
 macros::impl_operator_variants!(AuthenticatedScalar<N, S>, Add, add, +, AuthenticatedScalar<N, S>);
-macros::impl_wrapper_type!(AuthenticatedScalar<N, S>, MpcScalar<N, S>, from_mpc_scalar, Add, add, +, authenticated=true);
-macros::impl_wrapper_type!(AuthenticatedScalar<N, S>, Scalar, from_public_scalar, Add, add, +, authenticated=true);
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    MpcScalar<N, S>,
+    AuthenticatedScalar::from_mpc_scalar,
+    Add,
+    add,
+    +,
+    authenticated=true
+);
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    Scalar,
+    AuthenticatedScalar::from_public_scalar,
+    Add,
+    add,
+    +,
+    authenticated=true
+);
 macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, AddAssign, add_assign, +, AuthenticatedScalar<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, AddAssign, add_assign, +, Scalar);
 
@@ -604,8 +636,24 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a Authenticat
 }
 
 macros::impl_operator_variants!(AuthenticatedScalar<N, S>, Sub, sub, -, AuthenticatedScalar<N, S>);
-macros::impl_wrapper_type!(AuthenticatedScalar<N, S>, MpcScalar<N, S>, from_mpc_scalar, Sub, sub, -, authenticated=true);
-macros::impl_wrapper_type!(AuthenticatedScalar<N, S>, Scalar, from_public_scalar, Sub, sub, -, authenticated=true);
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    MpcScalar<N, S>,
+    AuthenticatedScalar::from_mpc_scalar,
+    Sub,
+    sub,
+    -,
+    authenticated=true
+);
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    Scalar,
+    AuthenticatedScalar::from_public_scalar,
+    Sub,
+    sub,
+    -,
+    authenticated=true
+);
 macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, SubAssign, sub_assign, -, AuthenticatedScalar<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedScalar<N, S>, SubAssign, sub_assign, -, Scalar);
 

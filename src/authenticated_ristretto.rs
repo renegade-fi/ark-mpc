@@ -159,26 +159,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
         }
     }
 
-    /// A hack to convert a Scalar type into an AuthenticatedScalar for macro usage
-    fn from_scalar_for_mul(
-        a: Scalar,
-        key_share: MpcScalar<N, S>,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>,
-    ) -> AuthenticatedScalar<N, S> {
-        AuthenticatedScalar::from_public_scalar(a, key_share, network, beaver_source)
-    }
-
-    /// A hack to convert a MpcScalar type into an AuthenticatedScalar for macro usage
-    fn from_mpc_scalar_for_mul(
-        a: MpcScalar<N, S>,
-        key_share: MpcScalar<N, S>,
-        _: SharedNetwork<N>,
-        _: BeaverSource<S>,
-    ) -> AuthenticatedScalar<N, S> {
-        AuthenticatedScalar::from_public_mpc_scalar(a, key_share)
-    }
-
     // Create a random authenticated Ristretto point, assumed private
     pub fn random<R: RngCore + CryptoRng>(
         rng: &mut R,
@@ -488,8 +468,16 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a Authenticat
 
 macros::impl_operator_variants!(AuthenticatedRistretto<N, S>, Mul, mul, *, AuthenticatedScalar<N, S>);
 macros::impl_operator_variants!(AuthenticatedScalar<N, S>, Mul, mul, *, AuthenticatedRistretto<N, S>, Output=AuthenticatedRistretto<N, S>);
-macros::impl_wrapper_type!(AuthenticatedRistretto<N, S>, MpcScalar<N, S>, from_mpc_scalar_for_mul, Mul, mul, *, authenticated=true);
-macros::impl_wrapper_type!(AuthenticatedRistretto<N, S>, Scalar, from_scalar_for_mul, Mul, mul, *, authenticated=true);
+macros::impl_wrapper_type!(
+    AuthenticatedRistretto<N, S>,
+    MpcScalar<N, S>,
+    AuthenticatedScalar::from_mpc_scalar,
+    Mul,
+    mul,
+    *,
+    authenticated=true
+);
+macros::impl_wrapper_type!(AuthenticatedRistretto<N, S>, Scalar, AuthenticatedScalar::from_public_scalar, Mul, mul, *, authenticated=true);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, AuthenticatedScalar<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, Scalar);
@@ -530,8 +518,24 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a Authenticat
 }
 
 macros::impl_operator_variants!(AuthenticatedRistretto<N, S>, Add, add, +, AuthenticatedRistretto<N, S>);
-macros::impl_wrapper_type!(AuthenticatedRistretto<N, S>, MpcRistrettoPoint<N, S>, from_mpc_ristretto, Add, add, +, authenticated=true);
-macros::impl_wrapper_type!(AuthenticatedRistretto<N, S>, RistrettoPoint, from_public_ristretto_point, Add, add, +, authenticated=true);
+macros::impl_wrapper_type!(
+    AuthenticatedRistretto<N, S>,
+    MpcRistrettoPoint<N, S>,
+    AuthenticatedRistretto::from_mpc_ristretto,
+    Add,
+    add,
+    +,
+    authenticated=true
+);
+macros::impl_wrapper_type!(
+    AuthenticatedRistretto<N, S>,
+    RistrettoPoint,
+    AuthenticatedRistretto::from_public_ristretto_point,
+    Add,
+    add,
+    +,
+    authenticated=true
+);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, AddAssign, add_assign, +, AuthenticatedRistretto<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, AddAssign, add_assign, +, MpcRistrettoPoint<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, AddAssign, add_assign, +, RistrettoPoint);
@@ -551,8 +555,24 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a Authenticat
 }
 
 macros::impl_operator_variants!(AuthenticatedRistretto<N, S>, Sub, sub, -, AuthenticatedRistretto<N, S>);
-macros::impl_wrapper_type!(AuthenticatedRistretto<N, S>, MpcRistrettoPoint<N, S>, from_mpc_ristretto, Sub, sub, -, authenticated=true);
-macros::impl_wrapper_type!(AuthenticatedRistretto<N, S>, RistrettoPoint, from_public_ristretto_point, Sub, sub, -, authenticated=true);
+macros::impl_wrapper_type!(
+    AuthenticatedRistretto<N, S>,
+    MpcRistrettoPoint<N, S>,
+    AuthenticatedRistretto::from_mpc_ristretto,
+    Sub,
+    sub,
+    -,
+    authenticated=true
+);
+macros::impl_wrapper_type!(
+    AuthenticatedRistretto<N, S>,
+    RistrettoPoint,
+    AuthenticatedRistretto::from_public_ristretto_point,
+    Sub,
+    sub,
+    -,
+    authenticated=true
+);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, SubAssign, sub_assign, -, AuthenticatedRistretto<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, SubAssign, sub_assign, -, MpcRistrettoPoint<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, SubAssign, sub_assign, -, RistrettoPoint);

@@ -558,15 +558,6 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         }
     }
 
-    /// A hack to allow a Scalar to be cast into an MpcScalar for multiplication via macro
-    fn from_scalar_for_mul(
-        a: Scalar,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>,
-    ) -> MpcScalar<N, S> {
-        MpcScalar::from_public_scalar(a, network, beaver_source)
-    }
-
     /// Create a random ristretto point
     pub fn random<R: RngCore + CryptoRng>(
         rng: &mut R,
@@ -741,7 +732,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcRistrett
 
 macros::impl_operator_variants!(MpcRistrettoPoint<N, S>, Mul, mul, *, MpcScalar<N, S>);
 macros::impl_operator_variants!(MpcScalar<N, S>, Mul, mul, *, MpcRistrettoPoint<N, S>, Output=MpcRistrettoPoint<N, S>);
-macros::impl_wrapper_type!(MpcRistrettoPoint<N, S>, Scalar, from_scalar_for_mul, Mul, mul, *, authenticated=false);
+macros::impl_wrapper_type!(MpcRistrettoPoint<N, S>, Scalar, MpcScalar::from_public_scalar, Mul, mul, *, authenticated=false);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, *, Scalar);
 
@@ -790,7 +781,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Add<&'a MpcRistrett
 }
 
 macros::impl_operator_variants!(MpcRistrettoPoint<N, S>, Add, add, +, MpcRistrettoPoint<N, S>);
-macros::impl_wrapper_type!(MpcRistrettoPoint<N, S>, RistrettoPoint, from_public_ristretto_point, Add, add, +, authenticated=false);
+macros::impl_wrapper_type!(MpcRistrettoPoint<N, S>, RistrettoPoint, MpcRistrettoPoint::from_public_ristretto_point, Add, add, +, authenticated=false);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, +, MpcRistrettoPoint<N, S>);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, AddAssign, add_assign, +, RistrettoPoint);
 
@@ -808,7 +799,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Sub<&'a MpcRistrett
     }
 }
 macros::impl_operator_variants!(MpcRistrettoPoint<N, S>, Sub, sub, -, MpcRistrettoPoint<N, S>);
-macros::impl_wrapper_type!(MpcRistrettoPoint<N, S>, RistrettoPoint, from_public_ristretto_point, Sub, sub, -, authenticated=false);
+macros::impl_wrapper_type!(MpcRistrettoPoint<N, S>, RistrettoPoint, MpcRistrettoPoint::from_public_ristretto_point, Sub, sub, -, authenticated=false);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, SubAssign, sub_assign, -, MpcRistrettoPoint<N, S>);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, SubAssign, sub_assign, -, RistrettoPoint);
 
