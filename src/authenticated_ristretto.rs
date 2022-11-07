@@ -482,6 +482,29 @@ macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_ass
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(AuthenticatedRistretto<N, S>, MulAssign, mul_assign, *, Scalar);
 
+// Implement multiplication between an authenticated scalar and a non-authenticated Ristretto point
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    RistrettoPoint,
+    AuthenticatedRistretto::from_public_ristretto_point,
+    Mul,
+    mul,
+    *,
+    Output=AuthenticatedRistretto<N, S>,
+    authenticated=true
+);
+
+macros::impl_wrapper_type!(
+    AuthenticatedScalar<N, S>,
+    MpcRistrettoPoint<N, S>,
+    AuthenticatedRistretto::from_mpc_ristretto,
+    Mul,
+    mul,
+    *,
+    Output=AuthenticatedRistretto<N, S>,
+    authenticated=true
+);
+
 /**
  * Add and variants for borrowed, non-borrowed values
  */

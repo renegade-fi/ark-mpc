@@ -736,6 +736,18 @@ macros::impl_wrapper_type!(MpcRistrettoPoint<N, S>, Scalar, MpcScalar::from_publ
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, *, MpcScalar<N, S>);
 macros::impl_arithmetic_assign!(MpcRistrettoPoint<N, S>, MulAssign, mul_assign, *, Scalar);
 
+// Implement arithmetic between wrapped scalar and unwrapped ristretto point
+macros::impl_wrapper_type!(
+    MpcScalar<N, S>,
+    RistrettoPoint,
+    MpcRistrettoPoint::from_public_ristretto_point,
+    Mul,
+    mul,
+    *,
+    Output=MpcRistrettoPoint<N, S>,
+    authenticated=false
+);
+
 /**
  * Add and variants for borrowed, non-borrowed values
  */

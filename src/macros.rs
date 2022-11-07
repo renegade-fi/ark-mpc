@@ -267,14 +267,42 @@ macro_rules! impl_operator_variants {
 ///     2. Call out to `impl_operator_variants` to implement borrow-variants for the operation
 ///     3. Do 1-2 in the reverse order, i.e. with LHS and RHS types switched
 macro_rules! impl_wrapper_type {
-    // Wrapper macro that defines an arithmetic wrapper for an unauthenticated wrapper type
+    // A helper to call the macro cases below with the default output type equal to the wrapper
     ($wrapper_type:ty, $wrapped_type:ty, $from_fn:expr, $trait:ident, $fn_name:ident, $op:tt, authenticated=false) => {
+        macros::impl_wrapper_type!(
+            $wrapper_type,
+            $wrapped_type,
+            $from_fn,
+            $trait,
+            $fn_name,
+            $op,
+            Output=$wrapper_type,
+            authenticated=false
+        );
+    };
+
+    // The same style helper as above, but for authenticated wrapper types
+    ($wrapper_type:ty, $wrapped_type:ty, $from_fn:expr, $trait:ident, $fn_name:ident, $op:tt, authenticated=true) => {
+        macros::impl_wrapper_type!(
+            $wrapper_type,
+            $wrapped_type,
+            $from_fn,
+            $trait,
+            $fn_name,
+            $op,
+            Output=$wrapper_type,
+            authenticated=true
+        );
+    };
+
+    // Wrapper macro that defines an arithmetic wrapper for an unauthenticated wrapper type
+    ($wrapper_type:ty, $wrapped_type:ty, $from_fn:expr, $trait:ident, $fn_name:ident, $op:tt, Output=$output_type:ty, authenticated=false) => {
         // Base implementation with wrapper on the LHS and wrapped type on the RHS
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapped_type>
             for &'a $wrapper_type
         {
             // Output is always the wrapper type
-            type Output = $wrapper_type;
+            type Output = $output_type;
 
             fn $fn_name(self, rhs: &'a $wrapped_type) -> Self::Output {
                 self $op $from_fn(rhs.clone(), self.network.clone(), self.beaver_source.clone())
@@ -282,12 +310,12 @@ macro_rules! impl_wrapper_type {
         }
 
         // Implement variants for borrowed and non-borrowed arguments
-        macros::impl_operator_variants!($wrapper_type, $trait, $fn_name, $op, $wrapped_type, Output=$wrapper_type);
+        macros::impl_operator_variants!($wrapper_type, $trait, $fn_name, $op, $wrapped_type, Output=$output_type);
 
         // Base implementation with wrapped type on the LHS and wrapper on the RHS
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapper_type> for &'a $wrapped_type {
             // Output is always the wrapper type
-            type Output = $wrapper_type;
+            type Output = $output_type;
 
             fn $fn_name(self, rhs: &'a $wrapper_type) -> Self::Output {
                 $from_fn(self.clone(), rhs.network.clone(), rhs.beaver_source.clone()) $op rhs
@@ -295,37 +323,37 @@ macro_rules! impl_wrapper_type {
         }
 
         // Implement variants for borrowed and non-borrowed arguments
-        macros::impl_operator_variants!($wrapped_type, $trait, $fn_name, $op, $wrapper_type, Output=$wrapper_type);
+        macros::impl_operator_variants!($wrapped_type, $trait, $fn_name, $op, $wrapper_type, Output=$output_type);
     };
 
     // Wrapper macro that defines an arithmetic wrapper for an authenticated wrapper type
-    ($wrapper_type:ty, $wrapped_type:ty, $from_fn:expr, $trait:ident, $fn_name:ident, $op:tt, authenticated=true) => {        // Base implementation with wrapper on the LHS and wrapped type on the RHS
+    ($wrapper_type:ty, $wrapped_type:ty, $from_fn:expr, $trait:ident, $fn_name:ident, $op:tt, Output=$output_type:ty, authenticated=true) => {
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapped_type>
             for &'a $wrapper_type
         {
             // Output is always the wrapper type
-            type Output = $wrapper_type;
+            type Output = $output_type;
 
             fn $fn_name(self, rhs: &'a $wrapped_type) -> Self::Output {
-                self $op $from_fn(rhs.clone(), self.key_share.clone(), self.network(), self.beaver_source())
+                self $op $from_fn(rhs.clone(), self.key_share(), self.network(), self.beaver_source())
             }
         }
 
         // Implement variants for borrowed and non-borrowed arguments
-        macros::impl_operator_variants!($wrapper_type, $trait, $fn_name, $op, $wrapped_type, Output=$wrapper_type);
+        macros::impl_operator_variants!($wrapper_type, $trait, $fn_name, $op, $wrapped_type, Output=$output_type);
 
         // Base implementation with wrapped type on the LHS and wrapper on the RHS
         impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapper_type> for &'a $wrapped_type {
             // Output is always the wrapper type
-            type Output = $wrapper_type;
+            type Output = $output_type;
 
             fn $fn_name(self, rhs: &'a $wrapper_type) -> Self::Output {
-                $from_fn(self.clone(), rhs.key_share.clone(), rhs.network(), rhs.beaver_source()) $op rhs
+                $from_fn(self.clone(), rhs.key_share(), rhs.network(), rhs.beaver_source()) $op rhs
             }
         }
 
         // Implement variants for borrowed and non-borrowed arguments
-        macros::impl_operator_variants!($wrapped_type, $trait, $fn_name, $op, $wrapper_type, Output=$wrapper_type);
+        macros::impl_operator_variants!($wrapped_type, $trait, $fn_name, $op, $wrapper_type, Output=$output_type);
     };
 }
 
