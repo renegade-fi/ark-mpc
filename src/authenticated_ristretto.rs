@@ -185,6 +185,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
             key_share: self.key_share(),
         }
     }
+
+    pub fn batch_compress(
+        points: &[AuthenticatedRistretto<N, S>],
+    ) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
+        points.iter().map(|point| point.compress()).collect()
+    }
 }
 
 /**
@@ -791,6 +797,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressed
         })
     }
 
+    pub fn batch_decompress(
+        points: &[AuthenticatedCompressedRistretto<N, S>],
+    ) -> Option<Vec<AuthenticatedRistretto<N, S>>> {
+        points.iter().map(|point| point.decompress()).collect()
+    }
+
     /// View this CompressedRistretto as an array of bytes
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.value.as_bytes()
@@ -808,6 +820,48 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressed
             mac_share: None,
             key_share,
         }
+    }
+}
+
+/// Secret sharing implementation
+///
+/// Roughly speaking, these methods decompress the value(s), operate on them
+/// via methods on the decompressed type, then re-compress them
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressedRistretto<N, S> {
+    /// Open a single compressed ristretto point
+    pub fn open(&self) -> Result<Self, MpcError> {
+        Ok(self
+            .decompress()
+            .ok_or_else(|| MpcError::ArithmeticError("error decompressing point".to_string()))?
+            .open()
+            .map_err(MpcError::NetworkError)?
+            .compress())
+    }
+
+    /// Open a set of compressed ristrettos
+    pub fn batch_open(points: &[Self]) -> Result<Vec<Self>, MpcError> {
+        let decompressed = Self::batch_decompress(points)
+            .ok_or_else(|| MpcError::ArithmeticError("error decompressing points".to_string()))?;
+        let opened =
+            AuthenticatedRistretto::batch_open(&decompressed).map_err(MpcError::NetworkError)?;
+        Ok(AuthenticatedRistretto::batch_compress(&opened))
+    }
+
+    /// Open and authenticated a compressed Ristretto point
+    pub fn open_and_authenticate(&self) -> Result<Self, MpcError> {
+        Ok(self
+            .decompress()
+            .ok_or_else(|| MpcError::ArithmeticError("error decompressing point".to_string()))?
+            .open_and_authenticate()?
+            .compress())
+    }
+
+    /// Open and auathenticate a set of compressed Ristretto points
+    pub fn batch_open_and_authenticate(points: &[Self]) -> Result<Vec<Self>, MpcError> {
+        let decompressed = Self::batch_decompress(points)
+            .ok_or_else(|| MpcError::ArithmeticError("error decompressing points".to_string()))?;
+        let opened = AuthenticatedRistretto::batch_open_and_authenticate(&decompressed)?;
+        Ok(AuthenticatedRistretto::batch_compress(&opened))
     }
 }
 

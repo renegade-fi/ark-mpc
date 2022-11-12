@@ -8,6 +8,7 @@ pub enum MpcError {
     NetworkError(MpcNetworkError),
     AuthenticationError,
     VisibilityError(String),
+    ArithmeticError(String),
 }
 
 impl Display for MpcError {
