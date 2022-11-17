@@ -870,7 +870,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul
 }
 
 /// Represents a CompressedRistretto point allocated in the network
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[allow(dead_code)]
 pub struct MpcCompressedRistretto<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying value of the Ristretto point in the network
@@ -881,6 +881,17 @@ pub struct MpcCompressedRistretto<N: MpcNetwork + Send, S: SharedValueSource<Sca
     network: SharedNetwork<N>,
     /// The source for shared values; MAC keys, beaver triplets, etc
     beaver_source: BeaverSource<S>,
+}
+
+impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for MpcCompressedRistretto<N, S> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value(),
+            visibility: self.visibility,
+            network: self.network.clone(),
+            beaver_source: self.beaver_source.clone(),
+        }
+    }
 }
 
 /**
