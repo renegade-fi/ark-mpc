@@ -45,7 +45,7 @@ pub fn build_configs() -> Result<(ClientConfig, ServerConfig), SetupError> {
 
     // 3. Client and server setup
     let mut client_config = ClientConfig::new(Arc::new(client_crypto_config));
-    client_config.transport = transport.clone();
+    client_config.transport_config(transport.clone());
 
     let mut server_config = ServerConfig::with_single_cert(vec![cert], key)
         .map_err(|_| SetupError::ServerSetupError)?;

@@ -10,8 +10,7 @@ use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
-use futures::StreamExt;
-use quinn::{Endpoint, NewConnection, RecvStream, SendStream};
+use quinn::{Endpoint, RecvStream, SendStream};
 use std::{convert::TryInto, net::SocketAddr};
 
 use crate::error::{BroadcastError, MpcNetworkError, SetupError};
@@ -209,18 +208,14 @@ impl<'a> QuicTwoPartyNet {
             config::build_configs().map_err(|err| MpcNetworkError::ConnectionSetupError(err))?;
 
         // Create a quinn server
-        let (mut local_node, mut incoming) = Endpoint::server(server_config, self.local_addr)
+        let mut local_endpoint = Endpoint::server(server_config, self.local_addr)
             .map_err(|_| MpcNetworkError::ConnectionSetupError(SetupError::ServerSetupError))?;
-        local_node.set_default_client_config(client_config);
+        local_endpoint.set_default_client_config(client_config);
 
         // The king dials the peer who awaits connection
-        let NewConnection {
-            connection,
-            mut bi_streams,
-            ..
-        } = {
+        let connection = {
             if self.am_king() {
-                local_node
+                local_endpoint
                     .connect(self.peer_addr, config::SERVER_NAME)
                     .map_err(|err| {
                         MpcNetworkError::ConnectionSetupError(SetupError::ConnectError(err))
@@ -230,8 +225,8 @@ impl<'a> QuicTwoPartyNet {
                         MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                     })?
             } else {
-                incoming
-                    .next()
+                local_endpoint
+                    .accept()
                     .await
                     .ok_or(MpcNetworkError::ConnectionSetupError(
                         SetupError::NoIncomingConnection,
@@ -250,15 +245,9 @@ impl<'a> QuicTwoPartyNet {
                     MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                 })?
             } else {
-                bi_streams
-                    .next()
-                    .await
-                    .ok_or(MpcNetworkError::ConnectionSetupError(
-                        SetupError::NoIncomingConnection,
-                    ))?
-                    .map_err(|err| {
-                        MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
-                    })?
+                connection.accept_bi().await.map_err(|err| {
+                    MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
+                })?
             }
         };
 
