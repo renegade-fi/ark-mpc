@@ -53,7 +53,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Clone for MpcScalar<N, 
 
 /// Converts a scalar to u64
 pub fn scalar_to_u64(a: &Scalar) -> u64 {
-    u64::from_le_bytes(a.to_bytes()[..8].try_into().unwrap()) as u64
+    u64::from_le_bytes(a.to_bytes()[..8].try_into().unwrap())
 }
 
 /**
@@ -277,7 +277,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             )?;
 
             // Do not subtract directly as the random scalar is not directly allocated in the network
-            // subtracting directly ties it to the subtraction implementaiton in a fragile way
+            // subtracting directly ties it to the subtraction implementation in a fragile way
             Ok(MpcScalar {
                 value: self.value - random_share,
                 visibility: Visibility::Shared,
@@ -507,7 +507,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         )
         .map_err(MpcError::NetworkError)?;
 
-        // Open both the underlying values and the blinding factos
+        // Open both the underlying values and the blinding factors
         let mut commitment_data: Vec<Scalar> = Vec::new();
         commitments.iter().for_each(|comm| {
             commitment_data.push(comm.get_blinding());
@@ -559,7 +559,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
             .collect())
     }
 
-    /// Retreives the next Beaver triplet from the Beaver source and allocates the values within the network
+    /// Retrieves the next Beaver triplet from the Beaver source and allocates the values within the network
     fn next_beaver_triplet(&self) -> (MpcScalar<N, S>, MpcScalar<N, S>, MpcScalar<N, S>) {
         let (a, b, c) = self.beaver_source.as_ref().borrow_mut().next_triplet();
 
@@ -747,7 +747,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcScalar<N, S> {
         let mut res = Vec::with_capacity(n);
 
         // If one (or both) of a and b is public, it can be multiplied locally
-        // so we first separate out these values to avoid unnecssary computation/communication
+        // so we first separate out these values to avoid unnecessary computation/communication
         let mut beaver_mul_pairs = Vec::new();
         for i in 0..a.len() {
             if !a[i].is_public() && !b[i].is_public() {

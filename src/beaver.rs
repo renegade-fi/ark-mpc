@@ -30,7 +30,7 @@ pub trait SharedValueSource<T> {
     /// Fetch the next pair of values that are multiplicative inverses of one another
     fn next_shared_inverse_pair(&mut self) -> (T, T);
     /// Fetch the next batch of multiplicative inverse pairs
-    fn next_shared_invers_pair_batch(&mut self, num_pairs: usize) -> Vec<(T, T)> {
+    fn next_shared_inverse_pair_batch(&mut self, num_pairs: usize) -> Vec<(T, T)> {
         (0..num_pairs)
             .map(|_| self.next_shared_inverse_pair())
             .collect_vec()

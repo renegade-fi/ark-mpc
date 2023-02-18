@@ -1,7 +1,7 @@
 //! Defines an MPC fabric for the protocol
 //!
 //! The fabric essentially acts as a dependency injection layer. That is, the MpcFabric
-//! creates and manages depedencies needed to allocate network values. This provides a
+//! creates and manages dependencies needed to allocate network values. This provides a
 //! cleaner interface for consumers of the library; i.e. clients do not have to hold onto
 //! references of the network layer or the beaver sources to allocate values.
 
@@ -23,7 +23,7 @@ use crate::{
     authenticated_scalar::AuthenticatedScalar,
     beaver::SharedValueSource,
     error::MpcError,
-    mpc_scalar::MpcScalar,
+    mpc_scalar::{scalar_to_u64, MpcScalar},
     network::{MpcNetwork, QuicTwoPartyNet},
     BeaverSource, SharedNetwork, Visibility,
 };
@@ -42,7 +42,7 @@ pub struct AuthenticatedMpcFabric<N: MpcNetwork + Send, S: SharedValueSource<Sca
 }
 
 impl<S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<QuicTwoPartyNet, S> {
-    /// Create a new AuthenticatedMpcFabric with the defuault (QUIC two party) network
+    /// Create a new AuthenticatedMpcFabric with the default (QUIC two party) network
     pub fn new(
         local_addr: SocketAddr,
         peer_addr: SocketAddr,
@@ -120,6 +120,52 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
                 )
             })
             .collect()
+    }
+
+    /// Share a public u64 value in plaintext
+    pub fn share_plaintext_u64(&self, owning_party: u64, value: u64) -> Result<u64, MpcError> {
+        self.share_plaintext_scalar(owning_party, Scalar::from(value))
+            .map(|val| scalar_to_u64(&val))
+    }
+
+    /// Share a batch of public u64 values in plaintext
+    pub fn batch_share_plaintext_u64s(
+        &self,
+        owning_party: u64,
+        values: &[u64],
+    ) -> Result<Vec<u64>, MpcError> {
+        let scalar_values = values.iter().map(|x| Scalar::from(*x)).collect_vec();
+        self.batch_shared_plaintext_scalars(owning_party, &scalar_values)
+            .map(|values| values.iter().map(scalar_to_u64).collect_vec())
+    }
+
+    /// Share a public scalar value in plaintext
+    pub fn share_plaintext_scalar(
+        &self,
+        owning_party: u64,
+        value: Scalar,
+    ) -> Result<Scalar, MpcError> {
+        self.batch_shared_plaintext_scalars(owning_party, &[value])
+            .map(|vec| vec[0])
+    }
+
+    /// Share a batch of public scalar values in plaintext
+    pub fn batch_shared_plaintext_scalars(
+        &self,
+        owning_party: u64,
+        values: &[Scalar],
+    ) -> Result<Vec<Scalar>, MpcError> {
+        // Mux between send and receive
+        if self.party_id() == owning_party {
+            block_on(self.network.borrow_mut().send_scalars(values))
+                .map_err(MpcError::NetworkError)?;
+
+            Ok(values.to_vec())
+        } else {
+            let received_values = block_on(self.network.borrow_mut().receive_scalars(values.len()))
+                .map_err(MpcError::NetworkError)?;
+            Ok(received_values)
+        }
     }
 
     /// Allocate a scalar that acts as one of the given party's private inputs to the protocol
@@ -359,7 +405,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
     }
 
     /// TODO: Optimize MAC recomputation to use batch mul interface (in a single round)
-    /// Allocate a batch of random pairs of multipicative inverses from the beaver source, i.e.:
+    /// Allocate a batch of random pairs of multiplicative inverses from the beaver source, i.e.:
     ///     [(b_1, b_1^-1), ..., (b_n, b_n^-1)]
     pub fn allocate_random_inverse_pair_batch(
         &self,
@@ -369,7 +415,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             .beaver_source
             .as_ref()
             .borrow_mut()
-            .next_shared_invers_pair_batch(num_inverses);
+            .next_shared_inverse_pair_batch(num_inverses);
 
         let mut shared_scalars = inverse_pairs
             .into_iter()

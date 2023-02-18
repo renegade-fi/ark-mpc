@@ -165,7 +165,7 @@ pub struct QuicTwoPartyNet {
     peer_addr: SocketAddr,
     /// The send side of the bidirectional stream
     send_stream: Option<SendStream>,
-    /// The receive side of the bidirecitonal stream
+    /// The receive side of the bidirectional stream
     recv_stream: Option<RecvStream>,
 }
 
