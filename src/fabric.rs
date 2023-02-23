@@ -461,6 +461,28 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         shared_value
     }
 
+    /// Allocates a batch of `AuthenticatedScalar`s which are presumed to be a valid additive sharing
+    /// of some underlying secret value
+    pub fn batch_allocate_preshared_scalar(
+        &self,
+        values: &[Scalar],
+    ) -> Vec<AuthenticatedScalar<N, S>> {
+        values
+            .iter()
+            .map(|val| {
+                let mut authenticated = AuthenticatedScalar::from_scalar_with_visibility(
+                    *val,
+                    Visibility::Shared,
+                    self.key_share.clone(),
+                    self.network.clone(),
+                    self.beaver_source.clone(),
+                );
+                authenticated.recompute_mac();
+                authenticated
+            })
+            .collect()
+    }
+
     /// Allocate a RistrettoPoint that acts as one of the given party's private inputs to the protocol
     ///
     /// If the local party is the specified party, then this method will construct an additive sharing
