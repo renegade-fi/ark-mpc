@@ -12,10 +12,10 @@ use curve25519_dalek::{
     scalar::Scalar,
     traits::{Identity, IsIdentity, MultiscalarMul},
 };
-use futures::executor::block_on;
 use itertools::izip;
 use rand_core::{CryptoRng, OsRng, RngCore};
 use subtle::{Choice, ConstantTimeEq};
+use tokio::runtime::Handle;
 
 use crate::{
     beaver::SharedValueSource,
@@ -87,7 +87,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             let random_share = RistrettoPoint::random(&mut rng);
 
             // Broadcast the peer's share
-            block_on(
+            Handle::current().block_on(
                 self.network
                     .as_ref()
                     .borrow_mut()
@@ -129,7 +129,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
                 .collect::<Vec<RistrettoPoint>>();
 
             // Broadcast the peer's share
-            block_on(network.as_ref().borrow_mut().send_points(&random_shares))?;
+            Handle::current()
+                .block_on(network.as_ref().borrow_mut().send_points(&random_shares))?;
 
             // Local party takes the share a - R for each a
             Ok(values
@@ -156,7 +157,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>,
     ) -> Result<MpcRistrettoPoint<N, S>, MpcNetworkError> {
-        let value = block_on(network.as_ref().borrow_mut().receive_single_point())?;
+        let value =
+            Handle::current().block_on(network.as_ref().borrow_mut().receive_single_point())?;
 
         Ok(MpcRistrettoPoint {
             value,
@@ -172,7 +174,8 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         network: SharedNetwork<N>,
         beaver_source: BeaverSource<S>,
     ) -> Result<Vec<MpcRistrettoPoint<N, S>>, MpcNetworkError> {
-        let values = block_on(network.as_ref().borrow_mut().receive_points(num_expected))?;
+        let values = Handle::current()
+            .block_on(network.as_ref().borrow_mut().receive_points(num_expected))?;
 
         Ok(values
             .into_iter()
@@ -194,7 +197,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             return Ok(self.clone());
         }
         // Send a Ristretto point and receive one in return
-        let received_point = block_on(
+        let received_point = Handle::current().block_on(
             self.network
                 .as_ref()
                 .borrow_mut()
@@ -223,7 +226,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         let beaver_source = values[0].beaver_source();
 
         // Both parties share their values
-        let received_points = block_on(
+        let received_points = Handle::current().block_on(
             network.as_ref().borrow_mut().broadcast_points(
                 &values
                     .iter()
@@ -259,30 +262,33 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         }
 
         let commitment = RistrettoCommitment::commit(self.value());
-        let peer_commitment = block_on(
-            self.network()
-                .as_ref()
-                .borrow_mut()
-                .broadcast_single_scalar(commitment.get_commitment()),
-        )
-        .map_err(MpcError::NetworkError)?;
+        let peer_commitment = Handle::current()
+            .block_on(
+                self.network()
+                    .as_ref()
+                    .borrow_mut()
+                    .broadcast_single_scalar(commitment.get_commitment()),
+            )
+            .map_err(MpcError::NetworkError)?;
 
         // Open the commitment to the underlying value
-        let peer_blinding = block_on(
-            self.network
-                .as_ref()
-                .borrow_mut()
-                .broadcast_single_scalar(commitment.get_blinding()),
-        )
-        .map_err(MpcError::NetworkError)?;
+        let peer_blinding = Handle::current()
+            .block_on(
+                self.network
+                    .as_ref()
+                    .borrow_mut()
+                    .broadcast_single_scalar(commitment.get_blinding()),
+            )
+            .map_err(MpcError::NetworkError)?;
 
-        let peer_value = block_on(
-            self.network
-                .as_ref()
-                .borrow_mut()
-                .broadcast_single_point(commitment.get_value()),
-        )
-        .map_err(MpcError::NetworkError)?;
+        let peer_value = Handle::current()
+            .block_on(
+                self.network
+                    .as_ref()
+                    .borrow_mut()
+                    .broadcast_single_point(commitment.get_value()),
+            )
+            .map_err(MpcError::NetworkError)?;
 
         // Verify the commitment and return the opened value
         if !RistrettoCommitment::verify_from_values(peer_commitment, peer_blinding, peer_value) {
@@ -318,37 +324,40 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
             .iter()
             .map(|value| RistrettoCommitment::commit(value.value()))
             .collect();
-        let peer_commitments = block_on(
-            network.as_ref().borrow_mut().broadcast_scalars(
-                &commitments
-                    .iter()
-                    .map(|comm| comm.get_commitment())
-                    .collect::<Vec<Scalar>>(),
-            ),
-        )
-        .map_err(MpcError::NetworkError)?;
+        let peer_commitments = Handle::current()
+            .block_on(
+                network.as_ref().borrow_mut().broadcast_scalars(
+                    &commitments
+                        .iter()
+                        .map(|comm| comm.get_commitment())
+                        .collect::<Vec<Scalar>>(),
+                ),
+            )
+            .map_err(MpcError::NetworkError)?;
 
         // Peers open the blinding factors for the commitments
-        let peer_blinding = block_on(
-            network.as_ref().borrow_mut().broadcast_scalars(
-                &commitments
-                    .iter()
-                    .map(|comm| comm.get_blinding())
-                    .collect::<Vec<Scalar>>(),
-            ),
-        )
-        .map_err(MpcError::NetworkError)?;
+        let peer_blinding = Handle::current()
+            .block_on(
+                network.as_ref().borrow_mut().broadcast_scalars(
+                    &commitments
+                        .iter()
+                        .map(|comm| comm.get_blinding())
+                        .collect::<Vec<Scalar>>(),
+                ),
+            )
+            .map_err(MpcError::NetworkError)?;
 
         // Peers open the points they committed to
-        let peer_points = block_on(
-            network.as_ref().borrow_mut().broadcast_points(
-                &commitments
-                    .iter()
-                    .map(|comm| comm.get_value())
-                    .collect::<Vec<RistrettoPoint>>(),
-            ),
-        )
-        .map_err(MpcError::NetworkError)?;
+        let peer_points = Handle::current()
+            .block_on(
+                network.as_ref().borrow_mut().broadcast_points(
+                    &commitments
+                        .iter()
+                        .map(|comm| comm.get_value())
+                        .collect::<Vec<RistrettoPoint>>(),
+                ),
+            )
+            .map_err(MpcError::NetworkError)?;
 
         // Verify the commitments
         izip!(

@@ -11,12 +11,12 @@ use std::{
     rc::Rc,
 };
 
-use async_std::task::block_on;
 use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
 use itertools::Itertools;
+use tokio::runtime::Handle;
 
 use crate::{
     authenticated_ristretto::{AuthenticatedCompressedRistretto, AuthenticatedRistretto},
@@ -51,7 +51,9 @@ impl<S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<QuicTwoPartyNet, S> {
     ) -> Result<Self, MpcError> {
         // Build the network and dial the peer
         let mut network = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
-        block_on(network.connect()).map_err(MpcError::NetworkError)?;
+        Handle::current()
+            .block_on(network.connect())
+            .map_err(MpcError::NetworkError)?;
 
         Ok(Self::new_with_network(
             party_id,
@@ -157,12 +159,14 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
     ) -> Result<Vec<Scalar>, MpcError> {
         // Mux between send and receive
         if self.party_id() == owning_party {
-            block_on(self.network.borrow_mut().send_scalars(values))
+            Handle::current()
+                .block_on(self.network.borrow_mut().send_scalars(values))
                 .map_err(MpcError::NetworkError)?;
 
             Ok(values.to_vec())
         } else {
-            let received_values = block_on(self.network.borrow_mut().receive_scalars(values.len()))
+            let received_values = Handle::current()
+                .block_on(self.network.borrow_mut().receive_scalars(values.len()))
                 .map_err(MpcError::NetworkError)?;
             Ok(received_values)
         }

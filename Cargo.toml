@@ -28,6 +28,7 @@ rcgen = "0.9"
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 sha3 = { version = "0.8" }
 subtle = "2.4.1"
+tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 typenum = "1.15"
 quinn = { version = "0.9", features = ["tls-rustls", "native-certs"] }
 zeroize = "1.3"
@@ -38,4 +39,3 @@ colored = "2"
 dns-lookup = "1.0"
 inventory = "0.3"
 rand = "0.8"
-tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
