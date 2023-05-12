@@ -28,7 +28,7 @@ impl SharedValueSource<Scalar> for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
-        Scalar::from(self.party_id as u64)
+        Scalar::from(self.party_id)
     }
 
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
@@ -263,7 +263,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
                 )
             } else {
                 let val = MpcScalar::from_private_u64(
-                    val as u64,
+                    val,
                     test_args.net_ref.clone(),
                     test_args.beaver_source.clone(),
                 );
@@ -333,7 +333,7 @@ fn test_commit_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     let res = shared_value
         .commit_and_open()
-        .map_err(|err| format!("Error commiting and opening value: {:?}", err))?;
+        .map_err(|err| format!("Error committing and opening value: {:?}", err))?;
 
     if res.value().ne(&Scalar::from(42u64)) {
         return Err(format!(
@@ -524,7 +524,7 @@ fn test_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .collect::<Result<Vec<MpcScalar<_, _>>, MpcNetworkError>>()
         .map_err(|err| format!("Error sharing party 1 values: {:?}", err))?;
 
-    // Take the product over all values, we expecte 1 * 2 * 3 * 4 * 5 * 6 = 720
+    // Take the product over all values, we expect 1 * 2 * 3 * 4 * 5 * 6 = 720
     let shared_product: MpcScalar<_, _> =
         shared_values1.iter().chain(shared_values2.iter()).product();
 
@@ -584,7 +584,7 @@ fn test_linear_combination(test_args: &IntegrationTestArgs) -> Result<(), String
     let res = MpcScalar::linear_combination(&shared_values, &shared_coeffs)
         .map_err(|err| format!("Error computing linear combination: {:?}", err))?
         .open()
-        .map_err(|err| format!("Error openign linear combination result: {:?}", err))?;
+        .map_err(|err| format!("Error opening linear combination result: {:?}", err))?;
 
     // The expected value
     let linear_comb = (1..6).zip(7..12).fold(0, |acc, val| acc + val.0 * val.1);

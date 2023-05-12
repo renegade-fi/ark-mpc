@@ -145,7 +145,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
         Self::from_public_mpc_ristretto(x, key_share)
     }
 
-    /// Create a new AuthenticatedRistretto from an existing MpcRistrettoPoint with visiblity specified
+    /// Create a new AuthenticatedRistretto from an existing MpcRistrettoPoint with visibility specified
     pub(crate) fn from_mpc_ristretto_with_visibility(
         x: MpcRistrettoPoint<N, S>,
         visibility: Visibility,
@@ -199,7 +199,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
 
 impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<N, S> {
     /// From a private value, the <party_id>'th party distributes additive shares of
-    /// their local value to the other parties. Togther they use the Beaver trick
+    /// their local value to the other parties. Together they use the Beaver trick
     /// to also obtain a secret sharing of the value's MAC under the shared key
     pub fn share_secret(
         &self,
@@ -655,7 +655,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedRistretto<
             )
         };
 
-        scalars.into_iter().zip(peekable.into_iter()).fold(
+        scalars.into_iter().zip(peekable).fold(
             AuthenticatedRistretto::identity(key_share, network, beaver_source),
             |acc, pair| acc + pair.0.borrow() * pair.1.borrow(),
         )
@@ -869,7 +869,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedCompressed
             .compress())
     }
 
-    /// Open and auathenticate a set of compressed Ristretto points
+    /// Open and authenticate a set of compressed Ristretto points
     pub fn batch_open_and_authenticate(points: &[Self]) -> Result<Vec<Self>, MpcError> {
         let decompressed = Self::batch_decompress(points)
             .ok_or_else(|| MpcError::ArithmeticError("error decompressing points".to_string()))?;

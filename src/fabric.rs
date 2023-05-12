@@ -137,7 +137,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         values: &[u64],
     ) -> Result<Vec<u64>, MpcError> {
         let scalar_values = values.iter().map(|x| Scalar::from(*x)).collect_vec();
-        self.batch_shared_plaintext_scalars(owning_party, &scalar_values)
+        self.batch_share_plaintext_scalars(owning_party, &scalar_values)
             .map(|values| values.iter().map(scalar_to_u64).collect_vec())
     }
 
@@ -147,12 +147,12 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
         owning_party: u64,
         value: Scalar,
     ) -> Result<Scalar, MpcError> {
-        self.batch_shared_plaintext_scalars(owning_party, &[value])
+        self.batch_share_plaintext_scalars(owning_party, &[value])
             .map(|vec| vec[0])
     }
 
     /// Share a batch of public scalar values in plaintext
-    pub fn batch_shared_plaintext_scalars(
+    pub fn batch_share_plaintext_scalars(
         &self,
         owning_party: u64,
         values: &[Scalar],
@@ -169,6 +169,21 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
                 .block_on(self.network.borrow_mut().receive_scalars(values.len()))
                 .map_err(MpcError::NetworkError)?;
             Ok(received_values)
+        }
+    }
+
+    /// Share a serialized byte array directly
+    pub fn share_bytes(&self, owning_party: u64, value: &[u8]) -> Result<Vec<u8>, MpcError> {
+        if self.party_id() == owning_party {
+            Handle::current()
+                .block_on(self.network.borrow_mut().send_bytes(value))
+                .map_err(MpcError::NetworkError)?;
+
+            Ok(value.to_vec())
+        } else {
+            Handle::current()
+                .block_on(self.network.borrow_mut().receive_bytes(value.len()))
+                .map_err(MpcError::NetworkError)
         }
     }
 

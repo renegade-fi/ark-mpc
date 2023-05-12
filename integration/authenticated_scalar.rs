@@ -152,7 +152,7 @@ fn test_authenticated_open_failure(test_args: &IntegrationTestArgs) -> Result<()
         test_args.beaver_source.clone(),
     );
 
-    // Parites share values
+    // Parties share values
     let shared_value1 = my_shared_value
         .share_secret(0 /* party_id */)
         .map_err(|err| format!("Error sharing value: {:?}", err))?;
@@ -398,7 +398,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
                 )
             } else {
                 let val = AuthenticatedScalar::from_private_u64(
-                    val as u64,
+                    val,
                     test_args.mac_key.clone(),
                     test_args.net_ref.clone(),
                     test_args.beaver_source.clone(),

@@ -39,7 +39,6 @@ fn scalars_to_bytes(scalars: &[Scalar]) -> Bytes {
 fn bytes_to_scalars(bytes: &[u8]) -> Result<Vec<Scalar>, MpcNetworkError> {
     bytes
         .chunks(BYTES_PER_SCALAR)
-        .into_iter()
         .map(|bytes_chunk| {
             Scalar::from_canonical_bytes(
                 bytes_chunk
@@ -67,7 +66,6 @@ fn points_to_bytes(points: &[RistrettoPoint]) -> Bytes {
 fn bytes_to_points(bytes: &[u8]) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
     bytes
         .chunks(BYTES_PER_POINT)
-        .into_iter()
         .map(|bytes_chunk| {
             CompressedRistretto(
                 bytes_chunk
@@ -90,6 +88,10 @@ pub trait MpcNetwork {
     fn am_king(&self) -> bool {
         self.party_id() == 0
     }
+    /// The local party sends a byte buffer to the peer
+    async fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), MpcNetworkError>;
+    /// The local party awaits bytes from a peer
+    async fn receive_bytes(&mut self, num_expected: usize) -> Result<Vec<u8>, MpcNetworkError>;
     /// The local party sends a vector of scalars to the peer
     async fn send_scalars(&mut self, scalars: &[Scalar]) -> Result<(), MpcNetworkError>;
     /// The local party sends a single scalar to the peer
@@ -200,7 +202,6 @@ impl<'a> QuicTwoPartyNet {
             Err(MpcNetworkError::NetworkUninitialized)
         }
     }
-
     /// Establishes connections to the peer
     pub async fn connect(&mut self) -> Result<(), MpcNetworkError> {
         // Build the client and server configs
@@ -314,6 +315,16 @@ impl<'a> QuicTwoPartyNet {
 impl MpcNetwork for QuicTwoPartyNet {
     fn party_id(&self) -> u64 {
         self.party_id
+    }
+
+    async fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), MpcNetworkError> {
+        self.assert_connected()?;
+        self.write_bytes(bytes).await
+    }
+
+    async fn receive_bytes(&mut self, num_expected: usize) -> Result<Vec<u8>, MpcNetworkError> {
+        self.assert_connected()?;
+        self.read_bytes(num_expected).await
     }
 
     async fn send_scalars(&mut self, scalars: &[Scalar]) -> Result<(), MpcNetworkError> {

@@ -608,7 +608,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MpcRistrettoPoint<N, S>
         &[u8; 64]
     );
 
-    /// Convert the point to a compressed Ristrestto point
+    /// Convert the point to a compressed Ristretto point
     pub fn compress(&self) -> MpcCompressedRistretto<N, S> {
         MpcCompressedRistretto {
             value: self.value().compress(),
@@ -688,7 +688,7 @@ impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> Mul<&'a MpcScalar<N
             // self = \betaG, rhs = \alpha
             // Open the value d = [\alpha - a].open()
             let alpha_minus_a = (rhs - &a).open().unwrap();
-            // Opem the value eG = [\betaG - bG].open(); where G is the Ristretto base point
+            // Open the value eG = [\betaG - bG].open(); where G is the Ristretto base point
             let beta_minus_b = (self - MpcRistrettoPoint::<N, S>::base_point_mul(b.value()))
                 .open()
                 .unwrap();
@@ -871,7 +871,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> MultiscalarMul
             (first_elem.network.clone(), first_elem.beaver_source.clone())
         };
 
-        scalars.into_iter().zip(peekable_points.into_iter()).fold(
+        scalars.into_iter().zip(peekable_points).fold(
             MpcRistrettoPoint::identity(network, beaver_source),
             |acc, pair| acc + pair.0.borrow() * pair.1.borrow(), // Pair is a 2-tuple of (c_i, P_i)
         )
