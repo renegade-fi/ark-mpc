@@ -12,6 +12,7 @@ use curve25519_dalek::{
 };
 use quinn::{Endpoint, RecvStream, SendStream};
 use std::{convert::TryInto, net::SocketAddr};
+use tracing::log;
 
 use crate::error::{BroadcastError, MpcNetworkError, SetupError};
 
@@ -209,8 +210,10 @@ impl<'a> QuicTwoPartyNet {
             config::build_configs().map_err(|err| MpcNetworkError::ConnectionSetupError(err))?;
 
         // Create a quinn server
-        let mut local_endpoint = Endpoint::server(server_config, self.local_addr)
-            .map_err(|_| MpcNetworkError::ConnectionSetupError(SetupError::ServerSetupError))?;
+        let mut local_endpoint = Endpoint::server(server_config, self.local_addr).map_err(|e| {
+            log::error!("error setting up quinn server: {e:?}");
+            MpcNetworkError::ConnectionSetupError(SetupError::ServerSetupError)
+        })?;
         local_endpoint.set_default_client_config(client_config);
 
         // The king dials the peer who awaits connection
@@ -219,21 +222,25 @@ impl<'a> QuicTwoPartyNet {
                 local_endpoint
                     .connect(self.peer_addr, config::SERVER_NAME)
                     .map_err(|err| {
+                        log::error!("error setting up quic endpoint connection: {err}");
                         MpcNetworkError::ConnectionSetupError(SetupError::ConnectError(err))
                     })?
                     .await
                     .map_err(|err| {
+                        log::error!("error connecting to the remote quic endpoint: {err}");
                         MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                     })?
             } else {
                 local_endpoint
                     .accept()
                     .await
-                    .ok_or(MpcNetworkError::ConnectionSetupError(
-                        SetupError::NoIncomingConnection,
-                    ))?
+                    .ok_or_else(|| {
+                        log::error!("no incoming connection while awaiting quic endpoint");
+                        MpcNetworkError::ConnectionSetupError(SetupError::NoIncomingConnection)
+                    })?
                     .await
                     .map_err(|err| {
+                        log::error!("error while establishing remote connection as listener");
                         MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                     })?
             }
@@ -243,10 +250,12 @@ impl<'a> QuicTwoPartyNet {
         let (send, recv) = {
             if self.am_king() {
                 connection.open_bi().await.map_err(|err| {
+                    log::error!("error opening bidirectional stream: {err}");
                     MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                 })?
             } else {
                 connection.accept_bi().await.map_err(|err| {
+                    log::error!("error accepting bidirectional stream: {err}");
                     MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
                 })?
             }

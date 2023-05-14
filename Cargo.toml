@@ -29,6 +29,7 @@ rustls = { version = "0.20", features = ["dangerous_configuration"] }
 sha3 = { version = "0.8" }
 subtle = "2.4.1"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
+tracing = { version = "0.1", features = ["log"] }
 typenum = "1.15"
 quinn = { version = "0.9", features = ["tls-rustls", "native-certs"] }
 zeroize = "1.3"
