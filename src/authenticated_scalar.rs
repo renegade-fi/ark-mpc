@@ -25,7 +25,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AuthenticatedScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// The underlying MpcScalar that this structure authenticates
-    value: MpcScalar<N, S>,
+    pub value: MpcScalar<N, S>,
     /// The local party's share of the value's MAC. If the value is `x`, then
     /// parties hold an additive share of \delta * x; where \delta is the
     /// shared MAC key

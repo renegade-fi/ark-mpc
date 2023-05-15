@@ -182,7 +182,7 @@ impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<
             Ok(value.to_vec())
         } else {
             Handle::current()
-                .block_on(self.network.borrow_mut().receive_bytes(value.len()))
+                .block_on(self.network.borrow_mut().receive_bytes())
                 .map_err(MpcError::NetworkError)
         }
     }

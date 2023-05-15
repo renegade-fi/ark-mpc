@@ -20,6 +20,7 @@ pub type PartyId = u64;
 
 const BYTES_PER_POINT: usize = 32;
 const BYTES_PER_SCALAR: usize = 32;
+const BYTES_PER_U64: usize = 8;
 
 /**
  * Helpers
@@ -89,10 +90,12 @@ pub trait MpcNetwork {
     fn am_king(&self) -> bool {
         self.party_id() == 0
     }
-    /// The local party sends a byte buffer to the peer
+    /// The local party sends a byte buffer to the peer with an additional u64
+    /// prepended specifying the length of the payload
     async fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), MpcNetworkError>;
-    /// The local party awaits bytes from a peer
-    async fn receive_bytes(&mut self, num_expected: usize) -> Result<Vec<u8>, MpcNetworkError>;
+    /// The local party awaits bytes from a peer; receiver expects that the payload
+    /// is prepended with a length indicating the message size
+    async fn receive_bytes(&mut self) -> Result<Vec<u8>, MpcNetworkError>;
     /// The local party sends a vector of scalars to the peer
     async fn send_scalars(&mut self, scalars: &[Scalar]) -> Result<(), MpcNetworkError>;
     /// The local party sends a single scalar to the peer
@@ -282,18 +285,12 @@ impl<'a> QuicTwoPartyNet {
     /// Read exactly `n` bytes from the stream
     async fn read_bytes(&mut self, num_bytes: usize) -> Result<Vec<u8>, MpcNetworkError> {
         let mut read_buffer = vec![0u8; num_bytes];
-        let bytes_read = self
-            .recv_stream
+        self.recv_stream
             .as_mut()
             .unwrap()
-            .read(&mut read_buffer)
+            .read_exact(&mut read_buffer)
             .await
-            .map_err(|_| MpcNetworkError::RecvError)?
-            .ok_or(MpcNetworkError::RecvError)?;
-
-        if bytes_read != num_bytes {
-            return Err(MpcNetworkError::BroadcastError(BroadcastError::TooFewBytes));
-        }
+            .map_err(|_| MpcNetworkError::RecvError)?;
 
         Ok(read_buffer.to_vec())
     }
@@ -328,12 +325,19 @@ impl MpcNetwork for QuicTwoPartyNet {
 
     async fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), MpcNetworkError> {
         self.assert_connected()?;
+
+        // Prepend the length of the payload as a little endian encoded u64
+        let length = (bytes.len() as u64).to_le_bytes();
+        self.write_bytes(&length).await?;
         self.write_bytes(bytes).await
     }
 
-    async fn receive_bytes(&mut self, num_expected: usize) -> Result<Vec<u8>, MpcNetworkError> {
+    async fn receive_bytes(&mut self) -> Result<Vec<u8>, MpcNetworkError> {
         self.assert_connected()?;
-        self.read_bytes(num_expected).await
+
+        // Read a u64 indicating the payload length
+        let length = u64::from_le_bytes(self.read_bytes(BYTES_PER_U64).await?.try_into().unwrap());
+        self.read_bytes(length as usize).await
     }
 
     async fn send_scalars(&mut self, scalars: &[Scalar]) -> Result<(), MpcNetworkError> {

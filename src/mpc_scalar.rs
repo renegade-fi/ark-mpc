@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug)]
 pub struct MpcScalar<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
     /// the underlying value of the scalar allocated in the network
-    pub(crate) value: Scalar,
+    pub value: Scalar,
     /// The visibility flag; what amount of information parties have
     pub(crate) visibility: Visibility,
     /// The underlying network that the MPC operates on
