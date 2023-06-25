@@ -1,7 +1,13 @@
 [package]
 name = "mpc-ristretto"
+description = "A library for performing secure multiparty computation using the Ristretto group."
 version = "0.1.0"
+keywords = ["mpc", "crypto", "cryptography"]
+homepage = "https://renegade.fi"
+authors = ["Joey Kraut <joey@renegade.fi>"]
 edition = "2021"
+readme = "README.md"
+repository = "https://github.com/renegade-fi/mpc-ristretto"
 
 [lib]
 name = "mpc_ristretto"
@@ -11,8 +17,6 @@ path = "src/lib.rs"
 name = "integration"
 path = "integration/main.rs"
 harness = false
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 async-std = "1.12"

@@ -14,7 +14,7 @@ use quinn::{Endpoint, RecvStream, SendStream};
 use std::{convert::TryInto, net::SocketAddr};
 use tracing::log;
 
-use crate::error::{BroadcastError, MpcNetworkError, SetupError};
+use crate::error::{MpcNetworkError, SetupError};
 
 pub type PartyId = u64;
 
