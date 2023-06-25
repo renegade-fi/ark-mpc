@@ -8,6 +8,7 @@ authors = ["Joey Kraut <joey@renegade.fi>"]
 edition = "2021"
 readme = "README.md"
 repository = "https://github.com/renegade-fi/mpc-ristretto"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "mpc_ristretto"
