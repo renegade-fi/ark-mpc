@@ -5,10 +5,14 @@
 //! cleaner interface for consumers of the library; i.e. clients do not have to hold onto
 //! references of the network layer or the beaver sources to allocate values.
 
+mod network_sender;
+mod result;
+
 use std::{
     cell::{Ref, RefCell, RefMut},
     net::SocketAddr,
     rc::Rc,
+    sync::{atomic::AtomicUsize, Arc},
 };
 
 use curve25519_dalek::{
@@ -27,6 +31,29 @@ use crate::{
     network::{MpcNetwork, QuicTwoPartyNet},
     BeaverSource, SharedNetwork, Visibility,
 };
+
+// ----------------------
+// | New Implementation |
+// ----------------------
+
+/// A fabric for the MPC protocol, defines a dependency injection layer that dynamically schedules
+/// circuit gate evaluations onto the network to be executed
+///
+/// The fabric does not block on gate evaluations, but instead returns a handle to a future result
+/// that may be polled to obtain the materialized result. This allows the application layer to
+/// continue using the fabric, scheduling more gates to be evaluated and maximally exploiting
+/// gate-level parallelism within the circuit
+#[derive(Clone)]
+struct MpcFabric {
+    /// The ID of the local party in the MPC execution
+    party_id: u64,
+    /// The next identifier to assign to an operation
+    next_id: Arc<AtomicUsize>,
+}
+
+// ----------------------
+// | Old Implementation |
+// ----------------------
 
 #[derive(Clone, Debug)]
 pub struct AuthenticatedMpcFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {

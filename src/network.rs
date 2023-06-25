@@ -11,7 +11,11 @@ use curve25519_dalek::{
     scalar::Scalar,
 };
 use quinn::{Endpoint, RecvStream, SendStream};
-use std::{convert::TryInto, net::SocketAddr};
+use std::{
+    convert::TryInto,
+    net::SocketAddr,
+    sync::atomic::{AtomicU64, Ordering},
+};
 use tracing::log;
 
 use crate::error::{MpcNetworkError, SetupError};
