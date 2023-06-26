@@ -3,8 +3,6 @@ use curve25519_dalek::{
     traits::MultiscalarMul,
 };
 
-use mpc_ristretto::{mpc_ristretto::MpcRistrettoPoint, mpc_scalar::MpcScalar};
-
 use crate::{IntegrationTest, IntegrationTestArgs};
 
 /// Helper to test equality of Ristretto points; dlog is assumed hard so to test equality

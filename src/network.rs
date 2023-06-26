@@ -5,11 +5,7 @@ mod config;
 pub mod dummy_network;
 
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
-use curve25519_dalek::{
-    ristretto::{CompressedRistretto, RistrettoPoint},
-    scalar::Scalar,
-};
+use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 use quinn::{Endpoint, RecvStream, SendStream};
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, net::SocketAddr};
@@ -17,83 +13,16 @@ use tracing::log;
 
 use crate::{
     error::{MpcNetworkError, SetupError},
+    fabric::{ResultId, ResultValue},
     PARTY0,
 };
 
 pub type PartyId = u64;
 
-const BYTES_PER_POINT: usize = 32;
-const BYTES_PER_SCALAR: usize = 32;
 const BYTES_PER_U64: usize = 8;
 
 /// Error message emitted when reading a message length from the stream fails
 const ERR_READ_MESSAGE_LENGTH: &str = "error reading message length from stream";
-/// Error deserializing a `Scalar` from a message
-const ERR_READING_SCALAR: &str = "error deserializing scalars from message";
-/// Error deserializing a curve point from a message
-const ERR_READING_POINT: &str = "error reading points from message";
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Convert a vector of scalars to a byte buffer
-fn scalars_to_bytes(scalars: &[Scalar]) -> Bytes {
-    let mut payload = BytesMut::new();
-    scalars.iter().for_each(|scalar| {
-        let bytes = scalar.to_bytes();
-        payload.extend_from_slice(&bytes);
-    });
-
-    payload.freeze()
-}
-
-/// Convert a byte buffer back to a vector of scalars
-fn bytes_to_scalars(bytes: &[u8]) -> Result<Vec<Scalar>, MpcNetworkError> {
-    bytes
-        .chunks(BYTES_PER_SCALAR)
-        .map(|bytes_chunk| {
-            Scalar::from_canonical_bytes(
-                bytes_chunk
-                    .try_into()
-                    .expect("unexpected number of bytes per chunk"),
-            )
-            .ok_or(MpcNetworkError::SerializationError(
-                ERR_READING_SCALAR.to_string(),
-            ))
-        })
-        .collect::<Result<Vec<Scalar>, MpcNetworkError>>()
-}
-
-/// Convert a vector of Ristretto points to bytes
-fn points_to_bytes(points: &[RistrettoPoint]) -> Bytes {
-    // Map to bytes
-    let mut payload = BytesMut::new();
-    points.iter().for_each(|point| {
-        let bytes = point.compress().to_bytes();
-        payload.extend_from_slice(&bytes);
-    });
-
-    payload.freeze()
-}
-
-/// Convert a byte buffer back to a vector of points
-fn bytes_to_points(bytes: &[u8]) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
-    bytes
-        .chunks(BYTES_PER_POINT)
-        .map(|bytes_chunk| {
-            CompressedRistretto(
-                bytes_chunk
-                    .try_into()
-                    .expect("unexpected number of bytes per chunk"),
-            )
-            .decompress()
-            .ok_or(MpcNetworkError::SerializationError(
-                ERR_READING_POINT.to_string(),
-            ))
-        })
-        .collect::<Result<Vec<RistrettoPoint>, MpcNetworkError>>()
-}
 
 // ---------
 // | Trait |
@@ -101,7 +30,16 @@ fn bytes_to_points(bytes: &[u8]) -> Result<Vec<RistrettoPoint>, MpcNetworkError>
 
 /// The type that the network sender receives
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) enum NetworkOutbound {
+pub struct NetworkOutbound {
+    /// The operation ID that generated this message
+    pub(crate) op_id: ResultId,
+    /// The body of the message
+    pub(crate) payload: NetworkOutboundPayload,
+}
+
+/// The body that the network sender receives
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) enum NetworkOutboundPayload {
     /// Raw bytes sent over the network
     Bytes(Vec<u8>),
     /// Scalars to be sent over the network
@@ -110,17 +48,34 @@ pub(crate) enum NetworkOutbound {
     Points(Vec<RistrettoPoint>),
 }
 
+impl From<NetworkOutboundPayload> for ResultValue {
+    fn from(value: NetworkOutboundPayload) -> Self {
+        match value {
+            NetworkOutboundPayload::Bytes(bytes) => ResultValue::Bytes(bytes),
+            NetworkOutboundPayload::Scalars(scalars) => ResultValue::Scalars(scalars),
+            NetworkOutboundPayload::Points(points) => ResultValue::Points(points),
+        }
+    }
+}
+
 /// The `MpcNetwork` trait defines shared functionality for a network implementing a
 /// connection between two parties in a 2PC
 ///
 /// Values are sent as bytes, scalars, or curve points and always in batch form with the
 /// message length (measured in the number of elements sent) prepended to the message
 #[async_trait]
-pub trait MpcNetwork {
+pub trait MpcNetwork: Send {
+    /// Get the party ID of the local party in the MPC
+    fn party_id(&self) -> PartyId;
     /// Send an outbound MPC message
     async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError>;
     /// Receive an inbound message
     async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError>;
+    /// Each peer sends a message to the other
+    async fn exchange_messages(
+        &mut self,
+        message: NetworkOutbound,
+    ) -> Result<NetworkOutbound, MpcNetworkError>;
     /// Closes the connections opened in the handshake phase
     async fn close(&mut self) -> Result<(), MpcNetworkError>;
 }
@@ -169,7 +124,7 @@ impl<'a> QuicTwoPartyNet {
 
     /// Returns true if the local party is party 0
     fn local_party0(&self) -> bool {
-        self.party_id == PARTY0
+        self.party_id() == PARTY0
     }
 
     /// Returns the read order for the local peer; king is write first
@@ -267,7 +222,7 @@ impl<'a> QuicTwoPartyNet {
             .map_err(|_| MpcNetworkError::RecvError)?;
 
         Ok(u64::from_le_bytes(read_buffer.try_into().map_err(
-            |err| MpcNetworkError::SerializationError(ERR_READ_MESSAGE_LENGTH.to_string()),
+            |_| MpcNetworkError::SerializationError(ERR_READ_MESSAGE_LENGTH.to_string()),
         )?))
     }
 
@@ -278,12 +233,12 @@ impl<'a> QuicTwoPartyNet {
             .unwrap()
             .write_all(payload)
             .await
-            .map_err(|_| MpcNetworkError::SendError)
+            .map_err(|e| MpcNetworkError::SendError(e.to_string()))
     }
 
     /// Read exactly `n` bytes from the stream
     async fn read_bytes(&mut self, num_bytes: usize) -> Result<Vec<u8>, MpcNetworkError> {
-        let mut read_buffer = vec![0u8; num_bytes as usize];
+        let mut read_buffer = vec![0u8; num_bytes];
         self.recv_stream
             .as_mut()
             .unwrap()
@@ -297,6 +252,10 @@ impl<'a> QuicTwoPartyNet {
 
 #[async_trait]
 impl MpcNetwork for QuicTwoPartyNet {
+    fn party_id(&self) -> PartyId {
+        self.party_id
+    }
+
     async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
         // Serialize the message and forward it onto the network
         let bytes = serde_json::to_vec(&message)
@@ -315,6 +274,23 @@ impl MpcNetwork for QuicTwoPartyNet {
         // Deserialize the message
         serde_json::from_slice(&bytes)
             .map_err(|err| MpcNetworkError::SerializationError(err.to_string()))
+    }
+
+    async fn exchange_messages(
+        &mut self,
+        message: NetworkOutbound,
+    ) -> Result<NetworkOutbound, MpcNetworkError> {
+        match self.read_order() {
+            ReadWriteOrder::ReadFirst => {
+                let msg = self.receive_message().await?;
+                self.send_message(message).await?;
+                Ok(msg)
+            }
+            ReadWriteOrder::WriteFirst => {
+                self.send_message(message).await?;
+                self.receive_message().await
+            }
+        }
     }
 
     async fn close(&mut self) -> Result<(), MpcNetworkError> {

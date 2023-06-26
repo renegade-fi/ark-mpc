@@ -19,13 +19,13 @@ impl Display for MpcError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MpcNetworkError {
-    SendError,
+    SendError(String),
     RecvError,
     ConnectionSetupError(SetupError),
     ConnectionTeardownError,
     NetworkUninitialized,
     BroadcastError(BroadcastError),
-    SerializationError,
+    SerializationError(String),
 }
 
 impl Display for MpcNetworkError {

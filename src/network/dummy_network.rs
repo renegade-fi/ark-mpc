@@ -1,17 +1,14 @@
 #![cfg(test)]
 //! Implements a dummy network used for testing
 
-use std::vec;
-
 use async_trait::async_trait;
-use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 
-use crate::error::MpcNetworkError;
+use crate::{error::MpcNetworkError, PARTY0};
 
 use super::{MpcNetwork, NetworkOutbound};
 
 #[derive(Clone, Debug, Default)]
-pub struct DummyMpcNetwork {
+pub(crate) struct DummyMpcNetwork {
     /// A list of mock messages sent from the peer
     mock_messages: Vec<NetworkOutbound>,
 }
@@ -30,12 +27,23 @@ impl DummyMpcNetwork {
 
 #[async_trait]
 impl MpcNetwork for DummyMpcNetwork {
+    fn party_id(&self) -> u64 {
+        PARTY0
+    }
+
     async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
         Ok(())
     }
 
     async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError> {
         Ok(self.mock_messages.pop().expect("mock messages exhausted"))
+    }
+
+    async fn exchange_messages(
+        &mut self,
+        message: NetworkOutbound,
+    ) -> Result<NetworkOutbound, MpcNetworkError> {
+        self.receive_message().await
     }
 
     async fn close(&mut self) -> Result<(), MpcNetworkError> {

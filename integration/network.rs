@@ -11,7 +11,7 @@ fn test_send_ristretto(test_args: &IntegrationTestArgs) -> Result<(), String> {
             test_args
                 .net_ref
                 .borrow_mut()
-                .broadcast_single_point(base_point_mul(test_args.party_id)),
+                .exchange_single_point(base_point_mul(test_args.party_id)),
         )
         .map_err(|err| format!("{:?}", err))?;
 
@@ -31,7 +31,7 @@ fn test_send_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
             test_args
                 .net_ref
                 .borrow_mut()
-                .broadcast_single_scalar(Scalar::from(test_args.party_id)),
+                .exchange_single_scalar(Scalar::from(test_args.party_id)),
         )
         .map_err(|err| format!("{:?}", err))?;
 

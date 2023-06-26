@@ -6,8 +6,10 @@ use tracing::log;
 
 use crate::{
     error::MpcNetworkError,
-    network::{MpcNetwork, NetworkOutbound},
+    network::{MpcNetwork, NetworkOutbound, QuicTwoPartyNet},
 };
+
+use super::result::OpResult;
 
 // -------------
 // | Constants |
@@ -21,31 +23,31 @@ const ERR_SEND_FAILURE: &str = "error sending value";
 
 /// The network sender sits behind the scheduler and is responsible for forwarding messages
 /// onto the network and pulling results off the network, re-enqueuing them for processing
-pub(crate) struct NetworkSender<T: MpcNetwork> {
+pub(crate) struct NetworkSender {
     /// The outbound queue of messages to send
     outbound: TokioReceiver<NetworkOutbound>,
-    /// The queue on which to place received messages
-    inbound: TokioSender<()>,
+    /// The queue of completed results
+    result_queue: TokioSender<OpResult>,
     /// The underlying network connection
-    network: T,
+    network: QuicTwoPartyNet,
 }
 
-impl<T: MpcNetwork> NetworkSender<T> {
+impl NetworkSender {
     /// Creates a new network sender
     pub fn new(
         outbound: TokioReceiver<NetworkOutbound>,
-        inbound: TokioSender<()>,
-        network: T,
-    ) -> NetworkSender<T> {
+        result_queue: TokioSender<OpResult>,
+        network: QuicTwoPartyNet,
+    ) -> NetworkSender {
         NetworkSender {
             outbound,
-            inbound,
+            result_queue,
             network,
         }
     }
 
     /// A helper for the `run` method that allows error handling in the caller
-    async fn run(mut self) {
+    pub async fn run(mut self) {
         loop {
             tokio::select! {
                 // Next outbound message
@@ -81,6 +83,11 @@ impl<T: MpcNetwork> NetworkSender<T> {
 
     /// Handle an inbound message
     async fn handle_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
-        todo!()
+        self.result_queue
+            .send(OpResult {
+                id: message.op_id,
+                value: message.payload.into(),
+            })
+            .map_err(|_| MpcNetworkError::SendError(ERR_SEND_FAILURE.to_string()))
     }
 }

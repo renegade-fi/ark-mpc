@@ -208,14 +208,14 @@ macro_rules! impl_authenticated {
 macro_rules! impl_arithmetic_assign {
     ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty) => {
         /// Default implementation
-        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
+        impl<N: MpcNetwork + Send, S: SharedValueSource> $trait<$rhs> for $lhs {
             fn $fn_name(&mut self, rhs: $rhs) {
                 *self = &*self $op &rhs;
             }
         }
 
         /// Implementation on reference types
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs> for $lhs {
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource> $trait<&'a $rhs> for $lhs {
             fn $fn_name(&mut self, rhs: &'a $rhs) {
                 *self = &*self $op rhs
             }
@@ -231,7 +231,7 @@ macro_rules! impl_operator_variants {
 
     ($lhs:ty, $trait:ident, $fn_name:ident, $op:tt, $rhs:ty, Output=$out_type:ty) => {
         /// LHS borrowed, RHS non-borrowed
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for &'a $lhs {
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource> $trait<$rhs> for &'a $lhs {
             type Output = $out_type;
 
             fn $fn_name(self, rhs: $rhs) -> Self::Output {
@@ -240,7 +240,7 @@ macro_rules! impl_operator_variants {
         }
 
         /// LHS non-borrowed, RHS borrowed
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $rhs> for $lhs {
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource> $trait<&'a $rhs> for $lhs {
             type Output = $out_type;
 
             fn $fn_name(self, rhs: &'a $rhs) -> Self::Output {
@@ -249,7 +249,7 @@ macro_rules! impl_operator_variants {
         }
 
         /// LHS non-borrowed, RHS non-borrowed
-        impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<$rhs> for $lhs {
+        impl<N: MpcNetwork + Send, S: SharedValueSource> $trait<$rhs> for $lhs {
             type Output = $out_type;
 
             fn $fn_name(self, rhs: $rhs) -> Self::Output {
@@ -298,7 +298,7 @@ macro_rules! impl_wrapper_type {
     // Wrapper macro that defines an arithmetic wrapper for an unauthenticated wrapper type
     ($wrapper_type:ty, $wrapped_type:ty, $from_fn:expr, $trait:ident, $fn_name:ident, $op:tt, Output=$output_type:ty, authenticated=false) => {
         // Base implementation with wrapper on the LHS and wrapped type on the RHS
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapped_type>
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource> $trait<&'a $wrapped_type>
             for &'a $wrapper_type
         {
             // Output is always the wrapper type
@@ -313,7 +313,7 @@ macro_rules! impl_wrapper_type {
         macros::impl_operator_variants!($wrapper_type, $trait, $fn_name, $op, $wrapped_type, Output=$output_type);
 
         // Base implementation with wrapped type on the LHS and wrapper on the RHS
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapper_type> for &'a $wrapped_type {
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource> $trait<&'a $wrapper_type> for &'a $wrapped_type {
             // Output is always the wrapper type
             type Output = $output_type;
 
@@ -328,7 +328,7 @@ macro_rules! impl_wrapper_type {
 
     // Wrapper macro that defines an arithmetic wrapper for an authenticated wrapper type
     ($wrapper_type:ty, $wrapped_type:ty, $from_fn:expr, $trait:ident, $fn_name:ident, $op:tt, Output=$output_type:ty, authenticated=true) => {
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapped_type>
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource> $trait<&'a $wrapped_type>
             for &'a $wrapper_type
         {
             // Output is always the wrapper type
@@ -343,7 +343,7 @@ macro_rules! impl_wrapper_type {
         macros::impl_operator_variants!($wrapper_type, $trait, $fn_name, $op, $wrapped_type, Output=$output_type);
 
         // Base implementation with wrapped type on the LHS and wrapper on the RHS
-        impl<'a, N: MpcNetwork + Send, S: SharedValueSource<Scalar>> $trait<&'a $wrapper_type> for &'a $wrapped_type {
+        impl<'a, N: MpcNetwork + Send, S: SharedValueSource> $trait<&'a $wrapper_type> for &'a $wrapped_type {
             // Output is always the wrapper type
             type Output = $output_type;
 
