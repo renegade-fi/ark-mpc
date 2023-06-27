@@ -3,7 +3,9 @@
 
 use std::sync::atomic::Ordering;
 
+use tokio::sync::broadcast::Receiver as BroadcastReceiver;
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
+use tracing::log;
 
 use crate::beaver::SharedValueSource;
 
@@ -21,6 +23,8 @@ pub(super) struct Executor<S: SharedValueSource> {
     result_sender: TokioSender<OpResult>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner<S>,
+    /// The channel on which the fabric may send a shutdown signal
+    shutdown: BroadcastReceiver<()>,
 }
 
 impl<S: SharedValueSource> Executor<S> {
@@ -28,65 +32,81 @@ impl<S: SharedValueSource> Executor<S> {
         result_queue: TokioReceiver<OpResult>,
         result_sender: TokioSender<OpResult>,
         fabric: FabricInner<S>,
+        shutdown: BroadcastReceiver<()>,
     ) -> Self {
         Self {
             result_queue,
             result_sender,
             fabric,
+            shutdown,
         }
     }
 
-    pub fn run(mut self) {
+    pub async fn run(mut self) {
         loop {
-            // Pull the next result off the queue
-            let result = self.result_queue.blocking_recv().expect(ERR_DEQUEUE);
-            let id = result.id;
+            tokio::select! {
+                // Next result
+                x = self.result_queue.recv() => {
+                    self.handle_new_result(x.expect(ERR_DEQUEUE));
+                }
 
-            // Lock the fabric elements needed
-            let mut locked_results = self.fabric.results.write().expect("results lock poisoned");
-            locked_results.insert(result.id, result);
-
-            let mut locked_operations = self.fabric.operations.write().expect("ops lock poisoned");
-            let mut locked_deps = self
-                .fabric
-                .dependencies
-                .write()
-                .expect("deps lock poisoned");
-            let mut locked_wakers = self.fabric.wakers.write().expect("wakers lock poisoned");
-
-            // Get the operation's dependencies
-            for operation_id in locked_deps.remove(&id).unwrap_or_default() {
-                // Decrement the operation's in-flight args count
-                let operation = locked_operations.get_mut(&operation_id).unwrap();
-                let prev_num_args = operation.inflight_args.fetch_sub(1, Ordering::Relaxed);
-
-                if prev_num_args == 1 {
-                    // Get the inputs and execute the method to produce the output
-                    let inputs = operation
-                        .args
-                        .iter()
-                        .map(|id| locked_results.get(id).unwrap().value.clone())
-                        .collect::<Vec<_>>();
-
-                    let output = (operation.function)(inputs);
-
-                    // Remove the operation from the set of in-flights
-                    locked_operations.remove(&operation_id);
-
-                    // Re-enqueue the result for processing
-                    self.result_sender
-                        .send(OpResult {
-                            id: operation_id,
-                            value: output,
-                        })
-                        .expect("error re-enqueuing result");
+                // Shutdown signal
+                _ = self.shutdown.recv() => {
+                    log::debug!("executor shutting down");
+                    break;
                 }
             }
+        }
+    }
 
-            // Wake all tasks awaiting this result
-            for waker in locked_wakers.remove(&id).unwrap_or_default().into_iter() {
-                waker.wake();
+    /// Handle a new result
+    fn handle_new_result(&mut self, result: OpResult) {
+        let id = result.id;
+
+        // Lock the fabric elements needed
+        let mut locked_results = self.fabric.results.write().expect("results lock poisoned");
+        locked_results.insert(result.id, result);
+
+        let mut locked_operations = self.fabric.operations.write().expect("ops lock poisoned");
+        let mut locked_deps = self
+            .fabric
+            .dependencies
+            .write()
+            .expect("deps lock poisoned");
+        let mut locked_wakers = self.fabric.wakers.write().expect("wakers lock poisoned");
+
+        // Get the operation's dependencies
+        for operation_id in locked_deps.remove(&id).unwrap_or_default() {
+            // Decrement the operation's in-flight args count
+            let operation = locked_operations.get_mut(&operation_id).unwrap();
+            let prev_num_args = operation.inflight_args.fetch_sub(1, Ordering::Relaxed);
+
+            if prev_num_args == 1 {
+                // Get the inputs and execute the method to produce the output
+                let inputs = operation
+                    .args
+                    .iter()
+                    .map(|id| locked_results.get(id).unwrap().value.clone())
+                    .collect::<Vec<_>>();
+
+                let output = (operation.function)(inputs);
+
+                // Remove the operation from the set of in-flights
+                locked_operations.remove(&operation_id);
+
+                // Re-enqueue the result for processing
+                self.result_sender
+                    .send(OpResult {
+                        id: operation_id,
+                        value: output,
+                    })
+                    .expect("error re-enqueuing result");
             }
+        }
+
+        // Wake all tasks awaiting this result
+        for waker in locked_wakers.remove(&id).unwrap_or_default().into_iter() {
+            waker.wake();
         }
     }
 }

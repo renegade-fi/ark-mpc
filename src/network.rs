@@ -2,10 +2,8 @@
 //! communicate during the course of an MPC
 mod cert_verifier;
 mod config;
-pub mod dummy_network;
 
 use async_trait::async_trait;
-use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 use quinn::{Endpoint, RecvStream, SendStream};
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, net::SocketAddr};
@@ -32,9 +30,9 @@ const ERR_READ_MESSAGE_LENGTH: &str = "error reading message length from stream"
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkOutbound {
     /// The operation ID that generated this message
-    pub(crate) op_id: ResultId,
+    pub op_id: ResultId,
     /// The body of the message
-    pub(crate) payload: ResultValue,
+    pub payload: ResultValue,
 }
 
 /// The `MpcNetwork` trait defines shared functionality for a network implementing a
@@ -198,7 +196,7 @@ impl<'a> QuicTwoPartyNet {
             .unwrap()
             .read_exact(&mut read_buffer)
             .await
-            .map_err(|_| MpcNetworkError::RecvError)?;
+            .map_err(|e| MpcNetworkError::RecvError(e.to_string()))?;
 
         Ok(u64::from_le_bytes(read_buffer.try_into().map_err(
             |_| MpcNetworkError::SerializationError(ERR_READ_MESSAGE_LENGTH.to_string()),
@@ -223,7 +221,7 @@ impl<'a> QuicTwoPartyNet {
             .unwrap()
             .read_exact(&mut read_buffer)
             .await
-            .map_err(|_| MpcNetworkError::RecvError)?;
+            .map_err(|e| MpcNetworkError::RecvError(e.to_string()))?;
 
         Ok(read_buffer.to_vec())
     }

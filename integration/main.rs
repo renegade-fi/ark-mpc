@@ -1,24 +1,31 @@
 use std::{
     borrow::Borrow,
     cell::{RefCell, RefMut},
+    io::Write,
     net::SocketAddr,
     process::exit,
     rc::Rc,
+    thread,
+    time::Duration,
 };
 
 use clap::Parser;
 use colored::Colorize;
-use curve25519_dalek::{constants, ristretto::RistrettoPoint, scalar::Scalar};
 use dns_lookup::lookup_host;
+use env_logger::Builder;
 use helpers::PartyIDBeaverSource;
 use mpc_ristretto::{
-    fabric::{MpcFabric, ResultHandle},
-    network::QuicTwoPartyNet,
+    fabric::{MpcFabric, ResultHandle, ResultValue},
+    network::{MpcNetwork, NetworkOutbound, QuicTwoPartyNet},
 };
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
+use tracing::log::LevelFilter;
 
 mod fabric;
 mod helpers;
+
+/// The amount of time to sleep after sending a shutdown
+const SHUTDOWN_TIMEOUT_MS: u64 = 1_000; // 1 seconds
 
 /// Type alias for a fabric with the party id beaver source
 pub(crate) type DummyFabric = MpcFabric<PartyIDBeaverSource>;
@@ -71,6 +78,9 @@ struct Args {
 
 #[allow(unused_doc_comments, clippy::await_holding_refcell_ref)]
 fn main() {
+    // Setup logging
+    init_logger();
+
     // Parse the cli args
     let args = Args::parse();
     let args_clone = args.clone();
@@ -119,6 +129,18 @@ fn main() {
         let mut net = QuicTwoPartyNet::new(args.party, local_addr, peer_addr);
         Handle::current().block_on(net.connect()).unwrap();
 
+        // Send a byte to give the connection time to establish
+        if args.party == 0 {
+            Handle::current()
+                .block_on(net.send_message(NetworkOutbound {
+                    op_id: 1,
+                    payload: ResultValue::Bytes(vec![1u8]),
+                }))
+                .unwrap();
+        } else {
+            let _recv_bytes = Handle::current().block_on(net.receive_message()).unwrap();
+        }
+
         let beaver_source = PartyIDBeaverSource::new(args.party);
         let fabric = MpcFabric::new(net, beaver_source);
 
@@ -155,7 +177,10 @@ fn main() {
         all_success
     });
 
+    // Run the tests and delay shutdown to allow graceful network teardown
     let all_success = runtime.block_on(result).unwrap();
+    thread::sleep(Duration::from_millis(SHUTDOWN_TIMEOUT_MS));
+
     if all_success {
         if args_clone.party == 0 {
             println!("\n{}", "Integration tests successful!".green(),);
@@ -165,6 +190,15 @@ fn main() {
     }
 
     exit(-1);
+}
+
+/// Setups up logging for the test suite
+fn init_logger() {
+    // Configure logging
+    Builder::new()
+        .format(|buf, record| writeln!(buf, "[{}] - {}", record.level(), record.args()))
+        .filter(None, LevelFilter::Info)
+        .init();
 }
 
 /// Prints a success or failure message, returns true if success, false if failure

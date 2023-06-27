@@ -20,7 +20,7 @@ impl Display for MpcError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MpcNetworkError {
     SendError(String),
-    RecvError,
+    RecvError(String),
     ConnectionSetupError(SetupError),
     ConnectionTeardownError,
     NetworkUninitialized,

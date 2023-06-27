@@ -9,8 +9,9 @@ mod executor;
 mod network_sender;
 mod result;
 
-use futures::Future;
+use futures::{executor::block_on, Future};
 pub use result::{ResultId, ResultValue};
+use tracing::log;
 
 use std::{
     collections::HashMap,
@@ -22,6 +23,7 @@ use std::{
     },
     task::{Context, Poll, Waker},
 };
+use tokio::sync::broadcast::{self, Sender as BroadcastSender};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
 
 use itertools::Itertools;
@@ -88,7 +90,10 @@ struct Operation {
 /// gate-level parallelism within the circuit
 #[derive(Clone, Debug)]
 pub struct MpcFabric<S: SharedValueSource> {
+    /// The inner fabric
     inner: FabricInner<S>,
+    /// The channel on which shutdown messages are sent to blocking workers
+    shutdown: BroadcastSender<()>,
 }
 
 /// The inner component of the fabric, allows the constructor to allocate executor and network
@@ -219,12 +224,12 @@ impl<S: SharedValueSource> FabricInner<S> {
         let id = self.new_value(value.clone());
 
         // Send the value to the counterparty
-        self.outbound_queue
-            .send(NetworkOutbound {
-                op_id: id,
-                payload: value,
-            })
-            .expect("error sending value to counterparty");
+        if let Err(e) = self.outbound_queue.send(NetworkOutbound {
+            op_id: id,
+            payload: value,
+        }) {
+            log::error!("error sending value to counterparty: {e:?}");
+        }
 
         id
     }
@@ -244,6 +249,7 @@ impl<S: 'static + SharedValueSource> MpcFabric<S> {
         // Build communication primitives
         let (result_sender, result_receiver) = unbounded_channel();
         let (outbound_sender, outbound_receiver) = unbounded_channel();
+        let (shutdown_sender, shutdown_receiver) = broadcast::channel(1 /* capacity */);
 
         // Build a fabric
         let fabric = FabricInner::new(
@@ -254,13 +260,26 @@ impl<S: 'static + SharedValueSource> MpcFabric<S> {
         );
 
         // Start a network sender and operator executor
-        let network_sender = NetworkSender::new(outbound_receiver, result_sender.clone(), network);
-        tokio::task::spawn_blocking(move || network_sender.run());
+        let network_sender = NetworkSender::new(
+            outbound_receiver,
+            result_sender.clone(),
+            network,
+            shutdown_receiver,
+        );
+        tokio::task::spawn_blocking(move || block_on(network_sender.run()));
 
-        let executor = Executor::new(result_receiver, result_sender, fabric.clone());
-        tokio::task::spawn_blocking(move || executor.run());
+        let executor = Executor::new(
+            result_receiver,
+            result_sender,
+            fabric.clone(),
+            shutdown_sender.subscribe(),
+        );
+        tokio::task::spawn_blocking(move || block_on(executor.run()));
 
-        Self { inner: fabric }
+        Self {
+            inner: fabric,
+            shutdown: shutdown_sender,
+        }
     }
 
     /// Get the party ID of the local party
@@ -306,6 +325,16 @@ impl<S: 'static + SharedValueSource> MpcFabric<S> {
         ResultHandle {
             id: res_id,
             fabric: self.inner.clone(),
+        }
+    }
+}
+
+impl<S: SharedValueSource> Drop for MpcFabric<S> {
+    fn drop(&mut self) {
+        // Send a shutdown signal to the blocking workers
+        log::debug!("sending shutdown");
+        if let Err(e) = self.shutdown.send(()) {
+            log::error!("error sending shutdown signal: {e:?}");
         }
     }
 }
