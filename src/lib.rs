@@ -10,6 +10,7 @@ use beaver::SharedValueSource;
 use curve25519_dalek::scalar::Scalar;
 use network::MpcNetwork;
 
+pub mod algebra;
 pub mod beaver;
 pub mod commitment;
 pub mod error;

@@ -9,19 +9,19 @@ mod executor;
 mod network_sender;
 mod result;
 
-use futures::{executor::block_on, Future};
-pub use result::{ResultId, ResultValue};
+pub use result::{ResultHandle, ResultId, ResultValue};
+
+use futures::executor::block_on;
 use tracing::log;
 
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter, Result as FmtResult},
-    pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    task::{Context, Poll, Waker},
+    task::Waker,
 };
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
@@ -35,38 +35,6 @@ use crate::{
 };
 
 use self::{executor::Executor, network_sender::NetworkSender, result::OpResult};
-
-// ----------------------
-// | New Implementation |
-// ----------------------
-
-/// A handle to the result of the execution of an MPC computation graph
-pub struct ResultHandle<S: SharedValueSource> {
-    /// The id of the result
-    id: ResultId,
-    /// The underlying fabric
-    fabric: FabricInner<S>,
-}
-
-impl<S: SharedValueSource> Future for ResultHandle<S> {
-    type Output = ResultValue;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let locked_results = self.fabric.results.read().expect("results poisoned");
-        let mut locked_wakers = self.fabric.wakers.write().expect("wakers poisoned");
-
-        match locked_results.get(&self.id) {
-            Some(res) => Poll::Ready(res.value.clone()),
-            None => {
-                locked_wakers
-                    .entry(self.id)
-                    .or_insert_with(Vec::new)
-                    .push(cx.waker().clone());
-                Poll::Pending
-            }
-        }
-    }
-}
 
 /// An operation within the network, describes the arguments and function to evaluate
 /// once the arguments are ready
@@ -99,7 +67,7 @@ pub struct MpcFabric<S: SharedValueSource> {
 /// The inner component of the fabric, allows the constructor to allocate executor and network
 /// sender objects at the same level as the fabric
 #[derive(Clone)]
-struct FabricInner<S: SharedValueSource> {
+pub(crate) struct FabricInner<S: SharedValueSource> {
     /// The ID of the local party in the MPC execution
     party_id: u64,
     /// The next identifier to assign to an operation
@@ -288,44 +256,31 @@ impl<S: 'static + SharedValueSource> MpcFabric<S> {
     }
 
     /// Allocate a new plaintext value in the fabric
-    pub fn new_value(&mut self, value: ResultValue) -> ResultHandle<S> {
+    pub fn new_value<T: From<ResultValue>>(&mut self, value: ResultValue) -> ResultHandle<T, S> {
         let id = self.inner.new_value(value);
-        ResultHandle {
-            id,
-            fabric: self.inner.clone(),
-        }
+        ResultHandle::new(id, self.inner.clone())
     }
 
     /// Construct a new operation in the fabric
-    pub fn new_op(
+    pub fn new_op<T: From<ResultValue>>(
         &mut self,
-        args: Vec<ResultHandle<S>>,
+        args: Vec<ResultId>,
         function: fn(Vec<ResultValue>) -> ResultValue,
-    ) -> ResultHandle<S> {
-        let arg_ids = args.iter().map(|arg| arg.id).collect_vec();
-        let id = self.inner.new_op(arg_ids, function);
-        ResultHandle {
-            id,
-            fabric: self.inner.clone(),
-        }
+    ) -> ResultHandle<T, S> {
+        let id = self.inner.new_op(args, function);
+        ResultHandle::new(id, self.inner.clone())
     }
 
     /// Share a value with the counterparty
-    pub fn send_value(&mut self, value: ResultValue) -> ResultHandle<S> {
+    pub fn send_value<T: From<ResultValue>>(&mut self, value: ResultValue) -> ResultHandle<T, S> {
         let res_id = self.inner.send_value(value);
-        ResultHandle {
-            id: res_id,
-            fabric: self.inner.clone(),
-        }
+        ResultHandle::new(res_id, self.inner.clone())
     }
 
     /// Receive a value from the counterparty
-    pub fn receive_value(&mut self) -> ResultHandle<S> {
+    pub fn receive_value<T: From<ResultValue>>(&mut self) -> ResultHandle<T, S> {
         let res_id = self.inner.receive_value();
-        ResultHandle {
-            id: res_id,
-            fabric: self.inner.clone(),
-        }
+        ResultHandle::new(res_id, self.inner.clone())
     }
 }
 

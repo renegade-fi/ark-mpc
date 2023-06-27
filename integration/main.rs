@@ -30,7 +30,7 @@ const SHUTDOWN_TIMEOUT_MS: u64 = 1_000; // 1 seconds
 /// Type alias for a fabric with the party id beaver source
 pub(crate) type DummyFabric = MpcFabric<PartyIDBeaverSource>;
 /// Type alias for a result handle in a fabric with default handle
-pub(crate) type DefaultResHandle = ResultHandle<PartyIDBeaverSource>;
+pub(crate) type DefaultResHandle<T> = ResultHandle<T, PartyIDBeaverSource>;
 
 /// Integration test arguments, common to all tests
 #[derive(Clone, Debug)]
