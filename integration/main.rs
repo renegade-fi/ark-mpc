@@ -1,27 +1,42 @@
-mod authenticated_ristretto;
-mod authenticated_scalar;
-mod mpc_ristretto;
-mod mpc_scalar;
-mod network;
-
-use std::{borrow::Borrow, cell::RefCell, net::SocketAddr, process::exit, rc::Rc};
+use std::{
+    borrow::Borrow,
+    cell::{RefCell, RefMut},
+    net::SocketAddr,
+    process::exit,
+    rc::Rc,
+};
 
 use clap::Parser;
 use colored::Colorize;
 use curve25519_dalek::{constants, ristretto::RistrettoPoint, scalar::Scalar};
 use dns_lookup::lookup_host;
+use helpers::PartyIDBeaverSource;
+use mpc_ristretto::{
+    fabric::{MpcFabric, ResultHandle},
+    network::QuicTwoPartyNet,
+};
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 
-use ::mpc_ristretto::{mpc_scalar::MpcScalar, network::QuicTwoPartyNet};
-use mpc_scalar::PartyIDBeaverSource;
+mod fabric;
+mod helpers;
+
+/// Type alias for a fabric with the party id beaver source
+pub(crate) type DummyFabric = MpcFabric<PartyIDBeaverSource>;
+/// Type alias for a result handle in a fabric with default handle
+pub(crate) type DefaultResHandle = ResultHandle<PartyIDBeaverSource>;
 
 /// Integration test arguments, common to all tests
 #[derive(Clone, Debug)]
 struct IntegrationTestArgs {
     party_id: u64,
-    net_ref: Rc<RefCell<QuicTwoPartyNet>>,
-    beaver_source: Rc<RefCell<PartyIDBeaverSource>>,
-    mac_key: MpcScalar<QuicTwoPartyNet, PartyIDBeaverSource>,
+    fabric: Rc<RefCell<DummyFabric>>,
+}
+
+impl IntegrationTestArgs {
+    /// Borrow the fabric mutably
+    fn get_fabric_mut(&self) -> RefMut<DummyFabric> {
+        self.fabric.borrow_mut()
+    }
 }
 
 /// Integration test format
@@ -104,15 +119,8 @@ fn main() {
         let mut net = QuicTwoPartyNet::new(args.party, local_addr, peer_addr);
         Handle::current().block_on(net.connect()).unwrap();
 
-        // Share the global mac key (hardcoded to Scalar(15))
-        let net_ref = Rc::new(RefCell::new(net));
         let beaver_source = PartyIDBeaverSource::new(args.party);
-        let shared_beaver_source = Rc::new(RefCell::new(beaver_source));
-
-        let mac_key =
-            MpcScalar::from_private_u64(15, net_ref.clone(), shared_beaver_source.clone())
-                .share_secret(0 /* party_id */)
-                .unwrap();
+        let fabric = MpcFabric::new(net, beaver_source);
 
         // ----------------
         // | Test Harness |
@@ -124,11 +132,8 @@ fn main() {
 
         let test_args = IntegrationTestArgs {
             party_id: args.party,
-            net_ref,
-            beaver_source: shared_beaver_source,
-            mac_key,
+            fabric: Rc::new(RefCell::new(fabric)),
         };
-
         let mut all_success = true;
 
         for test in inventory::iter::<IntegrationTest> {
@@ -160,12 +165,6 @@ fn main() {
     }
 
     exit(-1);
-}
-
-/// Computes a * G where G is the generator of the Ristretto group
-#[inline]
-pub(crate) fn base_point_mul(a: u64) -> RistrettoPoint {
-    constants::RISTRETTO_BASEPOINT_POINT * Scalar::from(a)
 }
 
 /// Prints a success or failure message, returns true if success, false if failure

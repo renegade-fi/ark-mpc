@@ -7,17 +7,14 @@ use std::{
 
 use beaver::SharedValueSource;
 
+use curve25519_dalek::scalar::Scalar;
 use network::MpcNetwork;
 
-pub mod authenticated_ristretto;
-pub mod authenticated_scalar;
 pub mod beaver;
 pub mod commitment;
 pub mod error;
 pub mod fabric;
 mod macros;
-pub mod mpc_ristretto;
-pub mod mpc_scalar;
 pub mod network;
 
 /// The first party
@@ -34,6 +31,19 @@ type Shared<T> = Arc<RwLock<T>>;
 pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource> = Rc<RefCell<S>>;
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Converts a scalar to u64
+pub fn scalar_to_u64(a: &Scalar) -> u64 {
+    u64::from_le_bytes(a.to_bytes()[..8].try_into().unwrap())
+}
+
+// --------------------
+// | Crate-wide Types |
+// --------------------
 
 /// A wrapper trait that allows for implementing generic comparisons
 pub trait Visible {

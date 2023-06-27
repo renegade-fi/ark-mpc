@@ -86,7 +86,7 @@ impl NetworkSender {
         self.result_queue
             .send(OpResult {
                 id: message.op_id,
-                value: message.payload.into(),
+                value: message.payload,
             })
             .map_err(|_| MpcNetworkError::SendError(ERR_SEND_FAILURE.to_string()))
     }

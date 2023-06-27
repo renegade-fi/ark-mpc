@@ -34,28 +34,7 @@ pub struct NetworkOutbound {
     /// The operation ID that generated this message
     pub(crate) op_id: ResultId,
     /// The body of the message
-    pub(crate) payload: NetworkOutboundPayload,
-}
-
-/// The body that the network sender receives
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) enum NetworkOutboundPayload {
-    /// Raw bytes sent over the network
-    Bytes(Vec<u8>),
-    /// Scalars to be sent over the network
-    Scalars(Vec<Scalar>),
-    /// Curve points to be sent over the network
-    Points(Vec<RistrettoPoint>),
-}
-
-impl From<NetworkOutboundPayload> for ResultValue {
-    fn from(value: NetworkOutboundPayload) -> Self {
-        match value {
-            NetworkOutboundPayload::Bytes(bytes) => ResultValue::Bytes(bytes),
-            NetworkOutboundPayload::Scalars(scalars) => ResultValue::Scalars(scalars),
-            NetworkOutboundPayload::Points(points) => ResultValue::Points(points),
-        }
-    }
+    pub(crate) payload: ResultValue,
 }
 
 /// The `MpcNetwork` trait defines shared functionality for a network implementing a

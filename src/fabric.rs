@@ -10,7 +10,7 @@ mod network_sender;
 mod result;
 
 use futures::Future;
-pub(crate) use result::{ResultId, ResultValue};
+pub use result::{ResultId, ResultValue};
 
 use std::{
     collections::HashMap,
@@ -28,7 +28,7 @@ use itertools::Itertools;
 
 use crate::{
     beaver::SharedValueSource,
-    network::{MpcNetwork, NetworkOutbound, QuicTwoPartyNet},
+    network::{MpcNetwork, NetworkOutbound, PartyId, QuicTwoPartyNet},
     Shared,
 };
 
@@ -87,7 +87,9 @@ struct Operation {
 /// continue using the fabric, scheduling more gates to be evaluated and maximally exploiting
 /// gate-level parallelism within the circuit
 #[derive(Clone, Debug)]
-pub struct MpcFabric<S: SharedValueSource>(FabricInner<S>);
+pub struct MpcFabric<S: SharedValueSource> {
+    inner: FabricInner<S>,
+}
 
 /// The inner component of the fabric, allows the constructor to allocate executor and network
 /// sender objects at the same level as the fabric
@@ -140,6 +142,14 @@ impl<S: SharedValueSource> FabricInner<S> {
         }
     }
 
+    fn new_id(&self) -> ResultId {
+        self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    // ------------------------
+    // | Low Level Allocation |
+    // ------------------------
+
     /// Allocate a new plaintext value in the fabric
     pub fn new_value(&mut self, value: ResultValue) -> ResultId {
         // Acquire locks
@@ -164,7 +174,7 @@ impl<S: SharedValueSource> FabricInner<S> {
         let mut locked_deps = self.dependencies.write().expect("deps poisoned");
 
         // Get an ID for the result
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = self.new_id();
 
         // Count the args that are not yet ready
         let inputs = args
@@ -198,6 +208,34 @@ impl<S: SharedValueSource> FabricInner<S> {
 
         id
     }
+
+    // ------------------
+    // | Secret Sharing |
+    // ------------------
+
+    /// Share a value with the counterparty
+    pub fn send_value(&mut self, value: ResultValue) -> ResultId {
+        // Allocate a new value
+        let id = self.new_value(value.clone());
+
+        // Send the value to the counterparty
+        self.outbound_queue
+            .send(NetworkOutbound {
+                op_id: id,
+                payload: value,
+            })
+            .expect("error sending value to counterparty");
+
+        id
+    }
+
+    /// Receive a value from the counterparty
+    pub fn receive_value(&mut self) -> ResultId {
+        // Simply allocate a new result ID, no extra work needs to be done, the
+        // other party will push the value over the stream and the `NetworkSender`
+        // will mark the value as ready once received
+        self.new_id()
+    }
 }
 
 impl<S: 'static + SharedValueSource> MpcFabric<S> {
@@ -222,15 +260,20 @@ impl<S: 'static + SharedValueSource> MpcFabric<S> {
         let executor = Executor::new(result_receiver, result_sender, fabric.clone());
         tokio::task::spawn_blocking(move || executor.run());
 
-        Self(fabric)
+        Self { inner: fabric }
+    }
+
+    /// Get the party ID of the local party
+    pub fn party_id(&self) -> PartyId {
+        self.inner.party_id
     }
 
     /// Allocate a new plaintext value in the fabric
     pub fn new_value(&mut self, value: ResultValue) -> ResultHandle<S> {
-        let id = self.0.new_value(value);
+        let id = self.inner.new_value(value);
         ResultHandle {
             id,
-            fabric: self.0.clone(),
+            fabric: self.inner.clone(),
         }
     }
 
@@ -241,10 +284,28 @@ impl<S: 'static + SharedValueSource> MpcFabric<S> {
         function: fn(Vec<ResultValue>) -> ResultValue,
     ) -> ResultHandle<S> {
         let arg_ids = args.iter().map(|arg| arg.id).collect_vec();
-        let id = self.0.new_op(arg_ids, function);
+        let id = self.inner.new_op(arg_ids, function);
         ResultHandle {
             id,
-            fabric: self.0.clone(),
+            fabric: self.inner.clone(),
+        }
+    }
+
+    /// Share a value with the counterparty
+    pub fn send_value(&mut self, value: ResultValue) -> ResultHandle<S> {
+        let res_id = self.inner.send_value(value);
+        ResultHandle {
+            id: res_id,
+            fabric: self.inner.clone(),
+        }
+    }
+
+    /// Receive a value from the counterparty
+    pub fn receive_value(&mut self) -> ResultHandle<S> {
+        let res_id = self.inner.receive_value();
+        ResultHandle {
+            id: res_id,
+            fabric: self.inner.clone(),
         }
     }
 }

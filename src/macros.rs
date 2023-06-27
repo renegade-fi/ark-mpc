@@ -37,12 +37,11 @@ macro_rules! impl_delegated {
 macro_rules! impl_delegated_wrapper {
     // Static method, with public only
     ($base_type:ty, $function_name:ident) => {
-        pub fn $function_name(network: SharedNetwork<N>, beaver_source: BeaverSource<S>) -> Self {
+        pub fn $function_name(fabric: MpcFabric<S>) -> Self {
             Self {
                 value: <$base_type>::$function_name(),
                 visibility: Visibility::Public,
-                network,
-                beaver_source,
+                fabric,
             }
         }
     };
@@ -73,25 +72,19 @@ macro_rules! impl_delegated_wrapper {
 
     // Static method single param
     ($base_type:ty, $function_name:ident, $with_visibility_function:ident, $param_name:ident, $param_type:ty) => {
-        pub fn $function_name(
-            $param_name: $param_type,
-            network: SharedNetwork<N>,
-            beaver_source: BeaverSource<S>,
-        ) -> Self {
-            Self::$with_visibility_function($param_name, Visibility::Public, network, beaver_source)
+        pub fn $function_name($param_name: $param_type, fabric: MpcFabric<S>) -> Self {
+            Self::$with_visibility_function($param_name, Visibility::Public, fabric)
         }
 
         pub fn $with_visibility_function(
             $param_name: $param_type,
             visibility: Visibility,
-            network: SharedNetwork<N>,
-            beaver_source: BeaverSource<S>,
+            fabric: MpcFabric<S>,
         ) -> Self {
             Self {
                 visibility,
-                network,
-                beaver_source,
                 value: <$base_type>::$function_name($param_name),
+                fabric,
             }
         }
     };
