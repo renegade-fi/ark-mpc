@@ -6,26 +6,23 @@ use ark_ec::{
 };
 use ark_ff::{
     fields::{Fp256, MontBackend, MontConfig},
-    MontFp,
+    MontFp, PrimeField,
 };
 
-use lazy_static::lazy_static;
+// -----------
+// | Helpers |
+// -----------
 
-// -------------
-// | Constants |
-// -------------
+/// Convert a scalar to a `BigUint`
+pub fn scalar_to_biguint<F: PrimeField>(scalar: &F) -> num_bigint::BigUint {
+    (*scalar).into()
+}
 
-/// The `b` value in the short Weierstrass equation of the Starknet curve
-/// serialized as a hex string
-const STARKNET_CURVE_B_HEX: &str =
-    "0x6F21413EFBE40DE150E596D72F7A8C5609AD26C15C915C1F4CDFCB99CEE9E89";
-
-// lazy_static! {
-//     /// The `a` value in the short Weierstrass equation of the Starknet curve
-//     // static ref STARKNET_CURVE_A: FieldElement<Scalar> = FieldElement::from(1);
-//     /// The `b` value in the short Weierstrass equation of the Starknet curve
-//     // static ref STARKNET_CURVE_B: FieldElement<Scalar> = FieldElement::from_hex(STARKNET_CURVE_B_HEX).unwrap();
-// }
+/// Convert a `BigUint` to a scalar
+pub fn biguint_to_scalar<F: PrimeField>(biguint: num_bigint::BigUint) -> F {
+    let bytes = biguint.to_bytes_le();
+    F::from_le_bytes_mod_order(&bytes)
+}
 
 // -------------------------------
 // | Curve and Scalar Definition |
@@ -71,4 +68,144 @@ impl SWCurveConfig for StarknetCurveConfig {
         y: MontFp!("152666792071518830868575557812948353041420400780739481342941381225525861407"),
         infinity: false,
     };
+}
+
+// ---------
+// | Tests |
+// ---------
+
+/// We test our config against a known implementation of the Stark curve:
+///     https://github.com/xJonathanLEI/starknet-rs
+#[cfg(test)]
+mod test {
+    use ark_ec::{short_weierstrass::Projective, CurveGroup};
+    use ark_ff::PrimeField;
+    use num_bigint::BigUint;
+    use starknet::core::types::FieldElement as StarknetFelt;
+    use starknet_curve::{curve_params::GENERATOR, AffinePoint, ProjectivePoint};
+
+    use super::*;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Generate a random scalar
+    fn random_scalar() -> Scalar {
+        let bytes: [u8; 32] = rand::random();
+        Scalar::from_be_bytes_mod_order(&bytes)
+    }
+
+    /// Generate a random point, by multiplying the basepoint with a random scalar
+    fn random_point() -> Projective<StarknetCurveConfig> {
+        let scalar = random_scalar();
+        let point = StarknetCurveConfig::GENERATOR * scalar;
+        point * scalar
+    }
+
+    /// Convert a starknet felt to a BigUint
+    fn starknet_felt_to_biguint(felt: &StarknetFelt) -> BigUint {
+        BigUint::from_bytes_be(&felt.to_bytes_be())
+    }
+
+    /// Convert a `BigUint` to a starknet felt
+    fn biguint_to_starknet_felt(biguint: &BigUint) -> StarknetFelt {
+        let bytes = biguint.to_bytes_be();
+        StarknetFelt::from_bytes_be(&bytes.try_into().unwrap()).unwrap()
+    }
+
+    /// Convert a `Scalar` to a `StarknetFelt`
+    fn scalar_to_starknet_felt<F: PrimeField>(scalar: &F) -> StarknetFelt {
+        biguint_to_starknet_felt(&scalar_to_biguint(scalar))
+    }
+
+    /// Convert a point in the arkworks representation to a point in the starknet representation
+    fn arkworks_point_to_starknet(point: &Projective<StarknetCurveConfig>) -> ProjectivePoint {
+        let affine = point.into_affine();
+        let x = scalar_to_starknet_felt(&affine.x);
+        let y = scalar_to_starknet_felt(&affine.y);
+
+        ProjectivePoint::from_affine_point(&AffinePoint {
+            x,
+            y,
+            infinity: false,
+        })
+    }
+
+    /// Multiply a point in the starknet-rs `ProjectivePoint` representation with a scalar
+    ///
+    /// Multiplication is only implemented for a point and `&[bool]`, so this method essentially
+    /// provides the bit decomposition  
+    fn starknet_rs_scalar_mul(scalar: &StarknetFelt, point: &ProjectivePoint) -> ProjectivePoint {
+        let bits = scalar.to_bits_le();
+        point * &bits
+    }
+
+    /// Compare scalars from the two curve implementations
+    fn compare_scalars<F: PrimeField>(s1: &F, s2: &StarknetFelt) -> bool {
+        let s1_biguint = scalar_to_biguint(s1);
+        let s2_biguint = starknet_felt_to_biguint(s2);
+
+        s1_biguint == s2_biguint
+    }
+
+    /// Compare curve points between the two implementation
+    fn compare_points(p1: &Projective<StarknetCurveConfig>, p2: &ProjectivePoint) -> bool {
+        // Convert the points to affine coordinates
+        let p1_affine = p1.into_affine();
+        let x_1 = p1_affine.x;
+        let y_1 = p1_affine.y;
+
+        let z_inv = p2.z.invert().unwrap();
+        let x_2 = p2.x * z_inv;
+        let y_2 = p2.y * z_inv;
+
+        compare_scalars(&x_1, &x_2) && compare_scalars(&y_1, &y_2)
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
+
+    /// Test that the generators are the same between the two curve representations
+    #[test]
+    fn test_generators() {
+        let generator_1 = Projective::from(StarknetCurveConfig::GENERATOR);
+        let generator_2 = ProjectivePoint::from_affine_point(&GENERATOR);
+
+        assert!(compare_points(&generator_1, &generator_2));
+    }
+
+    /// Tests point addition
+    #[test]
+    fn test_point_addition() {
+        let p1 = random_point();
+        let q1 = random_point();
+
+        let p2 = arkworks_point_to_starknet(&p1);
+        let q2 = arkworks_point_to_starknet(&q1);
+
+        let r1 = p1 + q1;
+
+        // Only `AddAssign` is implemented on `ProjectivePoint`
+        let mut r2 = p2;
+        r2 += &q2;
+
+        assert!(compare_points(&r1, &r2));
+    }
+
+    /// Tests scalar multiplication
+    #[test]
+    fn test_scalar_mul() {
+        let s1 = random_scalar();
+        let p1 = random_point();
+
+        let s2 = scalar_to_starknet_felt(&s1);
+        let p2 = arkworks_point_to_starknet(&p1);
+
+        let r1 = p1 * s1;
+        let r2 = starknet_rs_scalar_mul(&s2, &p2);
+
+        assert!(compare_points(&r1, &r2));
+    }
 }
