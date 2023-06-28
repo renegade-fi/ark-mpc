@@ -84,9 +84,12 @@ mod test {
     use ark_ec::short_weierstrass::Projective;
     use starknet_curve::{curve_params::GENERATOR, ProjectivePoint};
 
-    use crate::algebra::test_helper::{
-        arkworks_point_to_starknet, compare_points, random_point, random_scalar,
-        scalar_to_starknet_felt, starknet_rs_scalar_mul,
+    use crate::{
+        algebra::test_helper::{
+            arkworks_point_to_starknet, compare_points, random_point, scalar_to_starknet_felt,
+            starknet_rs_scalar_mul,
+        },
+        random_scalar,
     };
 
     use super::*;

@@ -9,6 +9,7 @@ mod executor;
 mod network_sender;
 mod result;
 
+pub(crate) use result::cast_args;
 pub use result::{ResultHandle, ResultId, ResultValue};
 
 use futures::executor::block_on;
@@ -30,7 +31,7 @@ use itertools::Itertools;
 
 use crate::{
     beaver::SharedValueSource,
-    network::{MpcNetwork, NetworkOutbound, PartyId, QuicTwoPartyNet},
+    network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
     Shared,
 };
 
@@ -46,7 +47,7 @@ struct Operation {
     /// The IDs of the inputs to this operation
     args: Vec<ResultId>,
     /// The function to apply to the inputs
-    function: fn(Vec<ResultValue>) -> ResultValue,
+    function: Box<dyn FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync>,
 }
 
 /// A fabric for the MPC protocol, defines a dependency injection layer that dynamically schedules
@@ -57,9 +58,9 @@ struct Operation {
 /// continue using the fabric, scheduling more gates to be evaluated and maximally exploiting
 /// gate-level parallelism within the circuit
 #[derive(Clone, Debug)]
-pub struct MpcFabric<S: SharedValueSource> {
+pub struct MpcFabric {
     /// The inner fabric
-    inner: FabricInner<S>,
+    inner: FabricInner,
     /// The channel on which shutdown messages are sent to blocking workers
     shutdown: BroadcastSender<()>,
 }
@@ -67,7 +68,7 @@ pub struct MpcFabric<S: SharedValueSource> {
 /// The inner component of the fabric, allows the constructor to allocate executor and network
 /// sender objects at the same level as the fabric
 #[derive(Clone)]
-pub(crate) struct FabricInner<S: SharedValueSource> {
+pub(crate) struct FabricInner {
     /// The ID of the local party in the MPC execution
     party_id: u64,
     /// The next identifier to assign to an operation
@@ -85,18 +86,18 @@ pub(crate) struct FabricInner<S: SharedValueSource> {
     /// The underlying queue to the network
     outbound_queue: TokioSender<NetworkOutbound>,
     /// The underlying shared randomness source
-    beaver_source: S,
+    beaver_source: Arc<Box<dyn SharedValueSource>>,
 }
 
-impl<S: SharedValueSource> Debug for FabricInner<S> {
+impl Debug for FabricInner {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "FabricInner")
     }
 }
 
-impl<S: SharedValueSource> FabricInner<S> {
+impl FabricInner {
     /// Constructor
-    pub fn new(
+    pub fn new<S: 'static + SharedValueSource>(
         party_id: u64,
         result_queue: TokioSender<OpResult>,
         outbound_queue: TokioSender<NetworkOutbound>,
@@ -111,10 +112,11 @@ impl<S: SharedValueSource> FabricInner<S> {
             wakers: Arc::new(RwLock::new(HashMap::new())),
             result_queue,
             outbound_queue,
-            beaver_source,
+            beaver_source: Arc::new(Box::new(beaver_source)),
         }
     }
 
+    /// Increment the operation counter and return the existing value
     fn new_id(&self) -> ResultId {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
@@ -124,7 +126,7 @@ impl<S: SharedValueSource> FabricInner<S> {
     // ------------------------
 
     /// Allocate a new plaintext value in the fabric
-    pub fn new_value(&mut self, value: ResultValue) -> ResultId {
+    pub fn new_value(&self, value: ResultValue) -> ResultId {
         // Acquire locks
         let mut locked_results = self.results.write().expect("results poisoned");
 
@@ -136,11 +138,10 @@ impl<S: SharedValueSource> FabricInner<S> {
     }
 
     /// Allocate a new in-flight operation in the network
-    pub fn new_op(
-        &mut self,
-        args: Vec<ResultId>,
-        function: fn(Vec<ResultValue>) -> ResultValue,
-    ) -> ResultId {
+    pub fn new_op<F>(&self, args: Vec<ResultId>, function: F) -> ResultId
+    where
+        F: 'static + FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync,
+    {
         // Acquire all locks
         let locked_results = self.results.read().expect("results poisoned");
         let mut locked_ops = self.operations.write().expect("ops poisoned");
@@ -174,7 +175,7 @@ impl<S: SharedValueSource> FabricInner<S> {
                 id,
                 inflight_args: AtomicUsize::new(n_inflight),
                 args,
-                function,
+                function: Box::new(function),
             };
             locked_ops.insert(id, op);
         }
@@ -187,14 +188,14 @@ impl<S: SharedValueSource> FabricInner<S> {
     // ------------------
 
     /// Share a value with the counterparty
-    pub fn send_value(&mut self, value: ResultValue) -> ResultId {
+    pub fn share_value(&self, my_value: ResultValue, their_value: NetworkPayload) -> ResultId {
         // Allocate a new value
-        let id = self.new_value(value.clone());
+        let id = self.new_value(my_value);
 
         // Send the value to the counterparty
         if let Err(e) = self.outbound_queue.send(NetworkOutbound {
             op_id: id,
-            payload: value,
+            payload: their_value,
         }) {
             log::error!("error sending value to counterparty: {e:?}");
         }
@@ -211,9 +212,9 @@ impl<S: SharedValueSource> FabricInner<S> {
     }
 }
 
-impl<S: 'static + SharedValueSource> MpcFabric<S> {
+impl MpcFabric {
     /// Constructor
-    pub fn new(network: QuicTwoPartyNet, beaver_source: S) -> Self {
+    pub fn new<S: 'static + SharedValueSource>(network: QuicTwoPartyNet, beaver_source: S) -> Self {
         // Build communication primitives
         let (result_sender, result_receiver) = unbounded_channel();
         let (outbound_sender, outbound_receiver) = unbounded_channel();
@@ -255,41 +256,59 @@ impl<S: 'static + SharedValueSource> MpcFabric<S> {
         self.inner.party_id
     }
 
+    /// Shutdown the fabric and the threads it has spawned
+    pub fn shutdown(self) {
+        log::debug!("shutting down fabric");
+        self.shutdown
+            .send(())
+            .expect("error sending shutdown signal");
+    }
+
     /// Allocate a new plaintext value in the fabric
-    pub fn new_value<T: From<ResultValue>>(&mut self, value: ResultValue) -> ResultHandle<T, S> {
+    pub fn new_value<T: From<ResultValue>>(&self, value: ResultValue) -> ResultHandle<T> {
         let id = self.inner.new_value(value);
-        ResultHandle::new(id, self.inner.clone())
+        ResultHandle::new(id, self.clone())
     }
 
     /// Construct a new operation in the fabric
-    pub fn new_op<T: From<ResultValue>>(
-        &mut self,
+    pub fn new_op<F, T: From<ResultValue>>(
+        &self,
         args: Vec<ResultId>,
-        function: fn(Vec<ResultValue>) -> ResultValue,
-    ) -> ResultHandle<T, S> {
+        function: F,
+    ) -> ResultHandle<T>
+    where
+        F: 'static + FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync,
+        T: From<ResultValue>,
+    {
         let id = self.inner.new_op(args, function);
-        ResultHandle::new(id, self.inner.clone())
+        ResultHandle::new(id, self.clone())
     }
 
-    /// Share a value with the counterparty
-    pub fn send_value<T: From<ResultValue>>(&mut self, value: ResultValue) -> ResultHandle<T, S> {
-        let res_id = self.inner.send_value(value);
-        ResultHandle::new(res_id, self.inner.clone())
+    /// Share a public value with the counterparty
+    ///
+    /// This method should be used for public values, as the value allocated in the result buffer
+    /// for the local party is the same value sent over the network
+    pub fn share_public<T: From<ResultValue>>(&mut self, value: NetworkPayload) -> ResultHandle<T> {
+        let res_id = self.inner.share_value(value.clone().into(), value);
+        ResultHandle::new(res_id, self.clone())
+    }
+
+    /// Share a secret value with the counterparty
+    ///
+    /// This method takes in both the local and counterparty's share so that they me be allocated with
+    /// the same sequence number in the respective result buffers
+    pub fn share_secret<T: From<ResultValue>>(
+        &mut self,
+        my_value: ResultValue,
+        their_value: ResultValue,
+    ) -> ResultHandle<T> {
+        let res_id = self.inner.share_value(my_value, their_value.into());
+        ResultHandle::new(res_id, self.clone())
     }
 
     /// Receive a value from the counterparty
-    pub fn receive_value<T: From<ResultValue>>(&mut self) -> ResultHandle<T, S> {
+    pub fn receive_value<T: From<ResultValue>>(&mut self) -> ResultHandle<T> {
         let res_id = self.inner.receive_value();
-        ResultHandle::new(res_id, self.inner.clone())
-    }
-}
-
-impl<S: SharedValueSource> Drop for MpcFabric<S> {
-    fn drop(&mut self) {
-        // Send a shutdown signal to the blocking workers
-        log::debug!("sending shutdown");
-        if let Err(e) = self.shutdown.send(()) {
-            log::error!("error sending shutdown signal: {e:?}");
-        }
+        ResultHandle::new(res_id, self.clone())
     }
 }

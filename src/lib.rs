@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use algebra::stark_curve::Scalar;
+use ark_ff::PrimeField;
 use beaver::SharedValueSource;
 
 use network::MpcNetwork;
@@ -13,13 +15,30 @@ pub mod algebra;
 pub mod beaver;
 pub mod error;
 pub mod fabric;
-mod macros;
 pub mod network;
+
+// -------------
+// | Constants |
+// -------------
 
 /// The first party
 pub const PARTY0: u64 = 0;
 /// The second party
 pub const PARTY1: u64 = 1;
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Generate a random scalar
+pub fn random_scalar() -> Scalar {
+    let bytes: [u8; 32] = rand::random();
+    Scalar::from_be_bytes_mod_order(&bytes)
+}
+
+// --------------------
+// | Crate-wide Types |
+// --------------------
 
 /// A type alias for a shared locked value
 type Shared<T> = Arc<RwLock<T>>;
@@ -30,10 +49,6 @@ type Shared<T> = Arc<RwLock<T>>;
 pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource> = Rc<RefCell<S>>;
-
-// --------------------
-// | Crate-wide Types |
-// --------------------
 
 /// A wrapper trait that allows for implementing generic comparisons
 pub trait Visible {

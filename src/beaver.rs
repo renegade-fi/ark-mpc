@@ -10,7 +10,7 @@ use crate::algebra::stark_curve::Scalar;
 ///        x_1 and party 2 holds x_2 such that x_1 + x_2 = x
 ///     2. Beaver triplets; additively shared values [a], [b], [c] such
 ///        that a * b = c
-pub trait SharedValueSource: Clone + Send {
+pub trait SharedValueSource: Send + Sync {
     /// Fetch the next shared single bit
     fn next_shared_bit(&mut self) -> Scalar;
     /// Fetch the next shared batch of bits

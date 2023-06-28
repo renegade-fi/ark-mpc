@@ -1,11 +1,14 @@
 //! Defines tests for the fabric directly
 
 use mpc_ristretto::{
-    algebra::stark_curve::Scalar, fabric::ResultValue, network::PartyId, PARTY0, PARTY1,
+    algebra::stark_curve::Scalar,
+    fabric::ResultHandle,
+    network::{NetworkPayload, PartyId},
+    PARTY0, PARTY1,
 };
 use tokio::runtime::Handle;
 
-use crate::{helpers::assert_scalars_eq, DefaultResHandle, IntegrationTest, IntegrationTestArgs};
+use crate::{helpers::assert_scalars_eq, IntegrationTest, IntegrationTestArgs};
 
 // -----------
 // | Helpers |
@@ -16,11 +19,11 @@ fn send_receive_scalar(
     value: Scalar,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> DefaultResHandle<Scalar> {
+) -> ResultHandle<Scalar> {
     if test_args.party_id == sender {
         test_args
             .get_fabric_mut()
-            .send_value(ResultValue::Scalar(value))
+            .share_public(NetworkPayload::Scalar(value))
     } else {
         test_args.get_fabric_mut().receive_value()
     }

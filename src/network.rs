@@ -10,8 +10,9 @@ use std::{convert::TryInto, net::SocketAddr};
 use tracing::log;
 
 use crate::{
+    algebra::stark_curve::{Scalar, StarkPoint},
     error::{MpcNetworkError, SetupError},
-    fabric::{ResultId, ResultValue},
+    fabric::ResultId,
     PARTY0,
 };
 
@@ -32,7 +33,26 @@ pub struct NetworkOutbound {
     /// The operation ID that generated this message
     pub op_id: ResultId,
     /// The body of the message
-    pub payload: ResultValue,
+    pub payload: NetworkPayload,
+}
+
+/// The payload of an outbound message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NetworkPayload {
+    /// A byte value
+    Bytes(Vec<u8>),
+    /// A scalar value
+    #[serde(
+        serialize_with = "crate::algebra::serialize_scalar",
+        deserialize_with = "crate::algebra::deserialize_scalar"
+    )]
+    Scalar(Scalar),
+    /// A point on the curve
+    #[serde(
+        serialize_with = "crate::algebra::serialize_point",
+        deserialize_with = "crate::algebra::deserialize_point"
+    )]
+    Point(StarkPoint),
 }
 
 /// The `MpcNetwork` trait defines shared functionality for a network implementing a

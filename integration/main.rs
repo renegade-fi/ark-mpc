@@ -15,8 +15,8 @@ use dns_lookup::lookup_host;
 use env_logger::Builder;
 use helpers::PartyIDBeaverSource;
 use mpc_ristretto::{
-    fabric::{MpcFabric, ResultHandle, ResultValue},
-    network::{MpcNetwork, NetworkOutbound, QuicTwoPartyNet},
+    fabric::MpcFabric,
+    network::{MpcNetwork, NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
 };
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use tracing::log::LevelFilter;
@@ -25,23 +25,18 @@ mod fabric;
 mod helpers;
 
 /// The amount of time to sleep after sending a shutdown
-const SHUTDOWN_TIMEOUT_MS: u64 = 1_000; // 1 seconds
-
-/// Type alias for a fabric with the party id beaver source
-pub(crate) type DummyFabric = MpcFabric<PartyIDBeaverSource>;
-/// Type alias for a result handle in a fabric with default handle
-pub(crate) type DefaultResHandle<T> = ResultHandle<T, PartyIDBeaverSource>;
+const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
 
 /// Integration test arguments, common to all tests
 #[derive(Clone, Debug)]
 struct IntegrationTestArgs {
     party_id: u64,
-    fabric: Rc<RefCell<DummyFabric>>,
+    fabric: Rc<RefCell<MpcFabric>>,
 }
 
 impl IntegrationTestArgs {
     /// Borrow the fabric mutably
-    fn get_fabric_mut(&self) -> RefMut<DummyFabric> {
+    fn get_fabric_mut(&self) -> RefMut<MpcFabric> {
         self.fabric.borrow_mut()
     }
 }
@@ -134,7 +129,7 @@ fn main() {
             Handle::current()
                 .block_on(net.send_message(NetworkOutbound {
                     op_id: 1,
-                    payload: ResultValue::Bytes(vec![1u8]),
+                    payload: NetworkPayload::Bytes(vec![1u8]),
                 }))
                 .unwrap();
         } else {
@@ -154,7 +149,7 @@ fn main() {
 
         let test_args = IntegrationTestArgs {
             party_id: args.party,
-            fabric: Rc::new(RefCell::new(fabric)),
+            fabric: Rc::new(RefCell::new(fabric.clone())),
         };
         let mut all_success = true;
 
@@ -174,12 +169,13 @@ fn main() {
             all_success &= validate_success(res, args.party);
         }
 
+        thread::sleep(Duration::from_millis(SHUTDOWN_TIMEOUT_MS));
+        fabric.shutdown();
         all_success
     });
 
     // Run the tests and delay shutdown to allow graceful network teardown
     let all_success = runtime.block_on(result).unwrap();
-    thread::sleep(Duration::from_millis(SHUTDOWN_TIMEOUT_MS));
 
     if all_success {
         if args_clone.party == 0 {

@@ -10,6 +10,7 @@ use serde::{
 
 use self::stark_curve::{Scalar, StarkPoint};
 
+pub mod mpc_scalar;
 pub mod stark_curve;
 
 // -----------
@@ -58,7 +59,9 @@ pub fn deserialize_point<'de, D: Deserializer<'de>>(
 /// Helpers useful for testing throughout the `algebra` module
 #[cfg(test)]
 pub(crate) mod test_helper {
-    use super::stark_curve::{scalar_to_biguint, Scalar, StarknetCurveConfig};
+    use crate::random_scalar;
+
+    use super::stark_curve::{scalar_to_biguint, StarknetCurveConfig};
 
     use ark_ec::{
         short_weierstrass::{Projective, SWCurveConfig},
@@ -72,12 +75,6 @@ pub(crate) mod test_helper {
     // -----------
     // | Helpers |
     // -----------
-
-    /// Generate a random scalar
-    pub fn random_scalar() -> Scalar {
-        let bytes: [u8; 32] = rand::random();
-        Scalar::from_be_bytes_mod_order(&bytes)
-    }
 
     /// Generate a random point, by multiplying the basepoint with a random scalar
     pub fn random_point() -> Projective<StarknetCurveConfig> {
@@ -156,12 +153,12 @@ pub(crate) mod test_helper {
 
 #[cfg(test)]
 mod test {
-    use crate::algebra::{deserialize_point, serialize_point};
-
-    use super::{
-        deserialize_scalar, serialize_scalar,
-        test_helper::{random_point, random_scalar},
+    use crate::{
+        algebra::{deserialize_point, serialize_point},
+        random_scalar,
     };
+
+    use super::{deserialize_scalar, serialize_scalar, test_helper::random_point};
 
     /// Test (de)serialization of a `Scalar`
     #[test]

@@ -9,14 +9,36 @@ use std::{
 };
 
 use futures::Future;
-use serde::{Deserialize, Serialize};
+use itertools::Itertools;
 
 use crate::{
-    algebra::stark_curve::{Scalar, StarkPoint},
-    beaver::SharedValueSource,
+    algebra::{
+        mpc_scalar::MpcScalar,
+        stark_curve::{Scalar, StarkPoint},
+    },
+    network::NetworkPayload,
 };
 
-use super::FabricInner;
+use super::MpcFabric;
+
+// -----------
+// | Helpers |
+// -----------
+
+/// A helper to cast the args in a vector to an array for destructuring
+pub(crate) fn cast_args<const N: usize, T: From<ResultValue>>(args: Vec<ResultValue>) -> [T; N] {
+    assert_eq!(args.len(), N, "wrong number of args");
+    args.into_iter()
+        .map(|arg| arg.into())
+        .collect_vec()
+        .try_into()
+        .map_err(|_| "wrong number of args")
+        .unwrap()
+}
+
+// ---------------------
+// | Result Value Type |
+// ---------------------
 
 /// An identifier for a result
 pub type ResultId = usize;
@@ -31,22 +53,37 @@ pub struct OpResult {
 }
 
 /// The value of a result
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum ResultValue {
     /// A byte value
     Bytes(Vec<u8>),
     /// A scalar value
-    #[serde(
-        serialize_with = "crate::algebra::serialize_scalar",
-        deserialize_with = "crate::algebra::deserialize_scalar"
-    )]
     Scalar(Scalar),
     /// A point on the curve
-    #[serde(
-        serialize_with = "crate::algebra::serialize_point",
-        deserialize_with = "crate::algebra::deserialize_point"
-    )]
     Point(StarkPoint),
+    /// An MPC scalar value
+    MpcScalar(MpcScalar),
+}
+
+impl From<NetworkPayload> for ResultValue {
+    fn from(value: NetworkPayload) -> Self {
+        match value {
+            NetworkPayload::Bytes(bytes) => ResultValue::Bytes(bytes),
+            NetworkPayload::Scalar(scalar) => ResultValue::Scalar(scalar),
+            NetworkPayload::Point(point) => ResultValue::Point(point),
+        }
+    }
+}
+
+impl From<ResultValue> for NetworkPayload {
+    fn from(value: ResultValue) -> Self {
+        match value {
+            ResultValue::Bytes(bytes) => NetworkPayload::Bytes(bytes),
+            ResultValue::Scalar(scalar) => NetworkPayload::Scalar(scalar),
+            ResultValue::Point(point) => NetworkPayload::Point(point),
+            _ => panic!("not a valid network payload type"),
+        }
+    }
 }
 
 // -- Coercive Casts to Concrete Types -- //
@@ -77,6 +114,15 @@ impl From<ResultValue> for StarkPoint {
     }
 }
 
+impl From<ResultValue> for MpcScalar {
+    fn from(value: ResultValue) -> Self {
+        match value {
+            ResultValue::MpcScalar(scalar) => scalar,
+            _ => panic!("Cannot cast {:?} to mpc scalar", value),
+        }
+    }
+}
+
 // ---------------
 // | Handle Type |
 // ---------------
@@ -88,18 +134,18 @@ impl From<ResultValue> for StarkPoint {
 ///
 /// This allows for construction of the graph concurrently with execution, giving the
 /// fabric the opportunity to schedule all results onto the network optimistically
-pub struct ResultHandle<T: From<ResultValue>, S: SharedValueSource> {
+pub struct ResultHandle<T: From<ResultValue>> {
     /// The id of the result
     pub(crate) id: ResultId,
     /// The underlying fabric
-    pub(crate) fabric: FabricInner<S>,
+    pub(crate) fabric: MpcFabric,
     /// A phantom for the type of the result
     phantom: PhantomData<T>,
 }
 
-impl<T: From<ResultValue>, S: SharedValueSource> ResultHandle<T, S> {
+impl<T: From<ResultValue>> ResultHandle<T> {
     /// Constructor
-    pub(crate) fn new(id: ResultId, fabric: FabricInner<S>) -> Self {
+    pub(crate) fn new(id: ResultId, fabric: MpcFabric) -> Self {
         Self {
             id,
             fabric,
@@ -108,12 +154,12 @@ impl<T: From<ResultValue>, S: SharedValueSource> ResultHandle<T, S> {
     }
 }
 
-impl<T: From<ResultValue>, S: SharedValueSource> Future for ResultHandle<T, S> {
+impl<T: From<ResultValue>> Future for ResultHandle<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let locked_results = self.fabric.results.read().expect("results poisoned");
-        let mut locked_wakers = self.fabric.wakers.write().expect("wakers poisoned");
+        let locked_results = self.fabric.inner.results.read().expect("results poisoned");
+        let mut locked_wakers = self.fabric.inner.wakers.write().expect("wakers poisoned");
 
         match locked_results.get(&self.id) {
             Some(res) => Poll::Ready(res.value.clone().into()),

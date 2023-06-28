@@ -7,14 +7,12 @@ use tokio::sync::broadcast::Receiver as BroadcastReceiver;
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use tracing::log;
 
-use crate::beaver::SharedValueSource;
-
 use super::{result::OpResult, FabricInner};
 
 /// Error dequeuing a result from the queue
 const ERR_DEQUEUE: &str = "error dequeuing result";
 
-pub(super) struct Executor<S: SharedValueSource> {
+pub(super) struct Executor {
     /// The receiver on the result queue, where operation results are first materialized
     /// so that their dependents may be evaluated
     result_queue: TokioReceiver<OpResult>,
@@ -22,16 +20,16 @@ pub(super) struct Executor<S: SharedValueSource> {
     /// recursive evaluation
     result_sender: TokioSender<OpResult>,
     /// The underlying fabric that the executor is a part of
-    fabric: FabricInner<S>,
+    fabric: FabricInner,
     /// The channel on which the fabric may send a shutdown signal
     shutdown: BroadcastReceiver<()>,
 }
 
-impl<S: SharedValueSource> Executor<S> {
+impl Executor {
     pub fn new(
         result_queue: TokioReceiver<OpResult>,
         result_sender: TokioSender<OpResult>,
-        fabric: FabricInner<S>,
+        fabric: FabricInner,
         shutdown: BroadcastReceiver<()>,
     ) -> Self {
         Self {
@@ -77,8 +75,9 @@ impl<S: SharedValueSource> Executor<S> {
 
         // Get the operation's dependencies
         for operation_id in locked_deps.remove(&id).unwrap_or_default() {
-            // Decrement the operation's in-flight args count
-            let operation = locked_operations.get_mut(&operation_id).unwrap();
+            // Decrement the operation's in-flight args count, take ownership of the operation
+            // so that we may consume the `FnOnce` callback if the args are ready
+            let operation = locked_operations.remove(&operation_id).unwrap();
             let prev_num_args = operation.inflight_args.fetch_sub(1, Ordering::Relaxed);
 
             if prev_num_args == 1 {
@@ -91,9 +90,6 @@ impl<S: SharedValueSource> Executor<S> {
 
                 let output = (operation.function)(inputs);
 
-                // Remove the operation from the set of in-flights
-                locked_operations.remove(&operation_id);
-
                 // Re-enqueue the result for processing
                 self.result_sender
                     .send(OpResult {
@@ -101,6 +97,8 @@ impl<S: SharedValueSource> Executor<S> {
                         value: output,
                     })
                     .expect("error re-enqueuing result");
+            } else {
+                locked_operations.insert(operation_id, operation);
             }
         }
 

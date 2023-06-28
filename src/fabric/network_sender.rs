@@ -45,7 +45,7 @@ impl NetworkSender {
         result_queue: TokioSender<OpResult>,
         network: QuicTwoPartyNet,
         shutdown: BroadcastReceiver<()>,
-    ) -> NetworkSender {
+    ) -> Self {
         NetworkSender {
             outbound,
             result_queue,
@@ -104,7 +104,7 @@ impl NetworkSender {
         self.result_queue
             .send(OpResult {
                 id: message.op_id,
-                value: message.payload,
+                value: message.payload.into(),
             })
             .map_err(|_| MpcNetworkError::SendError(ERR_SEND_FAILURE.to_string()))
     }

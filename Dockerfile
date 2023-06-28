@@ -1,5 +1,5 @@
 # Used for running integration tests on a simulated MPC network
-FROM rust:1.63-slim-buster AS builder
+FROM rust:1.65-slim-buster AS builder
 
 WORKDIR /build
 # Place a set of dummy sources in the path, build the dummy executable
