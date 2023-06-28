@@ -1,7 +1,7 @@
 //! Defines the `Scalar` type of the Starknet field
 
 use ark_ec::{
-    short_weierstrass::{Affine, SWCurveConfig},
+    short_weierstrass::{Affine, Projective, SWCurveConfig},
     CurveConfig,
 };
 use ark_ff::{
@@ -46,6 +46,9 @@ pub type StarknetBaseFelt = Fp256<MontBackend<StarknetFqConfig, 4>>;
 pub struct StarknetFrConfig;
 pub type Scalar = Fp256<MontBackend<StarknetFrConfig, 4>>;
 
+/// A type alias for a projective curve point on the Stark curve
+pub type StarkPoint = Projective<StarknetCurveConfig>;
+
 /// The Stark curve in the arkworks short Weierstrass curve representation
 pub struct StarknetCurveConfig;
 impl CurveConfig for StarknetCurveConfig {
@@ -78,95 +81,15 @@ impl SWCurveConfig for StarknetCurveConfig {
 ///     https://github.com/xJonathanLEI/starknet-rs
 #[cfg(test)]
 mod test {
-    use ark_ec::{short_weierstrass::Projective, CurveGroup};
-    use ark_ff::PrimeField;
-    use num_bigint::BigUint;
-    use starknet::core::types::FieldElement as StarknetFelt;
-    use starknet_curve::{curve_params::GENERATOR, AffinePoint, ProjectivePoint};
+    use ark_ec::short_weierstrass::Projective;
+    use starknet_curve::{curve_params::GENERATOR, ProjectivePoint};
+
+    use crate::algebra::test_helper::{
+        arkworks_point_to_starknet, compare_points, random_point, random_scalar,
+        scalar_to_starknet_felt, starknet_rs_scalar_mul,
+    };
 
     use super::*;
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Generate a random scalar
-    fn random_scalar() -> Scalar {
-        let bytes: [u8; 32] = rand::random();
-        Scalar::from_be_bytes_mod_order(&bytes)
-    }
-
-    /// Generate a random point, by multiplying the basepoint with a random scalar
-    fn random_point() -> Projective<StarknetCurveConfig> {
-        let scalar = random_scalar();
-        let point = StarknetCurveConfig::GENERATOR * scalar;
-        point * scalar
-    }
-
-    /// Convert a starknet felt to a BigUint
-    fn starknet_felt_to_biguint(felt: &StarknetFelt) -> BigUint {
-        BigUint::from_bytes_be(&felt.to_bytes_be())
-    }
-
-    /// Convert a `BigUint` to a starknet felt
-    fn biguint_to_starknet_felt(biguint: &BigUint) -> StarknetFelt {
-        let bytes = biguint.to_bytes_be();
-        StarknetFelt::from_bytes_be(&bytes.try_into().unwrap()).unwrap()
-    }
-
-    /// Convert a `Scalar` to a `StarknetFelt`
-    fn scalar_to_starknet_felt<F: PrimeField>(scalar: &F) -> StarknetFelt {
-        biguint_to_starknet_felt(&scalar_to_biguint(scalar))
-    }
-
-    /// Convert a point in the arkworks representation to a point in the starknet representation
-    fn arkworks_point_to_starknet(point: &Projective<StarknetCurveConfig>) -> ProjectivePoint {
-        let affine = point.into_affine();
-        let x = scalar_to_starknet_felt(&affine.x);
-        let y = scalar_to_starknet_felt(&affine.y);
-
-        ProjectivePoint::from_affine_point(&AffinePoint {
-            x,
-            y,
-            infinity: false,
-        })
-    }
-
-    /// Multiply a point in the starknet-rs `ProjectivePoint` representation with a scalar
-    ///
-    /// Multiplication is only implemented for a point and `&[bool]`, so this method essentially
-    /// provides the bit decomposition  
-    fn starknet_rs_scalar_mul(scalar: &StarknetFelt, point: &ProjectivePoint) -> ProjectivePoint {
-        let bits = scalar.to_bits_le();
-        point * &bits
-    }
-
-    /// Compare scalars from the two curve implementations
-    fn compare_scalars<F: PrimeField>(s1: &F, s2: &StarknetFelt) -> bool {
-        let s1_biguint = scalar_to_biguint(s1);
-        let s2_biguint = starknet_felt_to_biguint(s2);
-
-        s1_biguint == s2_biguint
-    }
-
-    /// Compare curve points between the two implementation
-    fn compare_points(p1: &Projective<StarknetCurveConfig>, p2: &ProjectivePoint) -> bool {
-        // Convert the points to affine coordinates
-        let p1_affine = p1.into_affine();
-        let x_1 = p1_affine.x;
-        let y_1 = p1_affine.y;
-
-        let z_inv = p2.z.invert().unwrap();
-        let x_2 = p2.x * z_inv;
-        let y_2 = p2.y * z_inv;
-
-        compare_scalars(&x_1, &x_2) && compare_scalars(&y_1, &y_2)
-    }
-
-    // ---------
-    // | Tests |
-    // ---------
-
     /// Test that the generators are the same between the two curve representations
     #[test]
     fn test_generators() {

@@ -1,8 +1,9 @@
 //! Defines the Beaver value generation interface
 //! as well as a dummy beaver interface for testing
 
-use curve25519_dalek::scalar::Scalar;
 use itertools::Itertools;
+
+use crate::algebra::stark_curve::Scalar;
 
 /// SharedValueSource implements both the functionality for:
 ///     1. Single additively shared values [x] where party 1 holds
@@ -59,18 +60,18 @@ impl DummySharedScalarSource {
 #[cfg(test)]
 impl SharedValueSource for DummySharedScalarSource {
     fn next_shared_bit(&mut self) -> Scalar {
-        Scalar::one()
+        Scalar::from(1)
     }
 
     fn next_shared_value(&mut self) -> Scalar {
-        Scalar::one()
+        Scalar::from(1)
     }
 
     fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (Scalar::one(), Scalar::one())
+        (Scalar::from(1), Scalar::from(1))
     }
 
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
-        (Scalar::one(), Scalar::one(), Scalar::one())
+        (Scalar::from(1), Scalar::from(1), Scalar::from(1))
     }
 }

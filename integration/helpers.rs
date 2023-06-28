@@ -1,7 +1,6 @@
 //! Defines testing mocks
 
-use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::beaver::SharedValueSource;
+use mpc_ristretto::{algebra::stark_curve::Scalar, beaver::SharedValueSource};
 
 // -----------
 // | Helpers |
@@ -51,7 +50,7 @@ impl SharedValueSource for PartyIDBeaverSource {
     }
 
     fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (Scalar::one(), Scalar::one())
+        (Scalar::from(1), Scalar::from(1))
     }
 
     fn next_shared_value(&mut self) -> Scalar {

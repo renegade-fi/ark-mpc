@@ -1,7 +1,8 @@
 //! Defines tests for the fabric directly
 
-use curve25519_dalek::scalar::Scalar;
-use mpc_ristretto::{fabric::ResultValue, network::PartyId, PARTY0, PARTY1};
+use mpc_ristretto::{
+    algebra::stark_curve::Scalar, fabric::ResultValue, network::PartyId, PARTY0, PARTY1,
+};
 use tokio::runtime::Handle;
 
 use crate::{helpers::assert_scalars_eq, DefaultResHandle, IntegrationTest, IntegrationTestArgs};
@@ -38,13 +39,13 @@ fn test_fabric_share_value(test_args: &IntegrationTestArgs) -> Result<(), String
     let party0_value = send_receive_scalar(my_party_id, PARTY0, test_args);
     let party0_res = Handle::current().block_on(party0_value);
 
-    assert_scalars_eq(party0_res, Scalar::zero())?;
+    assert_scalars_eq(party0_res, Scalar::from(0))?;
 
     // Party 1
     let party1_value = send_receive_scalar(my_party_id, PARTY1, test_args);
     let party1_res = Handle::current().block_on(party1_value);
 
-    assert_scalars_eq(party1_res, Scalar::one())
+    assert_scalars_eq(party1_res, Scalar::from(1))
 }
 
 inventory::submit!(IntegrationTest {

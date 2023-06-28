@@ -21,15 +21,15 @@ harness = false
 
 [dependencies]
 # == Async == #
-ark-ec = "0.4"
-ark-ff = "0.4"
 async-std = "1.12"
 async-trait = "0.1"
 futures = "0.3"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 
 # == Arithemtic + Crypto == #
-curve25519-dalek = { version = "2", features = ["serde"] }
+ark-ec = "0.4"
+ark-ff = "0.4"
+ark-serialize = "0.4"
 digest = "0.10"
 num-bigint = "0.4"
 rand_core = "0.5.1"

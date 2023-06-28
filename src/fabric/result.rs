@@ -8,11 +8,13 @@ use std::{
     task::{Context, Poll},
 };
 
-use curve25519_dalek::{ristretto::RistrettoPoint, scalar::Scalar};
 use futures::Future;
 use serde::{Deserialize, Serialize};
 
-use crate::beaver::SharedValueSource;
+use crate::{
+    algebra::stark_curve::{Scalar, StarkPoint},
+    beaver::SharedValueSource,
+};
 
 use super::FabricInner;
 
@@ -34,9 +36,17 @@ pub enum ResultValue {
     /// A byte value
     Bytes(Vec<u8>),
     /// A scalar value
+    #[serde(
+        serialize_with = "crate::algebra::serialize_scalar",
+        deserialize_with = "crate::algebra::deserialize_scalar"
+    )]
     Scalar(Scalar),
     /// A point on the curve
-    Point(RistrettoPoint),
+    #[serde(
+        serialize_with = "crate::algebra::serialize_point",
+        deserialize_with = "crate::algebra::deserialize_point"
+    )]
+    Point(StarkPoint),
 }
 
 // -- Coercive Casts to Concrete Types -- //
@@ -58,7 +68,7 @@ impl From<ResultValue> for Scalar {
     }
 }
 
-impl From<ResultValue> for RistrettoPoint {
+impl From<ResultValue> for StarkPoint {
     fn from(value: ResultValue) -> Self {
         match value {
             ResultValue::Point(point) => point,

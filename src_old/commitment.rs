@@ -1,14 +1,10 @@
 //! Pedersen commitment implementation, borrowed from
 //! https://github.com/dalek-cryptography/bulletproofs/blob/main/src/generators.rs#L29
 
-use curve25519_dalek::{
-    constants::{RISTRETTO_BASEPOINT_COMPRESSED, RISTRETTO_BASEPOINT_POINT},
-    ristretto::RistrettoPoint,
-    scalar::Scalar,
-    traits::MultiscalarMul,
-};
 use rand_core::{OsRng, RngCore};
 use sha3::{Digest, Sha3_512};
+
+use crate::algebra::stark_curve::{Scalar, StarkPoint};
 
 /// Implementation of a Pedersen commitment scheme, modified from:
 /// https://github.com/dalek-cryptography/bulletproofs/blob/main/src/generators.rs#L29
@@ -16,15 +12,15 @@ use sha3::{Digest, Sha3_512};
 #[derive(Copy, Clone)]
 pub(crate) struct PedersenGens {
     /// Base for the committed value
-    pub B: RistrettoPoint,
+    pub B: StarkPoint,
     /// Base for the blinding factor
-    pub B_blinding: RistrettoPoint,
+    pub B_blinding: StarkPoint,
 }
 
 impl PedersenGens {
     /// Creates a Pedersen commitment using the value scalar and a blinding factor.
-    pub fn commit(&self, value: Scalar, blinding: Scalar) -> RistrettoPoint {
-        RistrettoPoint::multiscalar_mul(&[value, blinding], &[self.B, self.B_blinding])
+    pub fn commit(&self, value: Scalar, blinding: Scalar) -> StarkPoint {
+        StarkPoint::multiscalar_mul(&[value, blinding], &[self.B, self.B_blinding])
     }
 }
 
