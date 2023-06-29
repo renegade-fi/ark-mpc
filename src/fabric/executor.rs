@@ -16,6 +16,8 @@ use super::{Operation, OperationType, ResultId, ResultValue};
 /// Error dequeuing a result from the queue
 const ERR_DEQUEUE: &str = "error dequeuing result";
 
+/// The executor is responsible for executing operation that are ready for execution, etiher
+/// passed explicitly by the fabric or as a result of a dependency being satisfied
 pub(super) struct Executor {
     /// The receiver on the result queue, where operation results are first materialized
     /// so that their dependents may be evaluated
@@ -42,6 +44,7 @@ pub(crate) enum ExecutorMessage {
 }
 
 impl Executor {
+    /// Constructor
     pub fn new(
         result_queue: TokioReceiver<ExecutorMessage>,
         result_sender: TokioSender<ExecutorMessage>,
@@ -56,6 +59,7 @@ impl Executor {
         }
     }
 
+    /// Run the executor until a shutdown message is received
     pub async fn run(mut self) {
         loop {
             tokio::select! {

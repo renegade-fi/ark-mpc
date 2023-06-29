@@ -134,6 +134,7 @@ impl From<ResultValue> for MpcScalar {
 ///
 /// This allows for construction of the graph concurrently with execution, giving the
 /// fabric the opportunity to schedule all results onto the network optimistically
+#[derive(Clone)]
 pub struct ResultHandle<T: From<ResultValue>> {
     /// The id of the result
     pub(crate) id: ResultId,

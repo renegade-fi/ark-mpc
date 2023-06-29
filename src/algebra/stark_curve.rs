@@ -32,22 +32,24 @@ pub fn biguint_to_scalar<F: PrimeField>(biguint: num_bigint::BigUint) -> F {
 // | Curve and Scalar Definition |
 // -------------------------------
 
-/// The finite field that the Starknet curve is defined over
+/// The config for finite field that the Starknet curve is defined over
 #[derive(MontConfig)]
 #[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
 #[generator = "3"]
 pub struct StarknetFqConfig;
+/// The finite field that the Starknet curve is defined over
 pub type StarknetBaseFelt = Fp256<MontBackend<StarknetFqConfig, 4>>;
 
+/// The config for the scalar field of the Starknet curve
+#[derive(MontConfig)]
+#[modulus = "3618502788666131213697322783095070105526743751716087489154079457884512865583"]
+#[generator = "3"]
+pub struct StarknetFrConfig;
 /// The finite field representing the curve group of the Starknet curve
 ///
 /// Note that this is not the field that the curve is defined over, but field of integers modulo
 /// the order of the curve's group, see [here](https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve)
 /// for more information
-#[derive(MontConfig)]
-#[modulus = "3618502788666131213697322783095070105526743751716087489154079457884512865583"]
-#[generator = "3"]
-pub struct StarknetFrConfig;
 pub type Scalar = Fp256<MontBackend<StarknetFrConfig, 4>>;
 
 /// A type alias for a projective curve point on the Stark curve

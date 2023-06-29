@@ -1,13 +1,4 @@
-use std::{
-    borrow::Borrow,
-    cell::{RefCell, RefMut},
-    io::Write,
-    net::SocketAddr,
-    process::exit,
-    rc::Rc,
-    thread,
-    time::Duration,
-};
+use std::{borrow::Borrow, io::Write, net::SocketAddr, process::exit, thread, time::Duration};
 
 use clap::Parser;
 use colored::Colorize;
@@ -17,12 +8,14 @@ use helpers::PartyIDBeaverSource;
 use mpc_ristretto::{
     fabric::MpcFabric,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
+    PARTY0,
 };
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
-use tracing::log::LevelFilter;
+use tracing::log::{self, LevelFilter};
 
 mod fabric;
 mod helpers;
+mod mpc_scalar;
 
 /// The amount of time to sleep after sending a shutdown
 const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
@@ -162,6 +155,10 @@ fn main() {
             all_success &= validate_success(res, args.party);
         }
 
+        if test_args.party_id == PARTY0 {
+            log::info!("Tearing down fabric...");
+        }
+
         thread::sleep(Duration::from_millis(SHUTDOWN_TIMEOUT_MS));
         fabric.shutdown();
         all_success
@@ -172,7 +169,7 @@ fn main() {
 
     if all_success {
         if args_clone.party == 0 {
-            println!("\n{}", "Integration tests successful!".green(),);
+            log::info!("{}", "Integration tests successful!".green(),);
         }
 
         exit(0);

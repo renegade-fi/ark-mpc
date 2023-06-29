@@ -1,9 +1,10 @@
 //! Defines testing mocks
 
 use mpc_ristretto::{
-    algebra::stark_curve::Scalar,
+    algebra::{mpc_scalar::MpcScalarResult, stark_curve::Scalar},
     beaver::SharedValueSource,
-    fabric::{ResultHandle, ResultValue},
+    fabric::{MpcFabric, ResultHandle, ResultValue},
+    network::{NetworkPayload, PartyId},
     random_scalar,
 };
 use tokio::runtime::Handle;
@@ -11,6 +12,8 @@ use tokio::runtime::Handle;
 // -----------
 // | Helpers |
 // -----------
+
+use crate::IntegrationTestArgs;
 
 /// Compares two scalars, returning a result that can be propagated up an integration test
 /// stack in the case that the scalars are not equal
@@ -31,6 +34,38 @@ pub(crate) fn create_secret_shares(a: Scalar) -> (Scalar, Scalar) {
 /// Await a result in the computation graph by blocking the current task
 pub(crate) fn await_result<T: From<ResultValue>>(res: ResultHandle<T>) -> T {
     Handle::current().block_on(res)
+}
+
+/// Send or receive a value from the given party
+pub(crate) fn share_scalar(
+    value: Scalar,
+    sender: PartyId,
+    test_args: &IntegrationTestArgs,
+) -> MpcScalarResult {
+    let scalar = if test_args.party_id == sender {
+        let (my_share, their_share) = create_secret_shares(value);
+        test_args.fabric.allocate_shared_value(
+            ResultValue::Scalar(my_share),
+            ResultValue::Scalar(their_share),
+        )
+    } else {
+        test_args.fabric.receive_value()
+    };
+
+    MpcScalarResult::new_shared(scalar, test_args.fabric.clone())
+}
+
+/// Share a value with the counterparty by sender ID, the sender sends and the receiver receives
+pub(crate) fn share_plaintext_value<T: From<ResultValue> + Into<NetworkPayload>>(
+    value: ResultHandle<T>,
+    sender: PartyId,
+    fabric: &MpcFabric,
+) -> ResultHandle<T> {
+    if fabric.party_id() == sender {
+        fabric.send_value(value)
+    } else {
+        fabric.receive_value()
+    }
 }
 
 // ---------

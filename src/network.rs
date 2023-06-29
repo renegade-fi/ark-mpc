@@ -16,8 +16,9 @@ use crate::{
     PARTY0,
 };
 
+/// A type alias of the id of a party in an MPC for readability
 pub type PartyId = u64;
-
+/// The number of bytes in a u64
 const BYTES_PER_U64: usize = 8;
 
 /// Error message emitted when reading a message length from the stream fails
@@ -55,6 +56,24 @@ pub enum NetworkPayload {
     Point(StarkPoint),
 }
 
+impl From<Vec<u8>> for NetworkPayload {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::Bytes(bytes)
+    }
+}
+
+impl From<Scalar> for NetworkPayload {
+    fn from(scalar: Scalar) -> Self {
+        Self::Scalar(scalar)
+    }
+}
+
+impl From<StarkPoint> for NetworkPayload {
+    fn from(point: StarkPoint) -> Self {
+        Self::Point(point)
+    }
+}
+
 /// The `MpcNetwork` trait defines shared functionality for a network implementing a
 /// connection between two parties in a 2PC
 ///
@@ -84,7 +103,9 @@ pub trait MpcNetwork: Send {
 /// The order in which the local party should read when exchanging values
 #[derive(Clone, Debug)]
 pub enum ReadWriteOrder {
+    /// The local party reads before writing in a swap operation
     ReadFirst,
+    /// The local party writes before reading in a swap operation
     WriteFirst,
 }
 
@@ -107,6 +128,7 @@ pub struct QuicTwoPartyNet {
 
 #[allow(clippy::redundant_closure)] // For readability of error handling
 impl<'a> QuicTwoPartyNet {
+    /// Create a new network, do not connect the network yet
     pub fn new(party_id: PartyId, local_addr: SocketAddr, peer_addr: SocketAddr) -> Self {
         // Construct the QUIC net
         Self {

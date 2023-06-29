@@ -1,7 +1,7 @@
 //! Defines an unauthenticated shared scalar type which forms the basis of the
 //! authenticated scalar type
 
-use std::ops::{Add, Sub};
+use std::ops::{Add, Neg, Sub};
 
 use crate::{
     fabric::{cast_args, MpcFabric, ResultHandle, ResultValue},
@@ -87,16 +87,22 @@ impl MpcScalarResult {
 impl Add<&Scalar> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
+    // Only party 0 adds the plaintext value as we do not secret share it
     fn add(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             // Cast the args
             let [lhs]: [MpcScalar; 1] = cast_args(args);
-            ResultValue::MpcScalar(MpcScalar {
-                value: lhs.value + rhs,
-                visibility: lhs.visibility,
-                fabric: lhs.fabric,
-            })
+
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcScalar(MpcScalar {
+                    value: lhs.value + rhs,
+                    visibility: lhs.visibility,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcScalar(lhs)
+            }
         })
     }
 }
@@ -122,16 +128,22 @@ impl Add<&MpcScalarResult> for &MpcScalarResult {
 impl Sub<&Scalar> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
+    // Only party 0 subtracts the plaintext value as we do not secret share it
     fn sub(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             // Cast the args
             let [lhs]: [MpcScalar; 1] = cast_args(args);
-            ResultValue::MpcScalar(MpcScalar {
-                value: lhs.value - rhs,
-                visibility: lhs.visibility,
-                fabric: lhs.fabric,
-            })
+
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcScalar(MpcScalar {
+                    value: lhs.value - rhs,
+                    visibility: lhs.visibility,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcScalar(lhs)
+            }
         })
     }
 }
@@ -147,6 +159,22 @@ impl Sub<&MpcScalarResult> for &MpcScalarResult {
                 value: lhs.value - rhs.value,
                 visibility: Visibility::min_visibility_two(&lhs, &rhs),
                 fabric: lhs.fabric.clone(),
+            })
+        })
+    }
+}
+
+impl Neg for &MpcScalarResult {
+    type Output = MpcScalarResult;
+
+    fn neg(self) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id], |args| {
+            // Cast the args
+            let [lhs]: [MpcScalar; 1] = cast_args(args);
+            ResultValue::MpcScalar(MpcScalar {
+                value: -lhs.value,
+                visibility: lhs.visibility,
+                fabric: lhs.fabric,
             })
         })
     }

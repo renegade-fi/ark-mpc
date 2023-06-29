@@ -313,6 +313,17 @@ impl MpcFabric {
         ResultHandle::new(id, self.clone())
     }
 
+    /// Send a value to the peer, placing the identity in the local result buffer at the send ID
+    pub fn send_value<T: From<ResultValue> + Into<NetworkPayload>>(
+        &self,
+        value: ResultHandle<T>,
+    ) -> ResultHandle<T> {
+        self.new_network_op(vec![value.id], |args| {
+            let [value]: [T; 1] = cast_args(args);
+            value.into()
+        })
+    }
+
     /// Receive a value from the peer
     pub fn receive_value<T: From<ResultValue>>(&self) -> ResultHandle<T> {
         let id = self.inner.receive_value();

@@ -1,3 +1,10 @@
+#![deny(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+
+//! Defines an MPC implementation over the Stark curve that allows for out-of-order execution of
+//! the underlying MPC circuit
+
 use std::{
     cell::RefCell,
     cmp::Ordering,
@@ -47,11 +54,13 @@ type Shared<T> = Arc<RwLock<T>>;
 /// while providing interior mutability
 #[allow(type_alias_bounds)]
 pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
+/// A type alias for a shared, mutable reference to an underlying beaver source
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource> = Rc<RefCell<S>>;
 
 /// A wrapper trait that allows for implementing generic comparisons
 pub trait Visible {
+    /// Returns the visibility of the underlying value
     fn visibility(&self) -> Visibility;
 }
 

@@ -8,6 +8,7 @@ use rustls::client::{ServerCertVerified, ServerCertVerifier};
 pub(crate) struct PassThroughCertVerifier;
 
 impl PassThroughCertVerifier {
+    /// Create a new dummy verifier
     pub fn new() -> Self {
         Self
     }
