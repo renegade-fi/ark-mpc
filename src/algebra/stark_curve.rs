@@ -1,5 +1,7 @@
 //! Defines the `Scalar` type of the Starknet field
 
+use std::ops::{Add, Mul, Neg, Sub};
+
 use ark_ec::{
     short_weierstrass::{Affine, Projective, SWCurveConfig},
     CurveConfig,
@@ -8,6 +10,8 @@ use ark_ff::{
     fields::{Fp256, MontBackend, MontConfig},
     MontFp, PrimeField,
 };
+
+use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
 // -----------
 // | Helpers |
@@ -71,6 +75,57 @@ impl SWCurveConfig for StarknetCurveConfig {
         y: MontFp!("152666792071518830868575557812948353041420400780739481342941381225525861407"),
         infinity: false,
     };
+}
+
+// -----------------------------
+// | Circuit Result Definition |
+// -----------------------------
+
+/// A type alias for a result that resolves to a `Scalar`
+pub type ScalarResult = ResultHandle<Scalar>;
+
+impl Add<&ScalarResult> for &ScalarResult {
+    type Output = ScalarResult;
+
+    fn add(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
+            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
+            ResultValue::Scalar(lhs + rhs)
+        })
+    }
+}
+
+impl Sub<&ScalarResult> for &ScalarResult {
+    type Output = ScalarResult;
+
+    fn sub(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
+            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
+            ResultValue::Scalar(lhs - rhs)
+        })
+    }
+}
+
+impl Mul<&ScalarResult> for &ScalarResult {
+    type Output = ScalarResult;
+
+    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
+            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
+            ResultValue::Scalar(lhs * rhs)
+        })
+    }
+}
+
+impl Neg for &ScalarResult {
+    type Output = ScalarResult;
+
+    fn neg(self) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id], |args| {
+            let [lhs]: [Scalar; 1] = cast_args(args);
+            ResultValue::Scalar(-lhs)
+        })
+    }
 }
 
 // ---------

@@ -31,14 +31,7 @@ const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
 #[derive(Clone, Debug)]
 struct IntegrationTestArgs {
     party_id: u64,
-    fabric: Rc<RefCell<MpcFabric>>,
-}
-
-impl IntegrationTestArgs {
-    /// Borrow the fabric mutably
-    fn get_fabric_mut(&self) -> RefMut<MpcFabric> {
-        self.fabric.borrow_mut()
-    }
+    fabric: MpcFabric,
 }
 
 /// Integration test format
@@ -149,7 +142,7 @@ fn main() {
 
         let test_args = IntegrationTestArgs {
             party_id: args.party,
-            fabric: Rc::new(RefCell::new(fabric.clone())),
+            fabric: fabric.clone(),
         };
         let mut all_success = true;
 

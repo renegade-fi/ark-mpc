@@ -1,6 +1,12 @@
 //! Defines testing mocks
 
-use mpc_ristretto::{algebra::stark_curve::Scalar, beaver::SharedValueSource};
+use mpc_ristretto::{
+    algebra::stark_curve::Scalar,
+    beaver::SharedValueSource,
+    fabric::{ResultHandle, ResultValue},
+    random_scalar,
+};
+use tokio::runtime::Handle;
 
 // -----------
 // | Helpers |
@@ -14,6 +20,17 @@ pub(crate) fn assert_scalars_eq(a: Scalar, b: Scalar) -> Result<(), String> {
     } else {
         Err(format!("{a:?} != {b:?}"))
     }
+}
+
+/// Construct two secret shares of a given value
+pub(crate) fn create_secret_shares(a: Scalar) -> (Scalar, Scalar) {
+    let random = random_scalar();
+    (a - random, random)
+}
+
+/// Await a result in the computation graph by blocking the current task
+pub(crate) fn await_result<T: From<ResultValue>>(res: ResultHandle<T>) -> T {
+    Handle::current().block_on(res)
 }
 
 // ---------

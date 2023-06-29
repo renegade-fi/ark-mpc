@@ -144,16 +144,58 @@ impl FabricInner {
     // ------------------------
 
     /// Allocate a new plaintext value in the fabric
-    pub(crate) fn new_value(&self, value: ResultValue) -> ResultId {
+    pub(crate) fn allocate_value(&self, value: ResultValue) -> ResultId {
         // Acquire locks
         let mut locked_results = self.results.write().expect("results poisoned");
 
         // Update fabric state
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = self.new_id();
         locked_results.insert(id, OpResult { id, value });
 
         id
     }
+
+    /// Allocate a secret shared value in the network
+    pub(crate) fn allocate_shared_value(
+        &self,
+        my_share: ResultValue,
+        their_share: ResultValue,
+    ) -> ResultId {
+        // Acquire locks
+        let mut locked_results = self.results.write().expect("results poisoned");
+
+        // Add my share to the results
+        let id = self.new_id();
+        locked_results.insert(
+            id,
+            OpResult {
+                id,
+                value: my_share,
+            },
+        );
+
+        // Send the counterparty their share
+        if let Err(e) = self.outbound_queue.send(NetworkOutbound {
+            op_id: id,
+            payload: their_share.into(),
+        }) {
+            log::error!("error sending share to counterparty: {e:?}");
+        }
+
+        id
+    }
+
+    /// Receive a value from a network operation initiated by a peer
+    ///
+    /// The peer will already send the value with the corresponding ID, so all that is needed
+    /// is to allocate a slot in the result buffer for the receipt
+    pub(crate) fn receive_value(&self) -> ResultId {
+        self.new_id()
+    }
+
+    // --------------
+    // | Operations |
+    // --------------
 
     /// Allocate a new in-flight gate operation in the fabric
     pub(crate) fn new_op(&self, args: Vec<ResultId>, op_type: OperationType) -> ResultId {
@@ -196,38 +238,6 @@ impl FabricInner {
         }
 
         id
-    }
-
-    // ------------------
-    // | Secret Sharing |
-    // ------------------
-
-    /// Share a value with the counterparty
-    pub(crate) fn share_value(
-        &self,
-        my_value: ResultValue,
-        their_value: NetworkPayload,
-    ) -> ResultId {
-        // Allocate a new value
-        let id = self.new_value(my_value);
-
-        // Send the value to the counterparty
-        if let Err(e) = self.outbound_queue.send(NetworkOutbound {
-            op_id: id,
-            payload: their_value,
-        }) {
-            log::error!("error sending value to counterparty: {e:?}");
-        }
-
-        id
-    }
-
-    /// Receive a value from the counterparty
-    pub(crate) fn receive_value(&self) -> ResultId {
-        // Simply allocate a new result ID, no extra work needs to be done, the
-        // other party will push the value over the stream and the `NetworkSender`
-        // will mark the value as ready once received
-        self.new_id()
     }
 }
 
@@ -283,11 +293,35 @@ impl MpcFabric {
             .expect("error sending shutdown signal");
     }
 
+    // ---------------------
+    // | Direct Allocation |
+    // ---------------------
+
     /// Allocate a new plaintext value in the fabric
-    pub fn new_value<T: From<ResultValue>>(&self, value: ResultValue) -> ResultHandle<T> {
-        let id = self.inner.new_value(value);
+    pub fn allocate_value<T: From<ResultValue>>(&self, value: ResultValue) -> ResultHandle<T> {
+        let id = self.inner.allocate_value(value);
         ResultHandle::new(id, self.clone())
     }
+
+    /// Allocate a shared value in the fabric
+    pub fn allocate_shared_value<T: From<ResultValue>>(
+        &self,
+        my_share: ResultValue,
+        their_share: ResultValue,
+    ) -> ResultHandle<T> {
+        let id = self.inner.allocate_shared_value(my_share, their_share);
+        ResultHandle::new(id, self.clone())
+    }
+
+    /// Receive a value from the peer
+    pub fn receive_value<T: From<ResultValue>>(&self) -> ResultHandle<T> {
+        let id = self.inner.receive_value();
+        ResultHandle::new(id, self.clone())
+    }
+
+    // -------------------
+    // | Gate Definition |
+    // -------------------
 
     /// Construct a new gate operation in the fabric, i.e. one that can be evaluated immediate given
     /// its inputs

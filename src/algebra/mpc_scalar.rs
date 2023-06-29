@@ -5,7 +5,8 @@ use std::ops::{Add, Sub};
 
 use crate::{
     fabric::{cast_args, MpcFabric, ResultHandle, ResultValue},
-    Visibility, Visible,
+    network::NetworkPayload,
+    Visibility, Visible, PARTY0,
 };
 
 use super::stark_curve::Scalar;
@@ -32,23 +33,50 @@ impl Visible for MpcScalar {
     }
 }
 
-impl MpcScalar {
-    /// Creates a new `MpcScalar` from a `Scalar` value
-    ///
-    /// The visibility is assumed private
-    pub fn new(value: Scalar, fabric: MpcFabric) -> MpcScalarResult {
-        let val = Self {
-            value,
-            visibility: Visibility::Private,
-            fabric: fabric.clone(),
-        };
-
-        fabric.new_value(ResultValue::MpcScalar(val))
-    }
-}
-
 /// Defines the result handle type that represents a future result of an `MpcScalar`
 pub type MpcScalarResult = ResultHandle<MpcScalar>;
+impl MpcScalarResult {
+    /// Creates an MPC scalar from a given underlying scalar assumed to be a secret share
+    pub fn new_shared(value: ResultHandle<Scalar>, fabric: MpcFabric) -> ResultHandle<MpcScalar> {
+        let fabric_clone = fabric.clone();
+        fabric.new_gate_op(vec![value.id], move |args| {
+            // Cast the args
+            let [value]: [Scalar; 1] = cast_args(args);
+            ResultValue::MpcScalar(MpcScalar {
+                value,
+                visibility: Visibility::Shared,
+                fabric: fabric_clone,
+            })
+        })
+    }
+
+    /// Open the value; both parties send their shares to the counterparty
+    pub fn open(&self) -> ResultHandle<Scalar> {
+        // Party zero sends first then receives
+        let (val0, val1) = if self.fabric.party_id() == PARTY0 {
+            let party0_value: ResultHandle<Scalar> =
+                self.fabric.new_network_op(vec![self.id], |args| {
+                    let [mpc_value]: [MpcScalar; 1] = cast_args(args);
+                    NetworkPayload::Scalar(mpc_value.value)
+                });
+            let party1_value: ResultHandle<Scalar> = self.fabric.receive_value();
+
+            (party0_value, party1_value)
+        } else {
+            let party0_value: ResultHandle<Scalar> = self.fabric.receive_value();
+            let party1_value: ResultHandle<Scalar> =
+                self.fabric.new_network_op(vec![self.id], |args| {
+                    let [mpc_value]: [MpcScalar; 1] = cast_args(args);
+                    NetworkPayload::Scalar(mpc_value.value)
+                });
+
+            (party0_value, party1_value)
+        };
+
+        // Create the new value by combining the additive shares
+        &val0 + &val1
+    }
+}
 
 // --------------
 // | Arithmetic |
