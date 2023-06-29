@@ -35,19 +35,37 @@ use crate::{
     Shared,
 };
 
-use self::{executor::Executor, network_sender::NetworkSender, result::OpResult};
+use self::{
+    executor::{Executor, ExecutorMessage},
+    network_sender::NetworkSender,
+    result::OpResult,
+};
 
 /// An operation within the network, describes the arguments and function to evaluate
 /// once the arguments are ready
-struct Operation {
+pub(crate) struct Operation {
     /// Identifier of the result that this operation emits
     id: ResultId,
     /// The number of arguments that are still in-flight for this operation
     inflight_args: AtomicUsize,
     /// The IDs of the inputs to this operation
     args: Vec<ResultId>,
-    /// The function to apply to the inputs
-    function: Box<dyn FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync>,
+    /// The type of the operation
+    op_type: OperationType,
+}
+
+/// Defines the different types of operations available in the computation graph
+pub(crate) enum OperationType {
+    /// A gate operation; may be evaluated locally given its ready inputs
+    Gate {
+        /// The function to apply to the inputs
+        function: Box<dyn FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync>,
+    },
+    /// A network operation, requires that a value be sent over the network
+    Network {
+        /// The function to apply to the inputs to derive a Network payload
+        function: Box<dyn FnOnce(Vec<ResultValue>) -> NetworkPayload + Send + Sync>,
+    },
 }
 
 /// A fabric for the MPC protocol, defines a dependency injection layer that dynamically schedules
@@ -82,7 +100,7 @@ pub(crate) struct FabricInner {
     /// A map of operations to wakers of tasks that are waiting on the operation to complete
     wakers: Shared<HashMap<ResultId, Vec<Waker>>>,
     /// A sender to the executor
-    result_queue: TokioSender<OpResult>,
+    execution_queue: TokioSender<ExecutorMessage>,
     /// The underlying queue to the network
     outbound_queue: TokioSender<NetworkOutbound>,
     /// The underlying shared randomness source
@@ -99,7 +117,7 @@ impl FabricInner {
     /// Constructor
     pub fn new<S: 'static + SharedValueSource>(
         party_id: u64,
-        result_queue: TokioSender<OpResult>,
+        execution_queue: TokioSender<ExecutorMessage>,
         outbound_queue: TokioSender<NetworkOutbound>,
         beaver_source: S,
     ) -> Self {
@@ -110,7 +128,7 @@ impl FabricInner {
             operations: Arc::new(RwLock::new(HashMap::new())),
             dependencies: Arc::new(RwLock::new(HashMap::new())),
             wakers: Arc::new(RwLock::new(HashMap::new())),
-            result_queue,
+            execution_queue,
             outbound_queue,
             beaver_source: Arc::new(Box::new(beaver_source)),
         }
@@ -126,7 +144,7 @@ impl FabricInner {
     // ------------------------
 
     /// Allocate a new plaintext value in the fabric
-    pub fn new_value(&self, value: ResultValue) -> ResultId {
+    pub(crate) fn new_value(&self, value: ResultValue) -> ResultId {
         // Acquire locks
         let mut locked_results = self.results.write().expect("results poisoned");
 
@@ -137,11 +155,8 @@ impl FabricInner {
         id
     }
 
-    /// Allocate a new in-flight operation in the network
-    pub fn new_op<F>(&self, args: Vec<ResultId>, function: F) -> ResultId
-    where
-        F: 'static + FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync,
-    {
+    /// Allocate a new in-flight gate operation in the fabric
+    pub(crate) fn new_op(&self, args: Vec<ResultId>, op_type: OperationType) -> ResultId {
         // Acquire all locks
         let locked_results = self.results.read().expect("results poisoned");
         let mut locked_ops = self.operations.write().expect("ops poisoned");
@@ -158,25 +173,25 @@ impl FabricInner {
             .collect_vec();
         let n_inflight = args.len() - inputs.len();
 
-        // If all arguments are already resolved, simply execute the result directly
+        // Create an operation and handle it
+        let op = Operation {
+            id,
+            inflight_args: AtomicUsize::new(n_inflight),
+            args,
+            op_type,
+        };
+
+        // If all arguments are already resolved, forward to the executor for immediate execution
         if n_inflight == 0 {
-            let res = function(inputs);
-            self.result_queue
-                .send(OpResult { id, value: res })
-                .expect("error sending result to executor");
+            self.execution_queue
+                .send(ExecutorMessage::Op(op))
+                .expect("error sending op to executor");
         } else {
             // Update the dependency map
-            for arg in args.iter() {
+            for arg in op.args.iter() {
                 locked_deps.entry(*arg).or_insert_with(Vec::new).push(id);
             }
 
-            // Add the operation to the in-flight list
-            let op = Operation {
-                id,
-                inflight_args: AtomicUsize::new(n_inflight),
-                args,
-                function: Box::new(function),
-            };
             locked_ops.insert(id, op);
         }
 
@@ -188,7 +203,11 @@ impl FabricInner {
     // ------------------
 
     /// Share a value with the counterparty
-    pub fn share_value(&self, my_value: ResultValue, their_value: NetworkPayload) -> ResultId {
+    pub(crate) fn share_value(
+        &self,
+        my_value: ResultValue,
+        their_value: NetworkPayload,
+    ) -> ResultId {
         // Allocate a new value
         let id = self.new_value(my_value);
 
@@ -204,7 +223,7 @@ impl FabricInner {
     }
 
     /// Receive a value from the counterparty
-    pub fn receive_value(&mut self) -> ResultId {
+    pub(crate) fn receive_value(&self) -> ResultId {
         // Simply allocate a new result ID, no extra work needs to be done, the
         // other party will push the value over the stream and the `NetworkSender`
         // will mark the value as ready once received
@@ -270,45 +289,27 @@ impl MpcFabric {
         ResultHandle::new(id, self.clone())
     }
 
-    /// Construct a new operation in the fabric
-    pub fn new_op<F, T: From<ResultValue>>(
-        &self,
-        args: Vec<ResultId>,
-        function: F,
-    ) -> ResultHandle<T>
+    /// Construct a new gate operation in the fabric, i.e. one that can be evaluated immediate given
+    /// its inputs
+    pub fn new_gate_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<T>
     where
         F: 'static + FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync,
         T: From<ResultValue>,
     {
-        let id = self.inner.new_op(args, function);
+        let function = Box::new(function);
+        let id = self.inner.new_op(args, OperationType::Gate { function });
         ResultHandle::new(id, self.clone())
     }
 
-    /// Share a public value with the counterparty
-    ///
-    /// This method should be used for public values, as the value allocated in the result buffer
-    /// for the local party is the same value sent over the network
-    pub fn share_public<T: From<ResultValue>>(&mut self, value: NetworkPayload) -> ResultHandle<T> {
-        let res_id = self.inner.share_value(value.clone().into(), value);
-        ResultHandle::new(res_id, self.clone())
-    }
-
-    /// Share a secret value with the counterparty
-    ///
-    /// This method takes in both the local and counterparty's share so that they me be allocated with
-    /// the same sequence number in the respective result buffers
-    pub fn share_secret<T: From<ResultValue>>(
-        &mut self,
-        my_value: ResultValue,
-        their_value: ResultValue,
-    ) -> ResultHandle<T> {
-        let res_id = self.inner.share_value(my_value, their_value.into());
-        ResultHandle::new(res_id, self.clone())
-    }
-
-    /// Receive a value from the counterparty
-    pub fn receive_value<T: From<ResultValue>>(&mut self) -> ResultHandle<T> {
-        let res_id = self.inner.receive_value();
-        ResultHandle::new(res_id, self.clone())
+    /// Construct a new network operation in the fabric, i.e. one that requires a value to be sent
+    /// over the channel
+    pub fn new_network_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<T>
+    where
+        F: 'static + FnOnce(Vec<ResultValue>) -> NetworkPayload + Send + Sync,
+        T: From<ResultValue>,
+    {
+        let function = Box::new(function);
+        let id = self.inner.new_op(args, OperationType::Network { function });
+        ResultHandle::new(id, self.clone())
     }
 }

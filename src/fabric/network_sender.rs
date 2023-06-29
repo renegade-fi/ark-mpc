@@ -10,6 +10,7 @@ use crate::{
     network::{MpcNetwork, NetworkOutbound, QuicTwoPartyNet},
 };
 
+use super::executor::ExecutorMessage;
 use super::result::OpResult;
 
 // -------------
@@ -31,7 +32,7 @@ pub(crate) struct NetworkSender {
     /// The outbound queue of messages to send
     outbound: TokioReceiver<NetworkOutbound>,
     /// The queue of completed results
-    result_queue: TokioSender<OpResult>,
+    result_queue: TokioSender<ExecutorMessage>,
     /// The underlying network connection
     network: QuicTwoPartyNet,
     /// The broadcast channel on which shutdown signals are sent
@@ -42,7 +43,7 @@ impl NetworkSender {
     /// Creates a new network sender
     pub fn new(
         outbound: TokioReceiver<NetworkOutbound>,
-        result_queue: TokioSender<OpResult>,
+        result_queue: TokioSender<ExecutorMessage>,
         network: QuicTwoPartyNet,
         shutdown: BroadcastReceiver<()>,
     ) -> Self {
@@ -102,10 +103,10 @@ impl NetworkSender {
     /// Handle an inbound message
     async fn handle_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
         self.result_queue
-            .send(OpResult {
+            .send(ExecutorMessage::Result(OpResult {
                 id: message.op_id,
                 value: message.payload.into(),
-            })
+            }))
             .map_err(|_| MpcNetworkError::SendError(ERR_SEND_FAILURE.to_string()))
     }
 }

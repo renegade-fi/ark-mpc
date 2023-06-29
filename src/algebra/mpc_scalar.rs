@@ -61,7 +61,7 @@ impl Add<&Scalar> for &MpcScalarResult {
 
     fn add(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_op(vec![self.id], move |args| {
+        self.fabric.new_gate_op(vec![self.id], move |args| {
             // Cast the args
             let [lhs]: [MpcScalar; 1] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
@@ -77,7 +77,7 @@ impl Add<&MpcScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
     fn add(self, rhs: &MpcScalarResult) -> Self::Output {
-        self.fabric.new_op(vec![self.id, rhs.id], |args| {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
             // Cast the args
             let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
@@ -96,7 +96,7 @@ impl Sub<&Scalar> for &MpcScalarResult {
 
     fn sub(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_op(vec![self.id], move |args| {
+        self.fabric.new_gate_op(vec![self.id], move |args| {
             // Cast the args
             let [lhs]: [MpcScalar; 1] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
@@ -112,7 +112,7 @@ impl Sub<&MpcScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
     fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
-        self.fabric.new_op(vec![self.id, rhs.id], |args| {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
             // Cast the args
             let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
