@@ -1,13 +1,13 @@
 //! Defines tests for the `MpcStarkPoint` type and arithmetic on this type
 
 use mpc_ristretto::{
-    algebra::stark_curve::StarkPoint,
+    algebra::stark_curve::{ScalarResult, StarkPoint, StarkPointResult},
     fabric::{ResultHandle, ResultValue},
-    random_point, PARTY0, PARTY1,
+    random_point, random_scalar, PARTY0, PARTY1,
 };
 
 use crate::{
-    helpers::{assert_points_eq, await_result, share_plaintext_value, share_point},
+    helpers::{assert_points_eq, await_result, share_plaintext_value, share_point, share_scalar},
     IntegrationTest, IntegrationTestArgs,
 };
 
@@ -130,6 +130,71 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(opened_res, expected_result)
 }
 
+/// Test multiplication of an `MpcStarkPoint` type with an `MpcScalar` type
+///
+/// Party 0 chooses the point, party 1 chooses the scalar
+fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let point = random_point();
+    let scalar = random_scalar();
+
+    // Share the values with the counterparty
+    let plaintext_point: StarkPointResult = share_plaintext_value(
+        test_args.fabric.allocate_value(ResultValue::Point(point)),
+        PARTY0,
+        &test_args.fabric,
+    );
+    let plaintext_scalar: ScalarResult = share_plaintext_value(
+        test_args.fabric.allocate_value(ResultValue::Scalar(scalar)),
+        PARTY1,
+        &test_args.fabric,
+    );
+
+    // Multiply the values together to get the plaintext, expected result
+    let expected_result = await_result(plaintext_point) * await_result(plaintext_scalar);
+
+    // Secret share the values and add them together in the MPC circuit
+    let party0_point = share_point(point, PARTY0, test_args);
+    let party1_scalar = share_scalar(scalar, PARTY1, test_args);
+
+    let res = &party0_point * &party1_scalar;
+    let opened_res = await_result(res.open());
+
+    assert_points_eq(opened_res, expected_result)
+}
+
+/// Test multiplication with a public scalar constant
+///
+/// Party 0 chooses the point, party 1 chooses the scalar
+fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let point = random_point();
+    let scalar = random_scalar();
+
+    // Share the values with the counterparty
+    let plaintext_point: StarkPointResult = share_plaintext_value(
+        test_args.fabric.allocate_value(ResultValue::Point(point)),
+        PARTY0,
+        &test_args.fabric,
+    );
+    let plaintext_scalar: ScalarResult = share_plaintext_value(
+        test_args.fabric.allocate_value(ResultValue::Scalar(scalar)),
+        PARTY1,
+        &test_args.fabric,
+    );
+
+    let plaintext_constant = await_result(plaintext_scalar);
+
+    // Multiply the values together to get the plaintext, expected result
+    let expected_result = await_result(plaintext_point) * plaintext_constant;
+
+    // Secret share the values and add them together in the MPC circuit
+    let party0_point = share_point(point, PARTY0, test_args);
+
+    let res = &party0_point * plaintext_constant;
+    let opened_res = await_result(res.open());
+
+    assert_points_eq(opened_res, expected_result)
+}
+
 inventory::submit!(IntegrationTest {
     name: "mpc_stark_point::test_add",
     test_fn: test_add,
@@ -153,4 +218,14 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "mpc_stark_point::test_neg",
     test_fn: test_neg,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "mpc_stark_point::test_mul",
+    test_fn: test_mul,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "mpc_stark_point::test_mul_scalar_constant",
+    test_fn: test_mul_scalar_constant,
 });
