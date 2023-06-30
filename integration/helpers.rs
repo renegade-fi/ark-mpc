@@ -1,11 +1,15 @@
 //! Defines testing mocks
 
 use mpc_ristretto::{
-    algebra::{mpc_scalar::MpcScalarResult, stark_curve::Scalar},
+    algebra::{
+        mpc_scalar::MpcScalarResult,
+        mpc_stark_point::MpcStarkPointResult,
+        stark_curve::{Scalar, StarkPoint},
+    },
     beaver::SharedValueSource,
     fabric::{MpcFabric, ResultHandle, ResultValue},
     network::{NetworkPayload, PartyId},
-    random_scalar,
+    random_point, random_scalar,
 };
 use tokio::runtime::Handle;
 
@@ -25,9 +29,25 @@ pub(crate) fn assert_scalars_eq(a: Scalar, b: Scalar) -> Result<(), String> {
     }
 }
 
-/// Construct two secret shares of a given value
-pub(crate) fn create_secret_shares(a: Scalar) -> (Scalar, Scalar) {
+/// Compares two points, returning a result that can be propagated up an integration test
+/// stack in the case that the points are not equal
+pub(crate) fn assert_points_eq(a: StarkPoint, b: StarkPoint) -> Result<(), String> {
+    if a == b {
+        Ok(())
+    } else {
+        Err(format!("{a:?} != {b:?}"))
+    }
+}
+
+/// Construct two secret shares of a given scalar value
+pub(crate) fn create_scalar_secret_shares(a: Scalar) -> (Scalar, Scalar) {
     let random = random_scalar();
+    (a - random, random)
+}
+
+/// Construct two secret shares of a given point value
+pub(crate) fn create_point_secret_shares(a: StarkPoint) -> (StarkPoint, StarkPoint) {
+    let random = random_point();
     (a - random, random)
 }
 
@@ -36,14 +56,14 @@ pub(crate) fn await_result<T: From<ResultValue>>(res: ResultHandle<T>) -> T {
     Handle::current().block_on(res)
 }
 
-/// Send or receive a value from the given party
+/// Send or receive a secret shared scalar from the given party
 pub(crate) fn share_scalar(
     value: Scalar,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> MpcScalarResult {
     let scalar = if test_args.party_id == sender {
-        let (my_share, their_share) = create_secret_shares(value);
+        let (my_share, their_share) = create_scalar_secret_shares(value);
         test_args.fabric.allocate_shared_value(
             ResultValue::Scalar(my_share),
             ResultValue::Scalar(their_share),
@@ -53,6 +73,25 @@ pub(crate) fn share_scalar(
     };
 
     MpcScalarResult::new_shared(scalar, test_args.fabric.clone())
+}
+
+/// Send or receive a secret shared point from the given party
+pub(crate) fn share_point(
+    value: StarkPoint,
+    sender: PartyId,
+    test_args: &IntegrationTestArgs,
+) -> MpcStarkPointResult {
+    let point = if test_args.party_id == sender {
+        let (my_share, their_share) = create_point_secret_shares(value);
+        test_args.fabric.allocate_shared_value(
+            ResultValue::Point(my_share),
+            ResultValue::Point(their_share),
+        )
+    } else {
+        test_args.fabric.receive_value()
+    };
+
+    MpcStarkPointResult::new_shared(point, test_args.fabric.clone())
 }
 
 /// Share a value with the counterparty by sender ID, the sender sends and the receiver receives

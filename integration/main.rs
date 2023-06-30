@@ -16,6 +16,7 @@ use tracing::log::{self, LevelFilter};
 mod fabric;
 mod helpers;
 mod mpc_scalar;
+mod mpc_stark_point;
 
 /// The amount of time to sleep after sending a shutdown
 const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds

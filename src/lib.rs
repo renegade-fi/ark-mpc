@@ -11,7 +11,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use algebra::stark_curve::Scalar;
+use algebra::stark_curve::{Scalar, StarkPoint};
+use ark_ec::Group;
 use ark_ff::PrimeField;
 use beaver::SharedValueSource;
 
@@ -40,6 +41,12 @@ pub const PARTY1: u64 = 1;
 pub fn random_scalar() -> Scalar {
     let bytes: [u8; 32] = rand::random();
     Scalar::from_be_bytes_mod_order(&bytes)
+}
+
+/// Generate a random curve point by multiplying a random scalar with the
+/// Stark curve group generator
+pub fn random_point() -> StarkPoint {
+    StarkPoint::generator() * random_scalar()
 }
 
 // --------------------

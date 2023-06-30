@@ -78,14 +78,20 @@ impl MpcStarkPointResult {
 impl Add<&StarkPoint> for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
+    // Only party 0 adds the plaintext value to its share
     fn add(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             let [lhs]: [MpcStarkPoint; 1] = cast_args(args);
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value + rhs,
-                fabric: lhs.fabric,
-            })
+
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcStarkPoint(MpcStarkPoint {
+                    value: lhs.value + rhs,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcStarkPoint(lhs)
+            }
         })
     }
 }
@@ -95,15 +101,20 @@ impl_commutative!(MpcStarkPointResult, Add, add, +, StarkPoint);
 impl Add<&StarkPointResult> for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
+    // Only party 0 adds the plaintext value to its share
     fn add(self, rhs: &StarkPointResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
             let lhs: MpcStarkPoint = args.remove(0).into();
             let rhs: StarkPoint = args.remove(0).into();
 
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value + rhs,
-                fabric: lhs.fabric,
-            })
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcStarkPoint(MpcStarkPoint {
+                    value: lhs.value + rhs,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcStarkPoint(lhs)
+            }
         })
     }
 }
@@ -131,14 +142,20 @@ impl_borrow_variants!(MpcStarkPointResult, Add, add, +, MpcStarkPointResult);
 impl Sub<&StarkPoint> for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
+    // Only party 0 subtracts the plaintext value
     fn sub(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             let [lhs]: [MpcStarkPoint; 1] = cast_args(args);
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value - rhs,
-                fabric: lhs.fabric,
-            })
+
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcStarkPoint(MpcStarkPoint {
+                    value: lhs.value - rhs,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcStarkPoint(lhs)
+            }
         })
     }
 }
@@ -152,10 +169,14 @@ impl Sub<&StarkPointResult> for &MpcStarkPointResult {
             let lhs: MpcStarkPoint = args.remove(0).into();
             let rhs: StarkPoint = args.remove(0).into();
 
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value - rhs,
-                fabric: lhs.fabric,
-            })
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcStarkPoint(MpcStarkPoint {
+                    value: lhs.value - rhs,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcStarkPoint(lhs)
+            }
         })
     }
 }
