@@ -10,6 +10,7 @@ use serde::{
 
 use self::stark_curve::{Scalar, StarkPoint};
 
+pub mod macros;
 pub mod mpc_scalar;
 pub mod stark_curve;
 
