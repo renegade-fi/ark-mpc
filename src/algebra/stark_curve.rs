@@ -13,7 +13,7 @@ use ark_ff::{
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
-use super::macros::impl_borrow_variants;
+use super::macros::{impl_borrow_variants, impl_commutative};
 
 // -----------
 // | Helpers |
@@ -174,6 +174,47 @@ impl Neg for &StarkPointResult {
     }
 }
 impl_borrow_variants!(StarkPointResult, Neg, neg, -);
+
+impl Mul<&Scalar> for &StarkPointResult {
+    type Output = StarkPointResult;
+
+    fn mul(self, rhs: &Scalar) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            ResultValue::Point(lhs * rhs)
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Mul, mul, *, Scalar);
+impl_commutative!(StarkPointResult, Mul, mul, *, Scalar);
+
+impl Mul<&ScalarResult> for &StarkPoint {
+    type Output = StarkPointResult;
+
+    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+        let self_owned = *self;
+        rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
+            let [rhs]: [Scalar; 1] = cast_args(args);
+            ResultValue::Point(self_owned * rhs)
+        })
+    }
+}
+
+impl Mul<&ScalarResult> for &StarkPointResult {
+    type Output = StarkPointResult;
+
+    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: StarkPoint = args.remove(0).into();
+            let rhs: Scalar = args.remove(0).into();
+
+            ResultValue::Point(lhs * rhs)
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Mul, mul, *, ScalarResult);
+impl_commutative!(StarkPointResult, Mul, mul, *, ScalarResult);
 
 // ---------
 // | Tests |

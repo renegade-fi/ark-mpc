@@ -11,16 +11,17 @@ use crate::{
 
 use super::{
     macros::{impl_borrow_variants, impl_commutative},
-    stark_curve::{Scalar, ScalarResult},
+    mpc_stark_point::{MpcStarkPoint, MpcStarkPointResult},
+    stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
 };
 
 /// Defines a secret shared type over the `Scalar` field
 #[derive(Clone, Debug)]
 pub struct MpcScalar {
     /// The underlying value held by the local party
-    value: Scalar,
+    pub(crate) value: Scalar,
     /// A reference to the underlying fabric that this value is allocated in
-    fabric: MpcFabric,
+    pub(crate) fabric: MpcFabric,
 }
 
 /// Defines the result handle type that represents a future result of an `MpcScalar`
@@ -280,3 +281,38 @@ impl Mul<&MpcScalarResult> for &MpcScalarResult {
         &d_open * &b + &e_open * &a + c + &d_open * &e_open
     }
 }
+
+impl Mul<&MpcScalarResult> for &StarkPoint {
+    type Output = MpcStarkPointResult;
+
+    fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
+        let self_owned = *self;
+        rhs.fabric.new_gate_op(vec![rhs.id], move |mut args| {
+            let rhs: MpcScalar = args.remove(0).into();
+
+            ResultValue::MpcStarkPoint(MpcStarkPoint {
+                value: self_owned * rhs.value,
+                fabric: rhs.fabric,
+            })
+        })
+    }
+}
+impl_commutative!(StarkPoint, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
+
+impl Mul<&MpcScalarResult> for &StarkPointResult {
+    type Output = MpcStarkPointResult;
+
+    fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: StarkPoint = args.remove(0).into();
+            let rhs: MpcScalar = args.remove(0).into();
+
+            ResultValue::MpcStarkPoint(MpcStarkPoint {
+                value: lhs * rhs.value,
+                fabric: rhs.fabric,
+            })
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
+impl_commutative!(StarkPointResult, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);

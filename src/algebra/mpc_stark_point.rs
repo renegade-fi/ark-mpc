@@ -1,7 +1,9 @@
 //! Defines an unauthenticated shared curve point type which forms the basis
 //! of the authenticated curve point type
 
-use std::ops::{Add, Neg, Sub};
+use std::ops::{Add, Mul, Neg, Sub};
+
+use ark_ec::Group;
 
 use crate::{
     fabric::{cast_args, MpcFabric, ResultHandle, ResultValue},
@@ -11,16 +13,17 @@ use crate::{
 
 use super::{
     macros::{impl_borrow_variants, impl_commutative},
-    stark_curve::{StarkPoint, StarkPointResult},
+    mpc_scalar::MpcScalarResult,
+    stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
 };
 
 /// Defines a secret shared type of a curve point
 #[derive(Clone, Debug)]
 pub struct MpcStarkPoint {
     /// The underlying value held by the local party
-    value: StarkPoint,
+    pub(crate) value: StarkPoint,
     /// A reference to the underlying fabric that this value is allocated in
-    fabric: MpcFabric,
+    pub(crate) fabric: MpcFabric,
 }
 
 /// Defines the result handle type that represents a future result of an `MpcStarkPoint`
@@ -211,5 +214,65 @@ impl Neg for &MpcStarkPointResult {
                 fabric: mpc_val.fabric,
             })
         })
+    }
+}
+impl_borrow_variants!(MpcStarkPointResult, Neg, neg, -);
+
+// === Scalar Multiplication === //
+
+impl Mul<&Scalar> for &MpcStarkPointResult {
+    type Output = MpcStarkPointResult;
+
+    fn mul(self, rhs: &Scalar) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            let [lhs]: [MpcStarkPoint; 1] = cast_args(args);
+
+            ResultValue::MpcStarkPoint(MpcStarkPoint {
+                value: lhs.value * rhs,
+                fabric: lhs.fabric,
+            })
+        })
+    }
+}
+impl_borrow_variants!(MpcStarkPointResult, Mul, mul, *, Scalar);
+impl_commutative!(MpcStarkPointResult, Mul, mul, *, Scalar);
+
+impl Mul<&ScalarResult> for &MpcStarkPointResult {
+    type Output = MpcStarkPointResult;
+
+    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: MpcStarkPoint = args.remove(0).into();
+            let rhs: Scalar = args.remove(0).into();
+
+            ResultValue::MpcStarkPoint(MpcStarkPoint {
+                value: lhs.value * rhs,
+                fabric: lhs.fabric,
+            })
+        })
+    }
+}
+impl_borrow_variants!(MpcStarkPointResult, Mul, mul, *, ScalarResult);
+impl_commutative!(MpcStarkPointResult, Mul, mul, *, ScalarResult);
+
+impl Mul<&MpcScalarResult> for &MpcStarkPointResult {
+    type Output = MpcStarkPointResult;
+
+    // Use the beaver trick as in the scalar case
+    fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
+        let generator = StarkPoint::generator();
+        let (a, b, c) = self.fabric.next_beaver_triple();
+
+        // Open the values d = [rhs - a] and e = [lhs - bG] for curve group generator G
+        let masked_rhs = rhs - &a;
+        let masked_lhs = self - (&generator * &b);
+
+        #[allow(non_snake_case)]
+        let eG_open = masked_lhs.open();
+        let d_open = masked_rhs.open();
+
+        // Identity [a * bG] = deG + d[bG] + [a]eG + [c]G
+        &d_open * &eG_open + &d_open * &(&generator * &b) + &a * eG_open + &c * generator
     }
 }
