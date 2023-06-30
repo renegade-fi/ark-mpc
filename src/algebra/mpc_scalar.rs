@@ -1,15 +1,18 @@
 //! Defines an unauthenticated shared scalar type which forms the basis of the
 //! authenticated scalar type
 
-use std::ops::{Add, Neg, Sub};
+use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::{
     fabric::{cast_args, MpcFabric, ResultHandle, ResultValue},
     network::NetworkPayload,
-    Visibility, Visible, PARTY0,
+    PARTY0,
 };
 
-use super::stark_curve::Scalar;
+use super::{
+    macros::{impl_borrow_variants, impl_commutative},
+    stark_curve::{Scalar, ScalarResult},
+};
 
 /// Defines a secret shared type over th `Scalar` field
 #[derive(Clone, Debug)]
@@ -20,17 +23,8 @@ pub struct MpcScalar {
     /// in the clear. Otherwise this represents a secret share of the
     /// underlying value
     value: Scalar,
-    /// The visibility of the value, this determines whether the value is
-    /// secret shared or not
-    visibility: Visibility,
     /// A reference to the underlying fabric that this value is allocated in
     fabric: MpcFabric,
-}
-
-impl Visible for MpcScalar {
-    fn visibility(&self) -> Visibility {
-        self.visibility
-    }
 }
 
 /// Defines the result handle type that represents a future result of an `MpcScalar`
@@ -44,7 +38,6 @@ impl MpcScalarResult {
             let [value]: [Scalar; 1] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
                 value,
-                visibility: Visibility::Shared,
                 fabric: fabric_clone,
             })
         })
@@ -97,7 +90,6 @@ impl Add<&Scalar> for &MpcScalarResult {
             if lhs.fabric.party_id() == PARTY0 {
                 ResultValue::MpcScalar(MpcScalar {
                     value: lhs.value + rhs,
-                    visibility: lhs.visibility,
                     fabric: lhs.fabric,
                 })
             } else {
@@ -106,6 +98,31 @@ impl Add<&Scalar> for &MpcScalarResult {
         })
     }
 }
+impl_borrow_variants!(MpcScalarResult, Add, add, +, Scalar);
+impl_commutative!(MpcScalarResult, Add, add, +, Scalar);
+
+impl Add<&ScalarResult> for &MpcScalarResult {
+    type Output = MpcScalarResult;
+
+    // Only party 0 adds the plaintext value as we do not secret share it
+    fn add(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], move |args| {
+            // Cast the args
+            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
+
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcScalar(MpcScalar {
+                    value: lhs.value + rhs.value,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcScalar(lhs)
+            }
+        })
+    }
+}
+impl_borrow_variants!(MpcScalarResult, Add, add, +, ScalarResult);
+impl_commutative!(MpcScalarResult, Add, add, +, ScalarResult);
 
 impl Add<&MpcScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
@@ -116,12 +133,12 @@ impl Add<&MpcScalarResult> for &MpcScalarResult {
             let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
                 value: lhs.value + rhs.value,
-                visibility: Visibility::min_visibility_two(&lhs, &rhs),
-                fabric: lhs.fabric.clone(),
+                fabric: lhs.fabric,
             })
         })
     }
 }
+impl_borrow_variants!(MpcScalarResult, Add, add, +, MpcScalarResult);
 
 // === Subtraction === //
 
@@ -138,7 +155,6 @@ impl Sub<&Scalar> for &MpcScalarResult {
             if lhs.fabric.party_id() == PARTY0 {
                 ResultValue::MpcScalar(MpcScalar {
                     value: lhs.value - rhs,
-                    visibility: lhs.visibility,
                     fabric: lhs.fabric,
                 })
             } else {
@@ -147,6 +163,29 @@ impl Sub<&Scalar> for &MpcScalarResult {
         })
     }
 }
+impl_borrow_variants!(MpcScalarResult, Sub, sub, -, Scalar);
+
+impl Sub<&ScalarResult> for &MpcScalarResult {
+    type Output = MpcScalarResult;
+
+    // Only party 0 subtracts the plaintext value as we do not secret share it
+    fn sub(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], move |args| {
+            // Cast the args
+            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
+
+            if lhs.fabric.party_id() == PARTY0 {
+                ResultValue::MpcScalar(MpcScalar {
+                    value: lhs.value - rhs.value,
+                    fabric: lhs.fabric,
+                })
+            } else {
+                ResultValue::MpcScalar(lhs)
+            }
+        })
+    }
+}
+impl_borrow_variants!(MpcScalarResult, Sub, sub, -, ScalarResult);
 
 impl Sub<&MpcScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
@@ -157,12 +196,14 @@ impl Sub<&MpcScalarResult> for &MpcScalarResult {
             let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
                 value: lhs.value - rhs.value,
-                visibility: Visibility::min_visibility_two(&lhs, &rhs),
-                fabric: lhs.fabric.clone(),
+                fabric: lhs.fabric,
             })
         })
     }
 }
+impl_borrow_variants!(MpcScalarResult, Sub, sub, -, MpcScalarResult);
+
+// === Negation === //
 
 impl Neg for &MpcScalarResult {
     type Output = MpcScalarResult;
@@ -173,9 +214,66 @@ impl Neg for &MpcScalarResult {
             let [lhs]: [MpcScalar; 1] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
                 value: -lhs.value,
-                visibility: lhs.visibility,
                 fabric: lhs.fabric,
             })
         })
+    }
+}
+impl_borrow_variants!(MpcScalarResult, Neg, neg, -);
+
+// === Multiplication === //
+
+impl Mul<&Scalar> for &MpcScalarResult {
+    type Output = MpcScalarResult;
+
+    fn mul(self, rhs: &Scalar) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            // Cast the args
+            let [lhs]: [MpcScalar; 1] = cast_args(args);
+            ResultValue::MpcScalar(MpcScalar {
+                value: lhs.value * rhs,
+                fabric: lhs.fabric,
+            })
+        })
+    }
+}
+impl_borrow_variants!(MpcScalarResult, Mul, mul, *, Scalar);
+impl_commutative!(MpcScalarResult, Mul, mul, *, Scalar);
+
+impl Mul<&ScalarResult> for &MpcScalarResult {
+    type Output = MpcScalarResult;
+
+    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], move |args| {
+            // Cast the args
+            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
+            ResultValue::MpcScalar(MpcScalar {
+                value: lhs.value * rhs.value,
+                fabric: lhs.fabric,
+            })
+        })
+    }
+}
+impl_borrow_variants!(MpcScalarResult, Mul, mul, *, ScalarResult);
+impl_commutative!(MpcScalarResult, Mul, mul, *, ScalarResult);
+
+/// Use the beaver trick if both values are shared
+impl Mul<&MpcScalarResult> for &MpcScalarResult {
+    type Output = MpcScalarResult;
+
+    fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
+        // Sample a beaver triplet
+        let (a, b, c) = self.fabric.next_beaver_triple();
+
+        // Open the values d = [lhs - a] and e = [rhs - b]
+        let masked_lhs = self - &a;
+        let masked_rhs = rhs - &b;
+
+        let d_open = masked_lhs.open();
+        let e_open = masked_rhs.open();
+
+        // Identity: [a * b] = de + d[b] + e[a] + [c]
+        &d_open * &b + &e_open * &a + c + &d_open * &e_open
     }
 }

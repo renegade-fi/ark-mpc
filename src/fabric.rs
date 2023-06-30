@@ -20,7 +20,7 @@ use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
     },
     task::Waker,
 };
@@ -30,6 +30,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
 use itertools::Itertools;
 
 use crate::{
+    algebra::mpc_scalar::MpcScalarResult,
     beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
     Shared,
@@ -104,7 +105,7 @@ pub(crate) struct FabricInner {
     /// The underlying queue to the network
     outbound_queue: TokioSender<NetworkOutbound>,
     /// The underlying shared randomness source
-    beaver_source: Arc<Box<dyn SharedValueSource>>,
+    beaver_source: Arc<Mutex<Box<dyn SharedValueSource>>>,
 }
 
 impl Debug for FabricInner {
@@ -130,7 +131,7 @@ impl FabricInner {
             wakers: Arc::new(RwLock::new(HashMap::new())),
             execution_queue,
             outbound_queue,
-            beaver_source: Arc::new(Box::new(beaver_source)),
+            beaver_source: Arc::new(Mutex::new(Box::new(beaver_source))),
         }
     }
 
@@ -356,5 +357,30 @@ impl MpcFabric {
         let function = Box::new(function);
         let id = self.inner.new_op(args, OperationType::Network { function });
         ResultHandle::new(id, self.clone())
+    }
+
+    // -----------------
+    // | Beaver Source |
+    // -----------------
+
+    /// Sample the next beaver triplet from the beaver source
+    pub fn next_beaver_triple(&self) -> (MpcScalarResult, MpcScalarResult, MpcScalarResult) {
+        // Sample the triple and allocate it in the fabric, the counterparty will do the same
+        let (a, b, c) = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_triplet();
+
+        let a_val = self.allocate_value(ResultValue::Scalar(a));
+        let b_val = self.allocate_value(ResultValue::Scalar(b));
+        let c_val = self.allocate_value(ResultValue::Scalar(c));
+
+        (
+            MpcScalarResult::new_shared(a_val, self.clone()),
+            MpcScalarResult::new_shared(b_val, self.clone()),
+            MpcScalarResult::new_shared(c_val, self.clone()),
+        )
     }
 }

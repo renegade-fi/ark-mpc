@@ -13,6 +13,8 @@ use ark_ff::{
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
+use super::macros::{impl_borrow_variants, impl_commutative};
+
 // -----------
 // | Helpers |
 // -----------
@@ -96,6 +98,7 @@ impl Add<&ScalarResult> for &ScalarResult {
         })
     }
 }
+impl_borrow_variants!(ScalarResult, Add, add, +, ScalarResult);
 
 impl Sub<&ScalarResult> for &ScalarResult {
     type Output = ScalarResult;
@@ -107,6 +110,7 @@ impl Sub<&ScalarResult> for &ScalarResult {
         })
     }
 }
+impl_borrow_variants!(ScalarResult, Sub, sub, -, ScalarResult);
 
 impl Mul<&ScalarResult> for &ScalarResult {
     type Output = ScalarResult;
@@ -118,6 +122,7 @@ impl Mul<&ScalarResult> for &ScalarResult {
         })
     }
 }
+impl_borrow_variants!(ScalarResult, Mul, mul, *, ScalarResult);
 
 impl Neg for &ScalarResult {
     type Output = ScalarResult;
@@ -129,6 +134,7 @@ impl Neg for &ScalarResult {
         })
     }
 }
+impl_borrow_variants!(ScalarResult, Neg, neg, -);
 
 // ---------
 // | Tests |
