@@ -14,6 +14,7 @@ use itertools::Itertools;
 use crate::{
     algebra::{
         mpc_scalar::MpcScalar,
+        mpc_stark_point::MpcStarkPoint,
         stark_curve::{Scalar, StarkPoint},
     },
     network::NetworkPayload,
@@ -63,6 +64,8 @@ pub enum ResultValue {
     Point(StarkPoint),
     /// An MPC scalar value
     MpcScalar(MpcScalar),
+    /// An MPC Stark point value
+    MpcStarkPoint(MpcStarkPoint),
 }
 
 impl From<NetworkPayload> for ResultValue {
@@ -119,6 +122,15 @@ impl From<ResultValue> for MpcScalar {
         match value {
             ResultValue::MpcScalar(scalar) => scalar,
             _ => panic!("Cannot cast {:?} to mpc scalar", value),
+        }
+    }
+}
+
+impl From<ResultValue> for MpcStarkPoint {
+    fn from(value: ResultValue) -> Self {
+        match value {
+            ResultValue::MpcStarkPoint(point) => point,
+            _ => panic!("Cannot cast {:?} to mpc point", value),
         }
     }
 }

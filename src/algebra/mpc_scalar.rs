@@ -14,14 +14,10 @@ use super::{
     stark_curve::{Scalar, ScalarResult},
 };
 
-/// Defines a secret shared type over th `Scalar` field
+/// Defines a secret shared type over the `Scalar` field
 #[derive(Clone, Debug)]
 pub struct MpcScalar {
     /// The underlying value held by the local party
-    ///
-    /// If this is a private or public value, the value is held
-    /// in the clear. Otherwise this represents a secret share of the
-    /// underlying value
     value: Scalar,
     /// A reference to the underlying fabric that this value is allocated in
     fabric: MpcFabric,

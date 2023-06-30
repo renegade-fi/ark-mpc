@@ -12,6 +12,7 @@ use self::stark_curve::{Scalar, StarkPoint};
 
 pub mod macros;
 pub mod mpc_scalar;
+pub mod mpc_stark_point;
 pub mod stark_curve;
 
 // -----------

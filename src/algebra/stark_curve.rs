@@ -136,6 +136,45 @@ impl Neg for &ScalarResult {
 }
 impl_borrow_variants!(ScalarResult, Neg, neg, -);
 
+/// A type alias for a result that resolves to a `StarkPoint`
+pub type StarkPointResult = ResultHandle<StarkPoint>;
+
+impl Add<&StarkPointResult> for &StarkPointResult {
+    type Output = StarkPointResult;
+
+    fn add(self, rhs: &StarkPointResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
+            let [lhs, rhs]: [StarkPoint; 2] = cast_args(args);
+            ResultValue::Point(lhs + rhs)
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPointResult);
+
+impl Sub<&StarkPointResult> for &StarkPointResult {
+    type Output = StarkPointResult;
+
+    fn sub(self, rhs: &StarkPointResult) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
+            let [lhs, rhs]: [StarkPoint; 2] = cast_args(args);
+            ResultValue::Point(lhs - rhs)
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Sub, sub, -, StarkPointResult);
+
+impl Neg for &StarkPointResult {
+    type Output = StarkPointResult;
+
+    fn neg(self) -> Self::Output {
+        self.fabric.new_gate_op(vec![self.id], |args| {
+            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            ResultValue::Point(-lhs)
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Neg, neg, -);
+
 // ---------
 // | Tests |
 // ---------
