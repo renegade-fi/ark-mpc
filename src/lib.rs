@@ -7,7 +7,6 @@
 
 use std::{
     cell::RefCell,
-    cmp::Ordering,
     rc::Rc,
     sync::{Arc, RwLock},
 };

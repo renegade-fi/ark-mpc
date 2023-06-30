@@ -106,19 +106,21 @@ impl Add<&ScalarResult> for &MpcScalarResult {
 
     // Only party 0 adds the plaintext value as we do not secret share it
     fn add(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], move |args| {
-            // Cast the args
-            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
+        self.fabric
+            .new_gate_op(vec![self.id, rhs.id], move |mut args| {
+                // Cast the args
+                let lhs: MpcScalar = args.remove(0).into();
+                let rhs: Scalar = args.remove(0).into();
 
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcScalar(MpcScalar {
-                    value: lhs.value + rhs.value,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcScalar(lhs)
-            }
-        })
+                if lhs.fabric.party_id() == PARTY0 {
+                    ResultValue::MpcScalar(MpcScalar {
+                        value: lhs.value + rhs,
+                        fabric: lhs.fabric,
+                    })
+                } else {
+                    ResultValue::MpcScalar(lhs)
+                }
+            })
     }
 }
 impl_borrow_variants!(MpcScalarResult, Add, add, +, ScalarResult);
@@ -170,19 +172,21 @@ impl Sub<&ScalarResult> for &MpcScalarResult {
 
     // Only party 0 subtracts the plaintext value as we do not secret share it
     fn sub(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], move |args| {
-            // Cast the args
-            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
+        self.fabric
+            .new_gate_op(vec![self.id, rhs.id], move |mut args| {
+                // Cast the args
+                let lhs: MpcScalar = args.remove(0).into();
+                let rhs: Scalar = args.remove(0).into();
 
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcScalar(MpcScalar {
-                    value: lhs.value - rhs.value,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcScalar(lhs)
-            }
-        })
+                if lhs.fabric.party_id() == PARTY0 {
+                    ResultValue::MpcScalar(MpcScalar {
+                        value: lhs.value - rhs,
+                        fabric: lhs.fabric,
+                    })
+                } else {
+                    ResultValue::MpcScalar(lhs)
+                }
+            })
     }
 }
 impl_borrow_variants!(MpcScalarResult, Sub, sub, -, ScalarResult);
@@ -245,14 +249,17 @@ impl Mul<&ScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
     fn mul(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], move |args| {
-            // Cast the args
-            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
-            ResultValue::MpcScalar(MpcScalar {
-                value: lhs.value * rhs.value,
-                fabric: lhs.fabric,
+        self.fabric
+            .new_gate_op(vec![self.id, rhs.id], move |mut args| {
+                // Cast the args
+                let lhs: MpcScalar = args.remove(0).into();
+                let rhs: Scalar = args.remove(0).into();
+
+                ResultValue::MpcScalar(MpcScalar {
+                    value: lhs.value * rhs,
+                    fabric: lhs.fabric,
+                })
             })
-        })
     }
 }
 impl_borrow_variants!(MpcScalarResult, Mul, mul, *, ScalarResult);

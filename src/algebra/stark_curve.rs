@@ -13,7 +13,7 @@ use ark_ff::{
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
-use super::macros::{impl_borrow_variants, impl_commutative};
+use super::macros::impl_borrow_variants;
 
 // -----------
 // | Helpers |
