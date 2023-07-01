@@ -61,6 +61,8 @@ pub fn deserialize_point<'de, D: Deserializer<'de>>(
 /// Helpers useful for testing throughout the `algebra` module
 #[cfg(test)]
 pub(crate) mod test_helper {
+    use std::iter;
+
     use crate::random_scalar;
 
     use super::stark_curve::{scalar_to_biguint, StarknetCurveConfig};
@@ -92,8 +94,14 @@ pub(crate) mod test_helper {
 
     /// Convert a `BigUint` to a starknet felt
     pub fn biguint_to_starknet_felt(biguint: &BigUint) -> StarknetFelt {
+        // Pad the bytes up to 32 by prepending zeros
         let bytes = biguint.to_bytes_be();
-        StarknetFelt::from_bytes_be(&bytes.try_into().unwrap()).unwrap()
+        let padded_bytes = iter::repeat(0u8)
+            .take(32 - bytes.len())
+            .chain(bytes.iter().cloned())
+            .collect::<Vec<_>>();
+
+        StarknetFelt::from_bytes_be(&padded_bytes.try_into().unwrap()).unwrap()
     }
 
     /// Convert a `Scalar` to a `StarknetFelt`

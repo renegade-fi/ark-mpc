@@ -10,6 +10,7 @@ use ark_ff::{
     fields::{Fp256, MontBackend, MontConfig},
     MontFp, PrimeField,
 };
+use num_bigint::BigUint;
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
@@ -25,7 +26,7 @@ pub fn scalar_to_biguint<F: PrimeField>(scalar: &F) -> num_bigint::BigUint {
 }
 
 /// Convert a `BigUint` to a scalar
-pub fn biguint_to_scalar<F: PrimeField>(biguint: num_bigint::BigUint) -> F {
+pub fn biguint_to_scalar<F: PrimeField>(biguint: &BigUint) -> F {
     let bytes = biguint.to_bytes_le();
     F::from_le_bytes_mod_order(&bytes)
 }
