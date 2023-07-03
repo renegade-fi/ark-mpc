@@ -30,7 +30,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
 use itertools::Itertools;
 
 use crate::{
-    algebra::mpc_scalar::MpcScalarResult,
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, mpc_scalar::MpcScalarResult},
     beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
     Shared,
@@ -76,12 +76,24 @@ pub(crate) enum OperationType {
 /// that may be polled to obtain the materialized result. This allows the application layer to
 /// continue using the fabric, scheduling more gates to be evaluated and maximally exploiting
 /// gate-level parallelism within the circuit
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct MpcFabric {
     /// The inner fabric
     inner: FabricInner,
+    /// The local party's share of the global MAC key
+    ///
+    /// The parties collectively hold an additive sharing of the global key
+    ///
+    /// We wrap in a reference counting structure to avoid recursive type issues
+    mac_key: Option<Arc<MpcScalarResult>>,
     /// The channel on which shutdown messages are sent to blocking workers
     shutdown: BroadcastSender<()>,
+}
+
+impl Debug for MpcFabric {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "MpcFabric")
+    }
 }
 
 /// The inner component of the fabric, allows the constructor to allocate executor and network
@@ -275,10 +287,27 @@ impl MpcFabric {
         );
         tokio::task::spawn_blocking(move || block_on(executor.run()));
 
-        Self {
-            inner: fabric,
+        // Create the fabric and fill in the MAC key after
+        let mut self_ = Self {
+            inner: fabric.clone(),
             shutdown: shutdown_sender,
-        }
+            mac_key: None,
+        };
+
+        // Sample a MAC key from the pre-shared values in the beaver source
+        let mac_key_id = fabric.allocate_value(ResultValue::Scalar(
+            fabric
+                .beaver_source
+                .lock()
+                .expect("beaver source poisoned")
+                .next_shared_value(),
+        ));
+        let mac_key = MpcScalarResult::new_shared(ResultHandle::new(mac_key_id, self_.clone()));
+
+        // Set the MAC key
+        self_.mac_key.replace(Arc::new(mac_key));
+
+        self_
     }
 
     /// Get the party ID of the local party
@@ -292,6 +321,12 @@ impl MpcFabric {
         self.shutdown
             .send(())
             .expect("error sending shutdown signal");
+    }
+
+    /// Immutably borrow the MAC key
+    pub(crate) fn borrow_mac_key(&self) -> &MpcScalarResult {
+        // Unwrap is safe, the constructor sets the MAC key
+        self.mac_key.as_ref().unwrap()
     }
 
     // ---------------------
@@ -378,9 +413,38 @@ impl MpcFabric {
         let c_val = self.allocate_value(ResultValue::Scalar(c));
 
         (
-            MpcScalarResult::new_shared(a_val, self.clone()),
-            MpcScalarResult::new_shared(b_val, self.clone()),
-            MpcScalarResult::new_shared(c_val, self.clone()),
+            MpcScalarResult::new_shared(a_val),
+            MpcScalarResult::new_shared(b_val),
+            MpcScalarResult::new_shared(c_val),
+        )
+    }
+
+    /// Sample the next beaver triplet with MACs from the beaver source
+    ///
+    /// TODO: Authenticate these values either here or in the pre-processing phase as per
+    /// the SPDZ paper
+    pub fn next_authenticated_beaver_triple(
+        &self,
+    ) -> (
+        AuthenticatedScalarResult,
+        AuthenticatedScalarResult,
+        AuthenticatedScalarResult,
+    ) {
+        let (a, b, c) = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_triplet();
+
+        let a_val = self.allocate_value(ResultValue::Scalar(a));
+        let b_val = self.allocate_value(ResultValue::Scalar(b));
+        let c_val = self.allocate_value(ResultValue::Scalar(c));
+
+        (
+            AuthenticatedScalarResult::new_shared(a_val),
+            AuthenticatedScalarResult::new_shared(b_val),
+            AuthenticatedScalarResult::new_shared(c_val),
         )
     }
 }

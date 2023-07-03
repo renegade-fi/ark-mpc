@@ -28,9 +28,9 @@ pub struct MpcScalar {
 pub type MpcScalarResult = ResultHandle<MpcScalar>;
 impl MpcScalarResult {
     /// Creates an MPC scalar from a given underlying scalar assumed to be a secret share
-    pub fn new_shared(value: ResultHandle<Scalar>, fabric: MpcFabric) -> ResultHandle<MpcScalar> {
-        let fabric_clone = fabric.clone();
-        fabric.new_gate_op(vec![value.id], move |args| {
+    pub fn new_shared(value: ScalarResult) -> ResultHandle<MpcScalar> {
+        let fabric_clone = value.fabric.clone();
+        value.fabric.new_gate_op(vec![value.id], move |args| {
             // Cast the args
             let [value]: [Scalar; 1] = cast_args(args);
             ResultValue::MpcScalar(MpcScalar {
@@ -277,10 +277,13 @@ impl Mul<&MpcScalarResult> for &MpcScalarResult {
         let d_open = masked_lhs.open();
         let e_open = masked_rhs.open();
 
-        // Identity: [a * b] = de + d[b] + e[a] + [c]
+        // Identity: [x * y] = de + d[b] + e[a] + [c]
         &d_open * &b + &e_open * &a + c + &d_open * &e_open
     }
 }
+impl_borrow_variants!(MpcScalarResult, Mul, mul, *, MpcScalarResult);
+
+// === Curve Scalar Multiplication === //
 
 impl Mul<&MpcScalarResult> for &StarkPoint {
     type Output = MpcStarkPointResult;

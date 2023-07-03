@@ -72,7 +72,7 @@ pub(crate) fn share_scalar(
         test_args.fabric.receive_value()
     };
 
-    MpcScalarResult::new_shared(scalar, test_args.fabric.clone())
+    MpcScalarResult::new_shared(scalar)
 }
 
 /// Send or receive a secret shared point from the given party

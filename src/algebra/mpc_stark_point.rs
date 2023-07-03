@@ -272,7 +272,7 @@ impl Mul<&MpcScalarResult> for &MpcStarkPointResult {
         let eG_open = masked_lhs.open();
         let d_open = masked_rhs.open();
 
-        // Identity [a * bG] = deG + d[bG] + [a]eG + [c]G
+        // Identity [x * yG] = deG + d[bG] + [a]eG + [c]G
         &d_open * &eG_open + &d_open * &(&generator * &b) + &a * eG_open + &c * generator
     }
 }

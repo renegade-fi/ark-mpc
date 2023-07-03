@@ -89,6 +89,20 @@ impl SWCurveConfig for StarknetCurveConfig {
 /// A type alias for a result that resolves to a `Scalar`
 pub type ScalarResult = ResultHandle<Scalar>;
 
+impl Add<&Scalar> for &ScalarResult {
+    type Output = ScalarResult;
+
+    fn add(self, rhs: &Scalar) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            let [lhs]: [Scalar; 1] = cast_args(args);
+            ResultValue::Scalar(lhs + rhs)
+        })
+    }
+}
+impl_borrow_variants!(ScalarResult, Add, add, +, Scalar);
+impl_commutative!(ScalarResult, Add, add, +, Scalar);
+
 impl Add<&ScalarResult> for &ScalarResult {
     type Output = ScalarResult;
 
@@ -101,6 +115,20 @@ impl Add<&ScalarResult> for &ScalarResult {
 }
 impl_borrow_variants!(ScalarResult, Add, add, +, ScalarResult);
 
+impl Sub<&Scalar> for &ScalarResult {
+    type Output = ScalarResult;
+
+    fn sub(self, rhs: &Scalar) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            let [lhs]: [Scalar; 1] = cast_args(args);
+            ResultValue::Scalar(lhs - rhs)
+        })
+    }
+}
+impl_borrow_variants!(ScalarResult, Sub, sub, -, Scalar);
+impl_commutative!(ScalarResult, Sub, sub, -, Scalar);
+
 impl Sub<&ScalarResult> for &ScalarResult {
     type Output = ScalarResult;
 
@@ -112,6 +140,20 @@ impl Sub<&ScalarResult> for &ScalarResult {
     }
 }
 impl_borrow_variants!(ScalarResult, Sub, sub, -, ScalarResult);
+
+impl Mul<&Scalar> for &ScalarResult {
+    type Output = ScalarResult;
+
+    fn mul(self, rhs: &Scalar) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            let [lhs]: [Scalar; 1] = cast_args(args);
+            ResultValue::Scalar(lhs * rhs)
+        })
+    }
+}
+impl_borrow_variants!(ScalarResult, Mul, mul, *, Scalar);
+impl_commutative!(ScalarResult, Mul, mul, *, Scalar);
 
 impl Mul<&ScalarResult> for &ScalarResult {
     type Output = ScalarResult;
