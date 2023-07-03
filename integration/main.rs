@@ -13,6 +13,7 @@ use mpc_ristretto::{
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use tracing::log::{self, LevelFilter};
 
+mod authenticated_scalar;
 mod fabric;
 mod helpers;
 mod mpc_scalar;

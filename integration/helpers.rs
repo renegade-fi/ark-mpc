@@ -2,6 +2,7 @@
 
 use mpc_ristretto::{
     algebra::{
+        authenticated_scalar::AuthenticatedScalarResult,
         mpc_scalar::MpcScalarResult,
         mpc_stark_point::MpcStarkPointResult,
         stark_curve::{Scalar, StarkPoint},
@@ -92,6 +93,25 @@ pub(crate) fn share_point(
     };
 
     MpcStarkPointResult::new_shared(point, test_args.fabric.clone())
+}
+
+/// Send or receive a secret shared scalar from the given party and allocate it as an authenticated value
+pub(crate) fn share_authenticated_scalar(
+    value: Scalar,
+    sender: PartyId,
+    test_args: &IntegrationTestArgs,
+) -> AuthenticatedScalarResult {
+    let scalar = if test_args.party_id == sender {
+        let (my_share, their_share) = create_scalar_secret_shares(value);
+        test_args.fabric.allocate_shared_value(
+            ResultValue::Scalar(my_share),
+            ResultValue::Scalar(their_share),
+        )
+    } else {
+        test_args.fabric.receive_value()
+    };
+
+    AuthenticatedScalarResult::new_shared(scalar)
 }
 
 /// Share a value with the counterparty by sender ID, the sender sends and the receiver receives
