@@ -19,7 +19,7 @@ use super::{
 #[derive(Clone)]
 pub struct AuthenticatedScalarResult {
     /// The secret shares of the underlying value
-    value: MpcScalarResult,
+    pub value: MpcScalarResult,
     /// The SPDZ style, unconditionally secure MAC of the value
     ///
     /// If the value is `x`, parties hold secret shares of the value
@@ -27,12 +27,12 @@ pub struct AuthenticatedScalarResult {
     /// hold secret shares of this MAC key [\delta], so we can very naturally
     /// extend the secret share arithmetic of the underlying `MpcScalar` to
     /// the MAC updates as well
-    mac: MpcScalarResult,
+    pub mac: MpcScalarResult,
     /// The public modifier tracks additions and subtractions of public values to the
     /// underlying value. This is necessary because in the case of a public addition, only the first
     /// party adds the public value to their share, so the second party must track this up
     /// until the point that the value is opened and the MAC is checked
-    public_modifier: ScalarResult,
+    pub public_modifier: ScalarResult,
     /// A reference to the underlying fabric
     fabric: MpcFabric,
 }
@@ -76,7 +76,7 @@ impl Add<&Scalar> for &AuthenticatedScalarResult {
         let new_share = if self.fabric.party_id() == PARTY0 {
             &self.value + rhs
         } else {
-            self.value.clone()
+            self.value.clone() + Scalar::from(0)
         };
 
         // Both parties add the public value to their modifier, and the MACs do not change
@@ -99,10 +99,12 @@ impl Add<&ScalarResult> for &AuthenticatedScalarResult {
     fn add(self, rhs: &ScalarResult) -> Self::Output {
         // As above, only party 0 adds the public value to their share, but both parties
         // track this with the modifier
+        //
+        // Party 1 adds a zero value to their share to allocate a new ID for the result
         let new_share = if self.fabric.party_id() == PARTY0 {
             &self.value + rhs
         } else {
-            self.value.clone()
+            self.value.clone() + Scalar::from(0)
         };
 
         let new_modifier = &self.public_modifier + rhs;
@@ -139,10 +141,12 @@ impl Sub<&Scalar> for &AuthenticatedScalarResult {
     /// As in the case for addition, only party 0 subtracts the public value from their share,
     /// but both parties track this in the public modifier
     fn sub(self, rhs: &Scalar) -> Self::Output {
+        // Party 1 subtracts a zero value from their share to allocate a new ID for the result
+        // and stay in sync with party 0
         let new_share = if self.fabric.party_id() == PARTY0 {
             &self.value - rhs
         } else {
-            self.value.clone()
+            self.value.clone() - Scalar::from(0)
         };
 
         // Both parties add the public value to their modifier, and the MACs do not change
@@ -163,10 +167,12 @@ impl Sub<&ScalarResult> for &AuthenticatedScalarResult {
     type Output = AuthenticatedScalarResult;
 
     fn sub(self, rhs: &ScalarResult) -> Self::Output {
+        // Party 1 subtracts a zero value from their share to allocate a new ID for the result
+        // and stay in sync with party 0
         let new_share = if self.fabric.party_id() == PARTY0 {
             &self.value - rhs
         } else {
-            self.value.clone()
+            self.value.clone() - Scalar::from(0)
         };
 
         // Both parties add the public value to their modifier, and the MACs do not change
