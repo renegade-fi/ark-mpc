@@ -194,6 +194,20 @@ impl Add<&StarkPointResult> for &StarkPointResult {
 }
 impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPointResult);
 
+impl Add<&StarkPoint> for &StarkPointResult {
+    type Output = StarkPointResult;
+
+    fn add(self, rhs: &StarkPoint) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            ResultValue::Point(lhs + rhs)
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPoint);
+impl_commutative!(StarkPointResult, Add, add, +, StarkPoint);
+
 impl Sub<&StarkPointResult> for &StarkPointResult {
     type Output = StarkPointResult;
 
@@ -205,6 +219,31 @@ impl Sub<&StarkPointResult> for &StarkPointResult {
     }
 }
 impl_borrow_variants!(StarkPointResult, Sub, sub, -, StarkPointResult);
+
+impl Sub<&StarkPoint> for &StarkPointResult {
+    type Output = StarkPointResult;
+
+    fn sub(self, rhs: &StarkPoint) -> Self::Output {
+        let rhs = *rhs;
+        self.fabric.new_gate_op(vec![self.id], move |args| {
+            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            ResultValue::Point(lhs - rhs)
+        })
+    }
+}
+impl_borrow_variants!(StarkPointResult, Sub, sub, -, StarkPoint);
+
+impl Sub<&StarkPointResult> for &StarkPoint {
+    type Output = StarkPointResult;
+
+    fn sub(self, rhs: &StarkPointResult) -> Self::Output {
+        let self_owned = *self;
+        rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
+            let [rhs]: [StarkPoint; 1] = cast_args(args);
+            ResultValue::Point(self_owned - rhs)
+        })
+    }
+}
 
 impl Neg for &StarkPointResult {
     type Output = StarkPointResult;

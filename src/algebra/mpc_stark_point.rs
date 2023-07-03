@@ -276,3 +276,5 @@ impl Mul<&MpcScalarResult> for &MpcStarkPointResult {
         &d_open * &eG_open + &d_open * &(&generator * &b) + &a * eG_open + &c * generator
     }
 }
+impl_borrow_variants!(MpcStarkPointResult, Mul, mul, *, MpcScalarResult);
+impl_commutative!(MpcStarkPointResult, Mul, mul, *, MpcScalarResult);

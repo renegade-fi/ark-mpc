@@ -11,6 +11,7 @@ use serde::{
 use self::stark_curve::{Scalar, StarkPoint};
 
 pub mod authenticated_scalar;
+pub mod authenticated_stark_point;
 pub mod macros;
 pub mod mpc_scalar;
 pub mod mpc_stark_point;

@@ -149,7 +149,7 @@ impl From<ResultValue> for MpcStarkPoint {
 #[derive(Clone)]
 pub struct ResultHandle<T: From<ResultValue>> {
     /// The id of the result
-    pub id: ResultId,
+    pub(crate) id: ResultId,
     /// The underlying fabric
     pub(crate) fabric: MpcFabric,
     /// A phantom for the type of the result

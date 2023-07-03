@@ -3,14 +3,15 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::{
-    fabric::{MpcFabric, ResultValue},
+    fabric::{MpcFabric, ResultId, ResultValue},
     PARTY0,
 };
 
 use super::{
+    authenticated_stark_point::AuthenticatedStarkPointResult,
     macros::{impl_borrow_variants, impl_commutative},
     mpc_scalar::MpcScalarResult,
-    stark_curve::{Scalar, ScalarResult},
+    stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
 };
 
 /// A maliciously secure wrapper around an `MpcScalar`, includes a MAC as per the
@@ -19,7 +20,7 @@ use super::{
 #[derive(Clone)]
 pub struct AuthenticatedScalarResult {
     /// The secret shares of the underlying value
-    pub value: MpcScalarResult,
+    pub(crate) value: MpcScalarResult,
     /// The SPDZ style, unconditionally secure MAC of the value
     ///
     /// If the value is `x`, parties hold secret shares of the value
@@ -27,12 +28,12 @@ pub struct AuthenticatedScalarResult {
     /// hold secret shares of this MAC key [\delta], so we can very naturally
     /// extend the secret share arithmetic of the underlying `MpcScalar` to
     /// the MAC updates as well
-    pub mac: MpcScalarResult,
+    pub(crate) mac: MpcScalarResult,
     /// The public modifier tracks additions and subtractions of public values to the
     /// underlying value. This is necessary because in the case of a public addition, only the first
     /// party adds the public value to their share, so the second party must track this up
     /// until the point that the value is opened and the MAC is checked
-    pub public_modifier: ScalarResult,
+    pub(crate) public_modifier: ScalarResult,
     /// A reference to the underlying fabric
     fabric: MpcFabric,
 }
@@ -55,6 +56,12 @@ impl AuthenticatedScalarResult {
             public_modifier,
             fabric,
         }
+    }
+
+    /// Get the ids of the results that must be awaited
+    /// before the value is ready
+    pub fn ids(&self) -> Vec<ResultId> {
+        vec![self.value.id, self.mac.id, self.public_modifier.id]
     }
 
     /// Open the value without checking its MAC
@@ -81,7 +88,7 @@ impl Add<&Scalar> for &AuthenticatedScalarResult {
 
         // Both parties add the public value to their modifier, and the MACs do not change
         // when adding a public value
-        let new_modifier = &self.public_modifier + rhs;
+        let new_modifier = &self.public_modifier - rhs;
         AuthenticatedScalarResult {
             value: new_share,
             mac: self.mac.clone(),
@@ -107,7 +114,7 @@ impl Add<&ScalarResult> for &AuthenticatedScalarResult {
             self.value.clone() + Scalar::from(0)
         };
 
-        let new_modifier = &self.public_modifier + rhs;
+        let new_modifier = &self.public_modifier - rhs;
         AuthenticatedScalarResult {
             value: new_share,
             mac: self.mac.clone(),
@@ -151,7 +158,7 @@ impl Sub<&Scalar> for &AuthenticatedScalarResult {
 
         // Both parties add the public value to their modifier, and the MACs do not change
         // when adding a public value
-        let new_modifier = &self.public_modifier - rhs;
+        let new_modifier = &self.public_modifier + rhs;
         AuthenticatedScalarResult {
             value: new_share,
             mac: self.mac.clone(),
@@ -177,7 +184,7 @@ impl Sub<&ScalarResult> for &AuthenticatedScalarResult {
 
         // Both parties add the public value to their modifier, and the MACs do not change
         // when adding a public value
-        let new_modifier = &self.public_modifier - rhs;
+        let new_modifier = &self.public_modifier + rhs;
         AuthenticatedScalarResult {
             value: new_share,
             mac: self.mac.clone(),
@@ -274,3 +281,34 @@ impl Mul<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult, Mul, mul, *, AuthenticatedScalarResult, Output=AuthenticatedScalarResult);
+
+// === Curve Scalar Multiplication === //
+
+impl Mul<&AuthenticatedScalarResult> for &StarkPoint {
+    type Output = AuthenticatedStarkPointResult;
+
+    fn mul(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
+        AuthenticatedStarkPointResult {
+            value: self * &rhs.value,
+            mac: self * &rhs.mac,
+            public_modifier: self * &rhs.public_modifier,
+            fabric: rhs.fabric.clone(),
+        }
+    }
+}
+impl_commutative!(StarkPoint, Mul, mul, *, AuthenticatedScalarResult, Output=AuthenticatedStarkPointResult);
+
+impl Mul<&AuthenticatedScalarResult> for &StarkPointResult {
+    type Output = AuthenticatedStarkPointResult;
+
+    fn mul(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
+        AuthenticatedStarkPointResult {
+            value: self * &rhs.value,
+            mac: self * &rhs.mac,
+            public_modifier: self * &rhs.public_modifier,
+            fabric: rhs.fabric.clone(),
+        }
+    }
+}
+impl_borrow_variants!(StarkPointResult, Mul, mul, *, AuthenticatedScalarResult, Output=AuthenticatedStarkPointResult);
+impl_commutative!(StarkPointResult, Mul, mul, *, AuthenticatedScalarResult, Output=AuthenticatedStarkPointResult);
