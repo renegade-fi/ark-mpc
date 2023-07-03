@@ -14,6 +14,7 @@ use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use tracing::log::{self, LevelFilter};
 
 mod authenticated_scalar;
+mod authenticated_stark_point;
 mod fabric;
 mod helpers;
 mod mpc_scalar;

@@ -307,6 +307,7 @@ impl_commutative!(StarkPointResult, Mul, mul, *, ScalarResult);
 #[cfg(test)]
 mod test {
     use ark_ec::short_weierstrass::Projective;
+    use ark_ff::Zero;
     use starknet_curve::{curve_params::GENERATOR, ProjectivePoint};
 
     use crate::{
@@ -358,5 +359,14 @@ mod test {
         let r2 = starknet_rs_scalar_mul(&s2, &p2);
 
         assert!(compare_points(&r1, &r2));
+    }
+
+    /// Tests addition with the additive identity
+    #[test]
+    fn test_additive_identity() {
+        let p1 = random_point();
+        let res = p1 + StarkPoint::zero();
+
+        assert_eq!(p1, res);
     }
 }

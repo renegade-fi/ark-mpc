@@ -40,15 +40,15 @@ pub struct AuthenticatedStarkPointResult {
 
 impl AuthenticatedStarkPointResult {
     /// Creates a new `AuthenticatedStarkPoint` from a given underlying point
-    pub fn new_shared(value: StarkPointResult, fabric: MpcFabric) -> AuthenticatedStarkPointResult {
+    pub fn new_shared(value: StarkPointResult) -> AuthenticatedStarkPointResult {
         // Create an `MpcStarkPoint` from the value
-        let fabric_clone = fabric.clone();
+        let fabric_clone = value.fabric.clone();
 
-        let mpc_value = MpcStarkPointResult::new_shared(value, fabric.clone());
-        let mac = fabric.borrow_mac_key() * &mpc_value;
+        let mpc_value = MpcStarkPointResult::new_shared(value, fabric_clone.clone());
+        let mac = fabric_clone.borrow_mac_key() * &mpc_value;
 
         // Allocate a zero point for the public modifier
-        let public_modifier = fabric.allocate_value(ResultValue::Point(StarkPoint::zero()));
+        let public_modifier = fabric_clone.allocate_value(ResultValue::Point(StarkPoint::zero()));
 
         Self {
             value: mpc_value,
@@ -230,6 +230,7 @@ impl Neg for &AuthenticatedStarkPointResult {
         }
     }
 }
+impl_borrow_variants!(AuthenticatedStarkPointResult, Neg, neg, -);
 
 // === Scalar Multiplication === //
 
@@ -294,3 +295,5 @@ impl Mul<&AuthenticatedScalarResult> for &AuthenticatedStarkPointResult {
         &d_open * &eG_open + &d_open * &(&generator * &b) + &a * eG_open + &c * generator
     }
 }
+impl_borrow_variants!(AuthenticatedStarkPointResult, Mul, mul, *, AuthenticatedScalarResult);
+impl_commutative!(AuthenticatedStarkPointResult, Mul, mul, *, AuthenticatedScalarResult);
