@@ -1,8 +1,16 @@
 //! Defines the authenticated (malicious secure) variant of the MPC scalar type
 
-use std::ops::{Add, Mul, Neg, Sub};
+use std::{
+    ops::{Add, Mul, Neg, Sub},
+    pin::Pin,
+    task::{Context, Poll},
+};
+
+use futures::{Future, FutureExt};
 
 use crate::{
+    commitment::{PedersenCommitment, PedersenCommitmentResult},
+    error::MpcError,
     fabric::{MpcFabric, ResultId, ResultValue},
     PARTY0,
 };
@@ -10,7 +18,7 @@ use crate::{
 use super::{
     authenticated_stark_point::AuthenticatedStarkPointResult,
     macros::{impl_borrow_variants, impl_commutative},
-    mpc_scalar::MpcScalarResult,
+    mpc_scalar::{MpcScalar, MpcScalarResult},
     stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
 };
 
@@ -67,6 +75,113 @@ impl AuthenticatedScalarResult {
     /// Open the value without checking its MAC
     pub fn open(&self) -> ScalarResult {
         self.value.open()
+    }
+
+    /// Open the value and check its MAC
+    ///
+    /// This follows the protocol detailed in:
+    ///     https://securecomputation.org/docs/pragmaticmpc.pdf
+    /// Section 6.6.2
+    pub fn open_authenticated(&self) -> AuthenticatedScalarOpenResult {
+        // Both parties open the underlying value
+        let recovered_value = self.value.open();
+
+        // Add a gate to compute the MAC check value: `key_share * opened_value - mac_share`
+        let mac_check_value: ScalarResult = self.fabric.new_gate_op(
+            vec![
+                self.fabric.borrow_mac_key().id,
+                recovered_value.id,
+                self.public_modifier.id,
+                self.mac.id,
+            ],
+            move |mut args| {
+                let mac_key: MpcScalar = args.remove(0).into();
+                let value: Scalar = args.remove(0).into();
+                let modifier: Scalar = args.remove(0).into();
+                let mac: MpcScalar = args.remove(0).into();
+
+                ResultValue::Scalar(mac_key.value * (value + modifier) - mac.value)
+            },
+        );
+
+        // Compute a commitment to this value and share it with the peer
+        let my_comm = PedersenCommitmentResult::commit(mac_check_value);
+        let peer_commit = self.fabric.exchange_value(my_comm.commitment);
+
+        // Once the parties have exchanged their commitments, they can open them, they have already exchanged
+        // the underlying values and their commitments so all that is left is the blinder
+        let peer_mac_check = self.fabric.exchange_value(my_comm.value.clone());
+
+        let blinder_result: ScalarResult = self
+            .fabric
+            .allocate_value(ResultValue::Scalar(my_comm.blinder));
+        let peer_blinder = self.fabric.exchange_value(blinder_result);
+
+        // Check the commitment and the MAC result
+        let commitment_check: ScalarResult = self.fabric.new_gate_op(
+            vec![
+                my_comm.value.id,
+                peer_mac_check.id,
+                peer_blinder.id,
+                peer_commit.id,
+            ],
+            |mut args| {
+                let my_comm_value: Scalar = args.remove(0).into();
+                let peer_value: Scalar = args.remove(0).into();
+                let blinder: Scalar = args.remove(0).into();
+                let commitment: StarkPoint = args.remove(0).into();
+
+                // Build a commitment from the gate inputs
+                let their_comm = PedersenCommitment {
+                    value: peer_value,
+                    blinder,
+                    commitment,
+                };
+
+                // Verify that the commitment to the MAC check opens correctly
+                if !their_comm.verify() {
+                    return ResultValue::Scalar(Scalar::from(0));
+                }
+
+                // Sum of the commitments should be zero
+                if peer_value + my_comm_value != Scalar::from(0) {
+                    return ResultValue::Scalar(Scalar::from(0));
+                }
+
+                ResultValue::Scalar(Scalar::from(1))
+            },
+        );
+
+        AuthenticatedScalarOpenResult {
+            value: recovered_value,
+            mac_check: commitment_check,
+        }
+    }
+}
+
+/// The value that results from opening an `AuthenticatedScalarResult` and checking its
+/// MAC. This encapsulates both the underlying value and the result of the MAC check
+#[derive(Clone)]
+pub struct AuthenticatedScalarOpenResult {
+    /// The underlying value
+    pub value: ScalarResult,
+    /// The result of the MAC check
+    pub mac_check: ScalarResult,
+}
+
+impl Future for AuthenticatedScalarOpenResult {
+    type Output = Result<Scalar, MpcError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Await both of the underlying values
+        let value = futures::ready!(self.as_mut().value.poll_unpin(cx));
+        let mac_check = futures::ready!(self.as_mut().mac_check.poll_unpin(cx));
+
+        if mac_check == Scalar::from(1) {
+            Poll::Ready(Ok(value))
+        } else {
+            Poll::Ready(Err(MpcError::AuthenticationError))
+        }
     }
 }
 

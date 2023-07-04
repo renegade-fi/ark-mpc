@@ -1,5 +1,8 @@
 //! Defines testing mocks
 
+use std::fmt::Debug;
+
+use futures::Future;
 use mpc_ristretto::{
     algebra::{
         authenticated_scalar::AuthenticatedScalarResult,
@@ -54,8 +57,16 @@ pub(crate) fn create_point_secret_shares(a: StarkPoint) -> (StarkPoint, StarkPoi
 }
 
 /// Await a result in the computation graph by blocking the current task
-pub(crate) fn await_result<T: From<ResultValue>>(res: ResultHandle<T>) -> T {
+pub(crate) fn await_result<R, T: Future<Output = R>>(res: T) -> R {
     Handle::current().block_on(res)
+}
+
+pub(crate) fn await_result_with_error<R, E: Debug, T: Future<Output = Result<R, E>>>(
+    res: T,
+) -> Result<R, String> {
+    Handle::current()
+        .block_on(res)
+        .map_err(|err| format!("Error awaiting result: {:?}", err))
 }
 
 /// Send or receive a secret shared scalar from the given party

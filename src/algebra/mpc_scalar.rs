@@ -66,6 +66,14 @@ impl MpcScalarResult {
         // Create the new value by combining the additive shares
         &val0 + &val1
     }
+
+    /// Convert the underlying value to a `Scalar`
+    pub fn to_scalar(&self) -> ScalarResult {
+        self.fabric.new_gate_op(vec![self.id], |mut args| {
+            let value: MpcScalar = args.remove(0).into();
+            ResultValue::Scalar(value.value)
+        })
+    }
 }
 
 // --------------

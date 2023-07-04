@@ -20,6 +20,7 @@ use network::MpcNetwork;
 
 pub mod algebra;
 pub mod beaver;
+pub mod commitment;
 pub mod error;
 pub mod fabric;
 pub mod network;

@@ -33,7 +33,7 @@ use crate::{
     algebra::{authenticated_scalar::AuthenticatedScalarResult, mpc_scalar::MpcScalarResult},
     beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
-    Shared,
+    Shared, PARTY0,
 };
 
 use self::{
@@ -364,6 +364,26 @@ impl MpcFabric {
     pub fn receive_value<T: From<ResultValue>>(&self) -> ResultHandle<T> {
         let id = self.inner.receive_value();
         ResultHandle::new(id, self.clone())
+    }
+
+    /// Exchange a value with the peer, i.e. send then receive or receive then send
+    /// based on the party ID
+    ///
+    /// Returns a handle to the received value, which will be different for different parties
+    pub fn exchange_value<T: From<ResultValue> + Into<NetworkPayload>>(
+        &self,
+        value: ResultHandle<T>,
+    ) -> ResultHandle<T> {
+        if self.party_id() == PARTY0 {
+            // Party 0 sends first then receives
+            self.send_value(value);
+            self.receive_value()
+        } else {
+            // Party 1 receives first then sends
+            let handle = self.receive_value();
+            self.send_value(value);
+            handle
+        }
     }
 
     // -------------------

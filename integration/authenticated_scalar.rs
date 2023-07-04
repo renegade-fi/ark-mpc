@@ -6,9 +6,32 @@ use mpc_ristretto::{
 };
 
 use crate::{
-    helpers::{assert_scalars_eq, await_result, share_authenticated_scalar, share_plaintext_value},
+    helpers::{
+        assert_scalars_eq, await_result, await_result_with_error, share_authenticated_scalar,
+        share_plaintext_value,
+    },
     IntegrationTest, IntegrationTestArgs,
 };
+
+/// Tests the authenticated opening of a shared value with no arithmetic done on it
+fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a value
+    let my_val = Scalar::from(1); //random_scalar();
+
+    // Share the values with the counterparty and compute the expected result
+    let party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
+
+    // Open the values and compute the expected result
+    let value0_open = await_result(party0_value.open());
+    let expected_res = value0_open;
+
+    // Compute the result in the MPC circuit
+    let res = party0_value.open_authenticated();
+
+    // Open the result and check that it matches the expected result
+    let res_open = await_result_with_error(res)?;
+    assert_scalars_eq(expected_res, res_open)
+}
 
 /// Test addition with a public value
 fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -28,7 +51,7 @@ fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> 
     let res = &party0_value + plaintext_constant;
 
     // Open the result and check that it matches the expected result
-    let res_open = await_result(res.open());
+    let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_result, res_open)
 }
 
@@ -50,7 +73,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res = &party0_value + &party1_value;
 
     // Open the result and check that it matches the expected result
-    let res_open = await_result(res.open());
+    let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_res, res_open)
 }
 
@@ -72,7 +95,7 @@ fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     let res = &party0_value - plaintext_constant;
 
     // Open the result and check that it matches the expected result
-    let res_open = await_result(res.open());
+    let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_result, res_open)
 }
 
@@ -94,7 +117,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res = &party0_value - &party1_value;
 
     // Open the result and check that it matches the expected result
-    let res_open = await_result(res.open());
+    let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_res, res_open)
 }
 
@@ -114,7 +137,7 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res = -&party0_value;
 
     // Open the result and check that it matches the expected result
-    let res_open = await_result(res.open());
+    let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_res, res_open)
 }
 
@@ -136,7 +159,7 @@ fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     let res = &party0_value * plaintext_constant;
 
     // Open the result and check that it matches the expected result
-    let res_open = await_result(res.open());
+    let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_result, res_open)
 }
 
@@ -158,9 +181,14 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res = &party0_value * &party1_value;
 
     // Open the result and check that it matches the expected result
-    let res_open = await_result(res.open());
+    let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_res, res_open)
 }
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_open_authenticated",
+    test_fn: test_open_authenticated,
+});
 
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_add_public_value",
