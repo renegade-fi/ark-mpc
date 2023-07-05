@@ -2,7 +2,7 @@
 //! a malicious-secure primitive
 
 use mpc_stark::{
-    algebra::{authenticated_scalar::test_helpers::modify_mac, stark_curve::Scalar},
+    algebra::{authenticated_scalar::test_helpers::*, stark_curve::Scalar},
     fabric::ResultValue,
     random_scalar, PARTY0, PARTY1,
 };
@@ -37,6 +37,50 @@ fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String
     // Open the result and check that it matches the expected result
     let res_open = await_result_with_error(res)?;
     assert_scalars_eq(expected_res, res_open)
+}
+
+/// Tests opening with a corrupted MAC
+#[allow(non_snake_case)]
+fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let my_val = random_scalar();
+    let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
+
+    // Corrupt the MAC
+    modify_mac(&mut party0_value, random_scalar());
+
+    // Attempt to open and authenticate the value
+    let res = party0_value.open_authenticated();
+    assert_err(await_result_with_error(res))
+}
+
+/// Tests opening with a corrupted secret share
+#[allow(non_snake_case)]
+fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let my_val = random_scalar();
+    let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
+
+    // Corrupt the secret share
+    modify_share(&mut party0_value, random_scalar());
+
+    // Attempt to open and authenticate the value
+    let res = party0_value.open_authenticated();
+    assert_err(await_result_with_error(res))
+}
+
+/// Tests opening with a corrupted public modifier
+#[allow(non_snake_case)]
+fn test_open_authenticated__bad_public_modifier(
+    test_args: &IntegrationTestArgs,
+) -> Result<(), String> {
+    let my_val = random_scalar();
+    let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
+
+    // Corrupt the public modifier
+    modify_public_modifier(&mut party0_value, random_scalar());
+
+    // Attempt to open and authenticate the value
+    let res = party0_value.open_authenticated();
+    assert_err(await_result_with_error(res))
 }
 
 // --------------
@@ -198,6 +242,21 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_open_authenticated",
     test_fn: test_open_authenticated,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_open_authenticated__bad_mac",
+    test_fn: test_open_authenticated__bad_mac,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_open_authenticated__bad_share",
+    test_fn: test_open_authenticated__bad_share,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_open_authenticated__bad_public_modifier",
+    test_fn: test_open_authenticated__bad_public_modifier,
 });
 
 inventory::submit!(IntegrationTest {

@@ -16,7 +16,7 @@ COPY Cargo.lock .
 RUN sed -i 's/lib.rs/dummy-lib.rs/g' Cargo.toml
 RUN sed -i 's/main.rs/dummy-main.rs/g' Cargo.toml
 
-RUN cargo build --test integration
+RUN cargo build --test integration --features "test_helpers"
 
 # Edit the Cargo.toml back to the original, build the full executable
 RUN sed -i 's/dummy-lib.rs/lib.rs/g' Cargo.toml
@@ -25,6 +25,6 @@ RUN sed -i 's/dummy-main.rs/main.rs/g' Cargo.toml
 COPY src ./src
 COPY integration ./integration
 
-RUN cargo build --test integration
+RUN cargo build --test integration --features "test_helpers"
 
 CMD [ "cargo", "test" ]

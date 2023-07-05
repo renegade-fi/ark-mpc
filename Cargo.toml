@@ -13,10 +13,14 @@ license = "MIT OR Apache-2.0"
 name = "mpc_stark"
 path = "src/lib.rs"
 
+[features]
+test_helpers = []
+
 [[test]]
 name = "integration"
 path = "integration/main.rs"
 harness = false
+required-features = ["test_helpers"]
 
 [dependencies]
 # == Async == #

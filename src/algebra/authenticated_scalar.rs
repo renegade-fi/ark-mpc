@@ -427,3 +427,49 @@ impl Mul<&AuthenticatedScalarResult> for &StarkPointResult {
 }
 impl_borrow_variants!(StarkPointResult, Mul, mul, *, AuthenticatedScalarResult, Output=AuthenticatedStarkPointResult);
 impl_commutative!(StarkPointResult, Mul, mul, *, AuthenticatedScalarResult, Output=AuthenticatedStarkPointResult);
+
+// ----------------
+// | Test Helpers |
+// ----------------
+
+/// Contains unsafe helpers for modifying values, methods in this module should *only* be used
+/// for testing
+#[cfg(feature = "test_helpers")]
+pub mod test_helpers {
+    use crate::{
+        algebra::{mpc_scalar::MpcScalar, stark_curve::Scalar},
+        fabric::ResultValue,
+    };
+
+    use super::AuthenticatedScalarResult;
+
+    /// Modify the MAC of an `AuthenticatedScalarResult`
+    pub fn modify_mac(val: &mut AuthenticatedScalarResult, new_value: Scalar) {
+        val.mac = val.fabric.new_gate_op(vec![val.mac.id], move |mut args| {
+            let mut mac: MpcScalar = args.remove(0).into();
+            mac.value = new_value;
+
+            ResultValue::MpcScalar(mac)
+        });
+    }
+
+    /// Modify the underlying secret share of an `AuthenticatedScalarResult`
+    pub fn modify_share(val: &mut AuthenticatedScalarResult, new_value: Scalar) {
+        val.value = val.fabric.new_gate_op(vec![val.value.id], move |mut args| {
+            let mut value: MpcScalar = args.remove(0).into();
+            value.value = new_value;
+
+            ResultValue::MpcScalar(value)
+        });
+    }
+
+    /// Modify the public modifier of an `AuthenticatedScalarResult` by adding an offset
+    pub fn modify_public_modifier(val: &mut AuthenticatedScalarResult, new_value: Scalar) {
+        val.public_modifier =
+            val.fabric
+                .new_gate_op(vec![val.public_modifier.id], move |mut args| {
+                    let modifier: Scalar = args.remove(0).into();
+                    ResultValue::Scalar(modifier + new_value)
+                });
+    }
+}

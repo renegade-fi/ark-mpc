@@ -49,7 +49,7 @@ pub(crate) fn assert_err<T, E>(res: Result<T, E>) -> Result<(), String> {
     if res.is_err() {
         Ok(())
     } else {
-        Err(format!("Expected error, got Ok"))
+        Err("Expected error, got Ok".to_string())
     }
 }
 
