@@ -62,6 +62,14 @@ impl AuthenticatedStarkPointResult {
     pub fn open(&self) -> StarkPointResult {
         self.value.open()
     }
+
+    /// Open the value and check the MAC
+    ///
+    /// This follows the protocol detailed in
+    ///     https://securecomputation.org/docs/pragmaticmpc.pdf
+    pub fn open_authenticated(&self) {
+        todo!()
+    }
 }
 
 // --------------

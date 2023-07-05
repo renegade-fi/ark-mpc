@@ -36,7 +36,7 @@ ark-serialize = "0.4"
 digest = "0.10"
 num-bigint = "0.4"
 rand = "0.8"
-sha3 = { version = "0.8" }
+sha3 = { version = "0.10" }
 subtle = "2.4.1"
 
 # == Networking + Messaging == # 

@@ -2,9 +2,13 @@
 //! before opening it
 
 use ark_ec::Group;
+use ark_ff::PrimeField;
+use ark_serialize::CanonicalSerialize;
+use sha3::{Digest, Sha3_256};
 
 use crate::{
     algebra::stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
+    fabric::ResultValue,
     random_scalar,
 };
 
@@ -53,6 +57,82 @@ impl PedersenCommitmentResult {
             value,
             blinder,
             commitment,
+        }
+    }
+}
+
+/// A handle on the result of a salted Sha256 hash commitment, including the committed secret
+///
+/// Of the form `H(salt || value)`
+///
+/// We use hash commitments to commit to curve points before opening them. There is no straightforward
+/// way to adapt Pedersen commitments to curve points, and we do not need the homomorphic properties
+/// of a Pedersen commitment
+pub(crate) struct HashCommitment {
+    /// The committed value
+    pub(crate) value: StarkPoint,
+    /// The blinder used in the commitment
+    pub(crate) blinder: Scalar,
+    /// The value of the commitment
+    pub(crate) commitment: Scalar,
+}
+
+impl HashCommitment {
+    /// Verify that the given commitment is valid
+    pub(crate) fn verify(&self) -> bool {
+        // Create the bytes buffer
+        let mut bytes = Vec::<u8>::new();
+        self.value.serialize_uncompressed(&mut bytes).unwrap();
+        self.blinder.serialize_uncompressed(&mut bytes).unwrap();
+
+        // Hash the bytes, squeeze an output, verify that it is equal to the commitment
+        let mut hasher = Sha3_256::new();
+        hasher.update(bytes);
+
+        let out_bytes = hasher.finalize();
+        let out = Scalar::from_le_bytes_mod_order(out_bytes.as_slice());
+
+        out == self.commitment
+    }
+}
+
+/// A hash commitment that has been allocated in an MPC computation graph
+pub(crate) struct HashCommitmentResult {
+    /// The committed value
+    pub(crate) value: StarkPointResult,
+    /// The blinder used in the commitment
+    pub(crate) blinder: Scalar,
+    /// The value of the commitment
+    pub(crate) commitment: ScalarResult,
+}
+
+impl HashCommitmentResult {
+    /// Create a new hash commitment to an underlying value
+    pub(crate) fn commit(value: StarkPointResult) -> HashCommitmentResult {
+        let blinder = random_scalar();
+        let blinder_clone = blinder;
+        let comm = value.fabric.new_gate_op(vec![value.id], move |mut args| {
+            let value: StarkPoint = args.remove(0).into();
+
+            // Compute the hash of the point's bytes and the blinder
+            let mut bytes = Vec::<u8>::new();
+            value.serialize_uncompressed(&mut bytes).unwrap();
+            blinder_clone.serialize_uncompressed(&mut bytes).unwrap();
+
+            // Hash the bytes, squeeze an output, verify that it is equal to the commitment
+            let mut hasher = Sha3_256::new();
+            hasher.update(bytes);
+
+            let out_bytes = hasher.finalize();
+            let out = Scalar::from_le_bytes_mod_order(out_bytes.as_slice());
+
+            ResultValue::Scalar(out)
+        });
+
+        HashCommitmentResult {
+            value,
+            blinder,
+            commitment: comm,
         }
     }
 }
