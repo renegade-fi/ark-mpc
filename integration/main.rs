@@ -5,7 +5,7 @@ use colored::Colorize;
 use dns_lookup::lookup_host;
 use env_logger::Builder;
 use helpers::PartyIDBeaverSource;
-use mpc_ristretto::{
+use mpc_stark::{
     fabric::MpcFabric,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
     PARTY0,

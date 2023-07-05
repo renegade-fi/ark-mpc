@@ -17,7 +17,7 @@ services:
     image: integration-test:latest
     build: .
     command: >
-      cargo test --test integration --
+      cargo test --test integration -- 
         --party 1
         --port1 9000
         --port2 8000

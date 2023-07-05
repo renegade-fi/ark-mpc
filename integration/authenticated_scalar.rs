@@ -1,22 +1,28 @@
 //! Integration tests for arithmetic on the `AuthenticatedScalar` type which provides
 //! a malicious-secure primitive
 
-use mpc_ristretto::{
-    algebra::stark_curve::Scalar, fabric::ResultValue, random_scalar, PARTY0, PARTY1,
+use mpc_stark::{
+    algebra::{authenticated_scalar::test_helpers::modify_mac, stark_curve::Scalar},
+    fabric::ResultValue,
+    random_scalar, PARTY0, PARTY1,
 };
 
 use crate::{
     helpers::{
-        assert_scalars_eq, await_result, await_result_with_error, share_authenticated_scalar,
-        share_plaintext_value,
+        assert_err, assert_scalars_eq, await_result, await_result_with_error,
+        share_authenticated_scalar, share_plaintext_value,
     },
     IntegrationTest, IntegrationTestArgs,
 };
 
+// -----------
+// | Opening |
+// -----------
+
 /// Tests the authenticated opening of a shared value with no arithmetic done on it
 fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
-    let my_val = Scalar::from(1); //random_scalar();
+    let my_val = random_scalar();
 
     // Share the values with the counterparty and compute the expected result
     let party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
@@ -32,6 +38,10 @@ fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String
     let res_open = await_result_with_error(res)?;
     assert_scalars_eq(expected_res, res_open)
 }
+
+// --------------
+// | Arithmetic |
+// --------------
 
 /// Test addition with a public value
 fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> {

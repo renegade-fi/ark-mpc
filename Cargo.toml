@@ -1,6 +1,5 @@
 [package]
-name = "mpc-ristretto"
-description = "A library for performing secure multiparty computation using the Ristretto group."
+name = "mpc-stark"
 version = "0.1.0"
 keywords = ["mpc", "crypto", "cryptography"]
 homepage = "https://renegade.fi"
@@ -11,7 +10,7 @@ repository = "https://github.com/renegade-fi/mpc-ristretto"
 license = "MIT OR Apache-2.0"
 
 [lib]
-name = "mpc_ristretto"
+name = "mpc_stark"
 path = "src/lib.rs"
 
 [[test]]

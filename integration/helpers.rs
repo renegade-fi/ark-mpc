@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use futures::Future;
-use mpc_ristretto::{
+use mpc_stark::{
     algebra::{
         authenticated_scalar::AuthenticatedScalarResult,
         authenticated_stark_point::AuthenticatedStarkPointResult,
@@ -41,6 +41,15 @@ pub(crate) fn assert_points_eq(a: StarkPoint, b: StarkPoint) -> Result<(), Strin
         Ok(())
     } else {
         Err(format!("{a:?} != {b:?}"))
+    }
+}
+
+/// Assert that an error occurred during MPC execution
+pub(crate) fn assert_err<T, E>(res: Result<T, E>) -> Result<(), String> {
+    if res.is_err() {
+        Ok(())
+    } else {
+        Err(format!("Expected error, got Ok"))
     }
 }
 

@@ -1,6 +1,6 @@
 //! Defines tests for the `MpcStarkPoint` type and arithmetic on this type
 
-use mpc_ristretto::{
+use mpc_stark::{
     algebra::stark_curve::{ScalarResult, StarkPoint, StarkPointResult},
     fabric::{ResultHandle, ResultValue},
     random_point, random_scalar, PARTY0, PARTY1,

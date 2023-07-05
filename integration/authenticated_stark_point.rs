@@ -1,6 +1,6 @@
 //! Integration tests for the `AuthenticatedStarkPoint` type
 
-use mpc_ristretto::{random_point, random_scalar, PARTY0, PARTY1};
+use mpc_stark::{random_point, random_scalar, PARTY0, PARTY1};
 
 use crate::{
     helpers::{

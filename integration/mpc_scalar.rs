@@ -1,5 +1,5 @@
 //! Defines unit tests for `MpcScalar` types
-use mpc_ristretto::{
+use mpc_stark::{
     algebra::stark_curve::Scalar,
     fabric::{ResultHandle, ResultValue},
     random_scalar, PARTY0, PARTY1,
