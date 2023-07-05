@@ -1,13 +1,81 @@
 //! Integration tests for the `AuthenticatedStarkPoint` type
 
-use mpc_stark::{random_point, random_scalar, PARTY0, PARTY1};
+use mpc_stark::{
+    algebra::authenticated_stark_point::test_helpers::{
+        modify_mac, modify_public_modifier, modify_share,
+    },
+    random_point, random_scalar, PARTY0, PARTY1,
+};
 
 use crate::{
     helpers::{
-        assert_points_eq, await_result, share_authenticated_point, share_authenticated_scalar,
+        assert_err, assert_points_eq, await_result, await_result_with_error,
+        share_authenticated_point, share_authenticated_scalar,
     },
     IntegrationTest, IntegrationTestArgs,
 };
+
+// -----------
+// | Opening |
+// -----------
+
+/// Test opening a shared point correctly
+fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Sample a test point
+    let my_val = random_point();
+    let shared_val = share_authenticated_point(my_val, PARTY0, test_args);
+
+    // Open the point first without authenticating
+    let expected_res = await_result(shared_val.open());
+
+    let val_open = await_result_with_error(shared_val.open_authenticated())?;
+    assert_points_eq(val_open, expected_res)
+}
+
+/// Test opening a shared point with a corrupted MAC
+#[allow(non_snake_case)]
+fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Sample a test point
+    let my_val = random_point();
+    let mut shared_val = share_authenticated_point(my_val, PARTY0, test_args);
+
+    // Corrupt the MAC and attempt to open
+    modify_mac(&mut shared_val, random_point());
+    let res_open = await_result_with_error(shared_val.open_authenticated());
+    assert_err(res_open)
+}
+
+/// Test opening a shared point with a corrupted secret share
+#[allow(non_snake_case)]
+fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Sample a test point
+    let my_val = random_point();
+    let mut shared_val = share_authenticated_point(my_val, PARTY0, test_args);
+
+    // Corrupt the share and attempt to open
+    modify_share(&mut shared_val, random_point());
+    let res_open = await_result_with_error(shared_val.open_authenticated());
+    assert_err(res_open)
+}
+
+/// Test opening a shared point with a corrupted public modifier
+#[allow(non_snake_case)]
+fn test_open_authenticated__bad_public_modifier(
+    test_args: &IntegrationTestArgs,
+) -> Result<(), String> {
+    // Sample a test point
+    let my_val = random_point();
+    let mut shared_val = share_authenticated_point(my_val, PARTY0, test_args);
+
+    // Corrupt the public modifier and attempt to open
+    modify_public_modifier(&mut shared_val, random_point());
+    let res_open = await_result_with_error(shared_val.open_authenticated());
+    assert_err(res_open)
+}
+
+// --------------
+// | Arithmetic |
+// --------------
 
 /// Test addition with a public point
 fn test_addition_public_point(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -24,7 +92,7 @@ fn test_addition_public_point(test_args: &IntegrationTestArgs) -> Result<(), Str
 
     // Add the points in the MPC circuit
     let result = party0_point + plaintext_constant_point;
-    let res_open = await_result(result.open());
+    let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
 }
@@ -43,7 +111,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Add the points in the MPC circuit
     let result = party0_point + party1_point;
-    let res_open = await_result(result.open());
+    let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
 }
@@ -63,7 +131,7 @@ fn test_sub_public_point(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
     // Add the points in the MPC circuit
     let result = party0_point - plaintext_constant_point;
-    let res_open = await_result(result.open());
+    let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
 }
@@ -82,7 +150,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Add the points in the MPC circuit
     let result = party0_point - party1_point;
-    let res_open = await_result(result.open());
+    let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
 }
@@ -100,7 +168,7 @@ fn test_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Add the points in the MPC circuit
     let result = -party0_point;
-    let res_open = await_result(result.open());
+    let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
 }
@@ -121,7 +189,7 @@ fn test_multiplication_public_scalar(test_args: &IntegrationTestArgs) -> Result<
 
     // Add the points in the MPC circuit
     let result = party0_point * plaintext_constant_scalar;
-    let res_open = await_result(result.open());
+    let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
 }
@@ -141,10 +209,30 @@ fn test_multiplication(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Add the points in the MPC circuit
     let result = party0_point * party1_scalar;
-    let res_open = await_result(result.open());
+    let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
 }
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_open_authenticated",
+    test_fn: test_open_authenticated
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_open_authenticated__bad_mac",
+    test_fn: test_open_authenticated__bad_mac
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_open_authenticated__bad_share",
+    test_fn: test_open_authenticated__bad_share
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_open_authenticated__bad_public_modifier",
+    test_fn: test_open_authenticated__bad_public_modifier
+});
 
 inventory::submit!(IntegrationTest {
     name: "authenticated_stark_point::test_addition_public_point",

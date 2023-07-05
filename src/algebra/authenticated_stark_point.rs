@@ -1,13 +1,20 @@
 //! Defines an malicious secure wrapper around an `MpcStarkPoint` type that includes a MAC
 //! for ensuring computational integrity of an opened point
 
-use std::ops::{Add, Mul, Neg, Sub};
+use std::{
+    ops::{Add, Mul, Neg, Sub},
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use ark_ec::Group;
 use ark_ff::Zero;
+use futures::{Future, FutureExt};
 
 use crate::{
-    algebra::stark_curve::StarkPoint,
+    algebra::{mpc_scalar::MpcScalar, mpc_stark_point::MpcStarkPoint, stark_curve::StarkPoint},
+    commitment::{HashCommitment, HashCommitmentResult},
+    error::MpcError,
     fabric::{MpcFabric, ResultValue},
     PARTY0,
 };
@@ -67,8 +74,105 @@ impl AuthenticatedStarkPointResult {
     ///
     /// This follows the protocol detailed in
     ///     https://securecomputation.org/docs/pragmaticmpc.pdf
-    pub fn open_authenticated(&self) {
-        todo!()
+    pub fn open_authenticated(&self) -> AuthenticatedStarkPointOpenResult {
+        // Both parties open the underlying value
+        let recovered_value = self.value.open();
+
+        // Add a gate to compute hte MAC check value: `key_share * opened_value - mac_share`
+        let mac_check: StarkPointResult = self.fabric.new_gate_op(
+            vec![
+                self.fabric.borrow_mac_key().id,
+                recovered_value.id,
+                self.public_modifier.id,
+                self.mac.id,
+            ],
+            |mut args| {
+                let mac_key: MpcScalar = args.remove(0).into();
+                let value: StarkPoint = args.remove(0).into();
+                let modifier: StarkPoint = args.remove(0).into();
+                let mac: MpcStarkPoint = args.remove(0).into();
+
+                ResultValue::Point((value + modifier) * mac_key.value - mac.value)
+            },
+        );
+
+        // Compute a commitment to this value and share it with the peer
+        let my_comm = HashCommitmentResult::commit(mac_check.clone());
+        let peer_commit = self.fabric.exchange_value(my_comm.commitment);
+
+        // Once the parties have exchanged their commitments, they can open the underlying MAC check value
+        // as they are bound by the commitment
+        let peer_mac_check = self.fabric.exchange_value(my_comm.value.clone());
+        let blinder_result: ScalarResult = self
+            .fabric
+            .allocate_value(ResultValue::Scalar(my_comm.blinder));
+        let peer_blinder = self.fabric.exchange_value(blinder_result);
+
+        // Check the peer's commitment and the sum of the MAC checks
+        let commitment_check: ScalarResult = self.fabric.new_gate_op(
+            vec![
+                mac_check.id,
+                peer_mac_check.id,
+                peer_blinder.id,
+                peer_commit.id,
+            ],
+            |mut args| {
+                let my_mac_check: StarkPoint = args.remove(0).into();
+                let peer_mac_check: StarkPoint = args.remove(0).into();
+                let peer_blinder: Scalar = args.remove(0).into();
+                let peer_commitment: Scalar = args.remove(0).into();
+
+                // Check that the MAC check value is the correct opening of the
+                // given commitment
+                let peer_comm = HashCommitment {
+                    value: peer_mac_check,
+                    blinder: peer_blinder,
+                    commitment: peer_commitment,
+                };
+                if !peer_comm.verify() {
+                    return ResultValue::Scalar(Scalar::from(0));
+                }
+
+                // Check that the MAC check shares add up to the additive identity in
+                // the Starknet curve group
+                if my_mac_check + peer_mac_check != StarkPoint::zero() {
+                    return ResultValue::Scalar(Scalar::from(0));
+                }
+
+                ResultValue::Scalar(Scalar::from(1))
+            },
+        );
+
+        AuthenticatedStarkPointOpenResult {
+            value: recovered_value,
+            mac_check: commitment_check,
+        }
+    }
+}
+
+/// The value that results from opening an `AuthenticatedStarkPointResult` and checking its MAC. This encapsulates
+/// both the underlying value and the result of the MAC check
+#[derive(Clone)]
+pub struct AuthenticatedStarkPointOpenResult {
+    /// The underlying value
+    pub(crate) value: StarkPointResult,
+    /// The result of the MAC check
+    pub(crate) mac_check: ScalarResult,
+}
+
+impl Future for AuthenticatedStarkPointOpenResult {
+    type Output = Result<StarkPoint, MpcError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Await both of the underlying values
+        let value = futures::ready!(self.as_mut().value.poll_unpin(cx));
+        let mac_check = futures::ready!(self.as_mut().mac_check.poll_unpin(cx));
+
+        if mac_check == Scalar::from(1) {
+            Poll::Ready(Ok(value))
+        } else {
+            Poll::Ready(Err(MpcError::AuthenticationError))
+        }
     }
 }
 
@@ -305,3 +409,53 @@ impl Mul<&AuthenticatedScalarResult> for &AuthenticatedStarkPointResult {
 }
 impl_borrow_variants!(AuthenticatedStarkPointResult, Mul, mul, *, AuthenticatedScalarResult);
 impl_commutative!(AuthenticatedStarkPointResult, Mul, mul, *, AuthenticatedScalarResult);
+
+// ----------------
+// | Test Helpers |
+// ----------------
+
+/// Defines testing helpers for testing secure opening, these methods are not safe to use
+/// outside of tests
+#[cfg(feature = "test_helpers")]
+pub mod test_helpers {
+    use crate::{
+        algebra::{mpc_stark_point::MpcStarkPoint, stark_curve::StarkPoint},
+        fabric::ResultValue,
+    };
+
+    use super::AuthenticatedStarkPointResult;
+
+    /// Corrupt the MAC of a given authenticated point
+    pub fn modify_mac(point: &mut AuthenticatedStarkPointResult, new_mac: StarkPoint) {
+        point.mac = point
+            .fabric
+            .new_gate_op(vec![point.mac.id], move |mut args| {
+                let mut mac: MpcStarkPoint = args.remove(0).into();
+                mac.value = new_mac;
+
+                ResultValue::MpcStarkPoint(mac)
+            })
+    }
+
+    /// Corrupt the underlying secret share of a given authenticated point
+    pub fn modify_share(point: &mut AuthenticatedStarkPointResult, new_share: StarkPoint) {
+        point.value = point
+            .fabric
+            .new_gate_op(vec![point.value.id], move |mut args| {
+                let mut share: MpcStarkPoint = args.remove(0).into();
+                share.value = new_share;
+
+                ResultValue::MpcStarkPoint(share)
+            })
+    }
+
+    /// Corrupt the public modifier of a given authenticated point
+    pub fn modify_public_modifier(
+        point: &mut AuthenticatedStarkPointResult,
+        new_modifier: StarkPoint,
+    ) {
+        point.public_modifier = point
+            .fabric
+            .new_gate_op(vec![], move |_args| ResultValue::Point(new_modifier));
+    }
+}
