@@ -7,10 +7,15 @@ use std::{
 };
 
 use ark_ec::{
+    hashing::{
+        curve_maps::swu::{SWUConfig, SWUMap},
+        map_to_curve_hasher::MapToCurve,
+        HashToCurveError,
+    },
     short_weierstrass::{Affine, Projective, SWCurveConfig},
     CurveConfig, CurveGroup, Group, VariableBaseMSM,
 };
-use ark_ff::{MontFp, Zero};
+use ark_ff::{MontFp, PrimeField, Zero};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use itertools::Itertools;
@@ -20,15 +25,20 @@ use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
 use super::{
     macros::{impl_borrow_variants, impl_commutative},
-    scalar::{Scalar, ScalarInner, ScalarResult, StarknetBaseFelt},
+    scalar::{Scalar, ScalarInner, ScalarResult, StarknetBaseFelt, BASE_FIELD_BYTES},
 };
 
 /// The number of points and scalars to pull from an iterated MSM when
 /// performing a multiscalar multiplication
 const MSM_CHUNK_SIZE: usize = 1 << 16;
 
+/// The security level used in the hash-to-curve implementation, in bytes
+pub const HASH_TO_CURVE_SECURITY: usize = 16; // 128 bit security
 /// The number of bytes needed to serialize a `StarkPoint`
 pub const STARK_POINT_BYTES: usize = 32;
+/// The number of uniformly distributed bytes needed to construct a uniformly
+/// distributed Stark point
+pub const STARK_UNIFORM_BYTES: usize = 2 * (BASE_FIELD_BYTES + HASH_TO_CURVE_SECURITY);
 
 /// The Stark curve in the arkworks short Weierstrass curve representation
 pub struct StarknetCurveConfig;
@@ -52,6 +62,11 @@ impl SWCurveConfig for StarknetCurveConfig {
         y: MontFp!("152666792071518830868575557812948353041420400780739481342941381225525861407"),
         infinity: false,
     };
+}
+
+/// Defines the \zeta constant for the SWU map to curve implementation
+impl SWUConfig for StarknetCurveConfig {
+    const ZETA: Self::BaseField = MontFp!("3");
 }
 
 /// A type alias for a projective curve point on the Stark curve
@@ -109,6 +124,35 @@ impl StarkPoint {
     pub fn from_bytes(bytes: &[u8]) -> Result<StarkPoint, SerializationError> {
         let point = StarkPointInner::deserialize_compressed(bytes)?;
         Ok(StarkPoint(point))
+    }
+
+    /// Convert a uniform byte buffer to a `StarkPoint` via the SWU map-to-curve approach:
+    ///
+    /// See https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-hash-to-curve-09#simple-swu
+    /// for a description of the setup. Essentially, we assume that the buffer provided is the
+    /// result of an `extend_message` implementation that gives us its uniform digest. From here
+    /// we construct two field elements, map to curve, and add the points to give a uniformly
+    /// distributed curve point
+    pub fn from_uniform_bytes(
+        buf: [u8; STARK_UNIFORM_BYTES],
+    ) -> Result<StarkPoint, HashToCurveError> {
+        // Sample two base field elements from the buffer
+        let f1 = Self::hash_to_field(&buf[..STARK_UNIFORM_BYTES / 2]);
+        let f2 = Self::hash_to_field(&buf[STARK_UNIFORM_BYTES / 2..]);
+
+        // Map to curve
+        let mapper = SWUMap::<StarknetCurveConfig>::new()?;
+        let p1 = mapper.map_to_curve(f1)?;
+        let p2 = mapper.map_to_curve(f2)?;
+
+        // The IETF spec above requires that we clear the cofactor. However, the STARK curve has cofactor
+        // h = 1, so no works needs to be done
+        Ok(StarkPoint(p1 + p2))
+    }
+
+    /// A helper that converts an arbitrarily long byte buffer to a field element
+    fn hash_to_field(buf: &[u8]) -> StarknetBaseFelt {
+        StarknetBaseFelt::from_be_bytes_mod_order(buf)
     }
 }
 
@@ -382,6 +426,7 @@ impl StarkPoint {
 ///     https://github.com/xJonathanLEI/starknet-rs
 #[cfg(test)]
 mod test {
+    use rand::{thread_rng, RngCore};
     use starknet_curve::{curve_params::GENERATOR, ProjectivePoint};
 
     use crate::{
@@ -456,5 +501,18 @@ mod test {
         // Deserialize and verify the points are equal
         let deserialized = StarkPoint::from_bytes(&res).unwrap();
         assert_eq!(point, deserialized);
+    }
+
+    /// Tests the hash-to-curve implementation `StarkPoint::from_uniform_bytes`
+    #[test]
+    fn test_hash_to_curve() {
+        // Sample random bytes into a buffer
+        let mut rng = thread_rng();
+        let mut buf = [0u8; STARK_UNIFORM_BYTES];
+        rng.fill_bytes(&mut buf);
+
+        // As long as the method does not error, the test is successful
+        let res = StarkPoint::from_uniform_bytes(buf);
+        assert!(res.is_ok())
     }
 }

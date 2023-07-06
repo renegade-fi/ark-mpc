@@ -18,6 +18,8 @@ use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
 use super::macros::{impl_borrow_variants, impl_commutative};
 
+/// The number of bytes needed to represent an element of the base field
+pub const BASE_FIELD_BYTES: usize = 32;
 /// The number of bytes in a `Scalar`
 pub const SCALAR_BYTES: usize = 32;
 
@@ -317,10 +319,12 @@ impl Product for Scalar {
 
 #[cfg(test)]
 mod test {
+    use super::StarknetBaseFelt;
     use crate::{
-        algebra::scalar::{Scalar, SCALAR_BYTES},
+        algebra::scalar::{Scalar, BASE_FIELD_BYTES, SCALAR_BYTES},
         random_scalar,
     };
+    use num_bigint::BigUint;
 
     /// Tests serializing and deserializing a scalar
     #[test]
@@ -334,5 +338,17 @@ mod test {
         // Deserialize and validate the scalar
         let scalar_deserialized = Scalar::from_be_bytes_mod_order(&bytes);
         assert_eq!(scalar, scalar_deserialized);
+    }
+
+    /// Tests that the constant `BASE_FIELD_BYTES` is correct
+    #[test]
+    fn test_base_field_bytes() {
+        let elem = random_scalar();
+        let elem_bytes = elem.to_bytes_be();
+        let biguint = BigUint::from_bytes_be(&elem_bytes);
+        let base_elem: StarknetBaseFelt = biguint.into();
+
+        let base_elem_bytes = Into::<BigUint>::into(base_elem).to_bytes_be();
+        assert_eq!(base_elem_bytes.len(), BASE_FIELD_BYTES);
     }
 }
