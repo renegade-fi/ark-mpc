@@ -2,159 +2,102 @@
 //! communicate during the course of an MPC
 mod cert_verifier;
 mod config;
-pub mod dummy_network;
 
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
-use curve25519_dalek::{
-    ristretto::{CompressedRistretto, RistrettoPoint},
-    scalar::Scalar,
-};
 use quinn::{Endpoint, RecvStream, SendStream};
+use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, net::SocketAddr};
 use tracing::log;
 
-use crate::error::{MpcNetworkError, SetupError};
+use crate::{
+    algebra::{scalar::Scalar, stark_curve::StarkPoint},
+    error::{MpcNetworkError, SetupError},
+    fabric::ResultId,
+    PARTY0,
+};
 
+/// A type alias of the id of a party in an MPC for readability
 pub type PartyId = u64;
-
-const BYTES_PER_POINT: usize = 32;
-const BYTES_PER_SCALAR: usize = 32;
+/// The number of bytes in a u64
 const BYTES_PER_U64: usize = 8;
 
-/**
- * Helpers
- */
+/// Error message emitted when reading a message length from the stream fails
+const ERR_READ_MESSAGE_LENGTH: &str = "error reading message length from stream";
 
-/// Convert a vector of scalars to a byte buffer
-fn scalars_to_bytes(scalars: &[Scalar]) -> Bytes {
-    let mut payload = BytesMut::new();
-    scalars.iter().for_each(|scalar| {
-        let bytes = scalar.to_bytes();
-        payload.extend_from_slice(&bytes);
-    });
+// ---------
+// | Trait |
+// ---------
 
-    payload.freeze()
+/// The type that the network sender receives
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NetworkOutbound {
+    /// The operation ID that generated this message
+    pub op_id: ResultId,
+    /// The body of the message
+    pub payload: NetworkPayload,
 }
 
-/// Convert a byte buffer back to a vector of scalars
-fn bytes_to_scalars(bytes: &[u8]) -> Result<Vec<Scalar>, MpcNetworkError> {
-    bytes
-        .chunks(BYTES_PER_SCALAR)
-        .map(|bytes_chunk| {
-            Scalar::from_canonical_bytes(
-                bytes_chunk
-                    .try_into()
-                    .expect("unexpected number of bytes per chunk"),
-            )
-            .ok_or(MpcNetworkError::SerializationError)
-        })
-        .collect::<Result<Vec<Scalar>, MpcNetworkError>>()
+/// The payload of an outbound message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NetworkPayload {
+    /// A byte value
+    Bytes(Vec<u8>),
+    /// A scalar value
+    Scalar(Scalar),
+    /// A point on the curve
+    Point(StarkPoint),
 }
 
-/// Convert a vector of Ristretto points to bytes
-fn points_to_bytes(points: &[RistrettoPoint]) -> Bytes {
-    // Map to bytes
-    let mut payload = BytesMut::new();
-    points.iter().for_each(|point| {
-        let bytes = point.compress().to_bytes();
-        payload.extend_from_slice(&bytes);
-    });
-
-    payload.freeze()
+impl From<Vec<u8>> for NetworkPayload {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::Bytes(bytes)
+    }
 }
 
-/// Convert a byte buffer back to a vector of points
-fn bytes_to_points(bytes: &[u8]) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
-    bytes
-        .chunks(BYTES_PER_POINT)
-        .map(|bytes_chunk| {
-            CompressedRistretto(
-                bytes_chunk
-                    .try_into()
-                    .expect("unexpected number of bytes per chunk"),
-            )
-            .decompress()
-            .ok_or(MpcNetworkError::SerializationError)
-        })
-        .collect::<Result<Vec<RistrettoPoint>, MpcNetworkError>>()
+impl From<Scalar> for NetworkPayload {
+    fn from(scalar: Scalar) -> Self {
+        Self::Scalar(scalar)
+    }
 }
 
-/// MpcNetwork represents the network functionality needed for 2PC execution
-/// Note that only two party computation is implemented here
+impl From<StarkPoint> for NetworkPayload {
+    fn from(point: StarkPoint) -> Self {
+        Self::Point(point)
+    }
+}
+
+/// The `MpcNetwork` trait defines shared functionality for a network implementing a
+/// connection between two parties in a 2PC
+///
+/// Values are sent as bytes, scalars, or curve points and always in batch form with the
+/// message length (measured in the number of elements sent) prepended to the message
 #[async_trait]
-pub trait MpcNetwork {
-    /// Returns the ID of the given party in the MPC computation
-    fn party_id(&self) -> u64;
-    /// Returns whether the local party is the king of the MPC (party 0)
-    fn am_king(&self) -> bool {
-        self.party_id() == 0
-    }
-    /// The local party sends a byte buffer to the peer with an additional u64
-    /// prepended specifying the length of the payload
-    async fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), MpcNetworkError>;
-    /// The local party awaits bytes from a peer; receiver expects that the payload
-    /// is prepended with a length indicating the message size
-    async fn receive_bytes(&mut self) -> Result<Vec<u8>, MpcNetworkError>;
-    /// The local party sends a vector of scalars to the peer
-    async fn send_scalars(&mut self, scalars: &[Scalar]) -> Result<(), MpcNetworkError>;
-    /// The local party sends a single scalar to the peer
-    async fn send_single_scalar(&mut self, scalar: Scalar) -> Result<(), MpcNetworkError> {
-        self.send_scalars(&[scalar]).await
-    }
-    /// The local party receives exactly `n` scalars from the peer
-    async fn receive_scalars(
+pub trait MpcNetwork: Send {
+    /// Get the party ID of the local party in the MPC
+    fn party_id(&self) -> PartyId;
+    /// Send an outbound MPC message
+    async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError>;
+    /// Receive an inbound message
+    async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError>;
+    /// Each peer sends a message to the other
+    async fn exchange_messages(
         &mut self,
-        num_expected: usize,
-    ) -> Result<Vec<Scalar>, MpcNetworkError>;
-    /// The local party receives a single scalar from the peer
-    async fn receive_single_scalar(&mut self) -> Result<Scalar, MpcNetworkError> {
-        Ok(self.receive_scalars(1).await?[0])
-    }
-    /// Both parties broadcast a vector of scalars to one another
-    async fn broadcast_scalars(
-        &mut self,
-        scalars: &[Scalar],
-    ) -> Result<Vec<Scalar>, MpcNetworkError>;
-    /// Both parties broadcast a single scalar to one another
-    async fn broadcast_single_scalar(&mut self, scalar: Scalar) -> Result<Scalar, MpcNetworkError> {
-        Ok(self.broadcast_scalars(&[scalar]).await?[0])
-    }
-    /// The local party sends a vector of Ristretto points to the peer
-    async fn send_points(&mut self, points: &[RistrettoPoint]) -> Result<(), MpcNetworkError>;
-    /// The local party sends a single Ristretto point to the peer
-    async fn send_single_point(&mut self, point: RistrettoPoint) -> Result<(), MpcNetworkError> {
-        Ok(self.send_points(&[point]).await?)
-    }
-    /// The local party awaits a vector of Ristretto points from the peer
-    async fn receive_points(
-        &mut self,
-        num_expected: usize,
-    ) -> Result<Vec<RistrettoPoint>, MpcNetworkError>;
-    /// The local party awaits a single Ristretto point from the peer
-    async fn receive_single_point(&mut self) -> Result<RistrettoPoint, MpcNetworkError> {
-        Ok(self.receive_points(1).await?[0])
-    }
-    /// Both parties broadcast a vector of points to one another
-    async fn broadcast_points(
-        &mut self,
-        points: &[RistrettoPoint],
-    ) -> Result<Vec<RistrettoPoint>, MpcNetworkError>;
-    /// Both parties broadcast a single point to one another
-    async fn broadcast_single_point(
-        &mut self,
-        point: RistrettoPoint,
-    ) -> Result<RistrettoPoint, MpcNetworkError> {
-        Ok(self.broadcast_points(&[point]).await?[0])
-    }
+        message: NetworkOutbound,
+    ) -> Result<NetworkOutbound, MpcNetworkError>;
     /// Closes the connections opened in the handshake phase
     async fn close(&mut self) -> Result<(), MpcNetworkError>;
 }
 
+// ------------------
+// | Implementation |
+// ------------------
+
 /// The order in which the local party should read when exchanging values
 #[derive(Clone, Debug)]
 pub enum ReadWriteOrder {
+    /// The local party reads before writing in a swap operation
     ReadFirst,
+    /// The local party writes before reading in a swap operation
     WriteFirst,
 }
 
@@ -177,6 +120,7 @@ pub struct QuicTwoPartyNet {
 
 #[allow(clippy::redundant_closure)] // For readability of error handling
 impl<'a> QuicTwoPartyNet {
+    /// Create a new network, do not connect the network yet
     pub fn new(party_id: PartyId, local_addr: SocketAddr, peer_addr: SocketAddr) -> Self {
         // Construct the QUIC net
         Self {
@@ -189,9 +133,14 @@ impl<'a> QuicTwoPartyNet {
         }
     }
 
+    /// Returns true if the local party is party 0
+    fn local_party0(&self) -> bool {
+        self.party_id() == PARTY0
+    }
+
     /// Returns the read order for the local peer; king is write first
     fn read_order(&self) -> ReadWriteOrder {
-        if self.am_king() {
+        if self.local_party0() {
             ReadWriteOrder::WriteFirst
         } else {
             ReadWriteOrder::ReadFirst
@@ -206,6 +155,7 @@ impl<'a> QuicTwoPartyNet {
             Err(MpcNetworkError::NetworkUninitialized)
         }
     }
+
     /// Establishes connections to the peer
     pub async fn connect(&mut self) -> Result<(), MpcNetworkError> {
         // Build the client and server configs
@@ -221,7 +171,7 @@ impl<'a> QuicTwoPartyNet {
 
         // The king dials the peer who awaits connection
         let connection = {
-            if self.am_king() {
+            if self.local_party0() {
                 local_endpoint
                     .connect(self.peer_addr, config::SERVER_NAME)
                     .map_err(|err| {
@@ -251,7 +201,7 @@ impl<'a> QuicTwoPartyNet {
 
         // King opens a bidirectional stream on top of the connection
         let (send, recv) = {
-            if self.am_king() {
+            if self.local_party0() {
                 connection.open_bi().await.map_err(|err| {
                     log::error!("error opening bidirectional stream: {err}");
                     MpcNetworkError::ConnectionSetupError(SetupError::ConnectionError(err))
@@ -272,6 +222,21 @@ impl<'a> QuicTwoPartyNet {
         Ok(())
     }
 
+    /// Read a message length from the stream
+    async fn read_message_length(&mut self) -> Result<u64, MpcNetworkError> {
+        let mut read_buffer = vec![0u8; BYTES_PER_U64];
+        self.recv_stream
+            .as_mut()
+            .unwrap()
+            .read_exact(&mut read_buffer)
+            .await
+            .map_err(|e| MpcNetworkError::RecvError(e.to_string()))?;
+
+        Ok(u64::from_le_bytes(read_buffer.try_into().map_err(
+            |_| MpcNetworkError::SerializationError(ERR_READ_MESSAGE_LENGTH.to_string()),
+        )?))
+    }
+
     /// Write a stream of bytes to the stream
     async fn write_bytes(&mut self, payload: &[u8]) -> Result<(), MpcNetworkError> {
         self.send_stream
@@ -279,7 +244,7 @@ impl<'a> QuicTwoPartyNet {
             .unwrap()
             .write_all(payload)
             .await
-            .map_err(|_| MpcNetworkError::SendError)
+            .map_err(|e| MpcNetworkError::SendError(e.to_string()))
     }
 
     /// Read exactly `n` bytes from the stream
@@ -290,119 +255,53 @@ impl<'a> QuicTwoPartyNet {
             .unwrap()
             .read_exact(&mut read_buffer)
             .await
-            .map_err(|_| MpcNetworkError::RecvError)?;
+            .map_err(|e| MpcNetworkError::RecvError(e.to_string()))?;
 
         Ok(read_buffer.to_vec())
-    }
-
-    /// Write a stream of bytes to the network, then expect the same back from the connected peer
-    async fn write_then_read_bytes(
-        &mut self,
-        order: ReadWriteOrder,
-        payload: &[u8],
-    ) -> Result<Vec<u8>, MpcNetworkError> {
-        let payload_length = payload.len();
-
-        Ok(match order {
-            ReadWriteOrder::ReadFirst => {
-                let bytes_read = self.read_bytes(payload_length).await?;
-                self.write_bytes(payload).await?;
-                bytes_read
-            }
-            ReadWriteOrder::WriteFirst => {
-                self.write_bytes(payload).await?;
-                self.read_bytes(payload_length).await?
-            }
-        })
     }
 }
 
 #[async_trait]
 impl MpcNetwork for QuicTwoPartyNet {
-    fn party_id(&self) -> u64 {
+    fn party_id(&self) -> PartyId {
         self.party_id
     }
 
-    async fn send_bytes(&mut self, bytes: &[u8]) -> Result<(), MpcNetworkError> {
-        self.assert_connected()?;
+    async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
+        // Serialize the message and forward it onto the network
+        let bytes = serde_json::to_vec(&message)
+            .map_err(|err| MpcNetworkError::SerializationError(err.to_string()))?;
+        let mut payload = (bytes.len() as u64).to_le_bytes().to_vec();
+        payload.extend_from_slice(&bytes);
 
-        // Prepend the length of the payload as a little endian encoded u64
-        let length = (bytes.len() as u64).to_le_bytes();
-        self.write_bytes(&length).await?;
-        self.write_bytes(bytes).await
-    }
-
-    async fn receive_bytes(&mut self) -> Result<Vec<u8>, MpcNetworkError> {
-        self.assert_connected()?;
-
-        // Read a u64 indicating the payload length
-        let length = u64::from_le_bytes(self.read_bytes(BYTES_PER_U64).await?.try_into().unwrap());
-        self.read_bytes(length as usize).await
-    }
-
-    async fn send_scalars(&mut self, scalars: &[Scalar]) -> Result<(), MpcNetworkError> {
-        self.assert_connected()?;
-
-        // To byte buffer
-        let payload = scalars_to_bytes(scalars);
-        self.write_bytes(&payload).await?;
-
-        Ok(())
-    }
-
-    async fn receive_scalars(
-        &mut self,
-        num_scalars: usize,
-    ) -> Result<Vec<Scalar>, MpcNetworkError> {
-        self.assert_connected()?;
-        let bytes_read = self.read_bytes(num_scalars * BYTES_PER_SCALAR).await?;
-
-        bytes_to_scalars(&bytes_read)
-    }
-
-    async fn broadcast_scalars(
-        &mut self,
-        scalars: &[Scalar],
-    ) -> Result<Vec<Scalar>, MpcNetworkError> {
-        self.assert_connected()?;
-
-        // To byte buffer
-        let payload = scalars_to_bytes(scalars);
-
-        let read_buffer = self
-            .write_then_read_bytes(self.read_order(), &payload)
-            .await?;
-
-        bytes_to_scalars(&read_buffer)
-    }
-
-    async fn send_points(&mut self, points: &[RistrettoPoint]) -> Result<(), MpcNetworkError> {
-        let payload = points_to_bytes(points);
         self.write_bytes(&payload).await
     }
 
-    async fn receive_points(
-        &mut self,
-        num_points: usize,
-    ) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
-        let read_buffer = self.read_bytes(BYTES_PER_POINT * num_points).await?;
-        bytes_to_points(&read_buffer)
+    async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError> {
+        // Read the message length from the buffer
+        let len = self.read_message_length().await?;
+        let bytes = self.read_bytes(len as usize).await?;
+
+        // Deserialize the message
+        serde_json::from_slice(&bytes)
+            .map_err(|err| MpcNetworkError::SerializationError(err.to_string()))
     }
 
-    async fn broadcast_points(
+    async fn exchange_messages(
         &mut self,
-        points: &[RistrettoPoint],
-    ) -> Result<Vec<RistrettoPoint>, MpcNetworkError> {
-        self.assert_connected()?;
-
-        // To byte buffer
-        let payload = points_to_bytes(points);
-        let read_buffer = self
-            .write_then_read_bytes(self.read_order(), &payload)
-            .await?;
-
-        // Deserialize back to Ristretto points
-        bytes_to_points(&read_buffer)
+        message: NetworkOutbound,
+    ) -> Result<NetworkOutbound, MpcNetworkError> {
+        match self.read_order() {
+            ReadWriteOrder::ReadFirst => {
+                let msg = self.receive_message().await?;
+                self.send_message(message).await?;
+                Ok(msg)
+            }
+            ReadWriteOrder::WriteFirst => {
+                self.send_message(message).await?;
+                self.receive_message().await
+            }
+        }
     }
 
     async fn close(&mut self) -> Result<(), MpcNetworkError> {
@@ -414,30 +313,5 @@ impl MpcNetwork for QuicTwoPartyNet {
             .finish()
             .await
             .map_err(|_| MpcNetworkError::ConnectionTeardownError)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::net::SocketAddr;
-
-    use curve25519_dalek::ristretto::RistrettoPoint;
-    use rand_core::OsRng;
-    use tokio;
-
-    use super::{MpcNetwork, QuicTwoPartyNet};
-
-    #[tokio::test]
-    async fn test_errors() {
-        let socket_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let mut net = QuicTwoPartyNet::new(0, socket_addr, socket_addr);
-
-        assert!(net.broadcast_points(&[]).await.is_err());
-
-        let mut rng = OsRng {};
-        assert!(net
-            .broadcast_single_point(RistrettoPoint::random(&mut rng))
-            .await
-            .is_err())
     }
 }

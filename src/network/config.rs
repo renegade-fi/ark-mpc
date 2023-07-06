@@ -9,11 +9,14 @@ use rustls::{Certificate, ClientConfig as CryptoClientConfig};
 use crate::error::SetupError;
 use crate::network::cert_verifier::PassThroughCertVerifier;
 
+/// The maximum amount of time to wait for a response from the counterparty before
 #[cfg(not(test))]
 const MAX_IDLE_TIMEOUT: u32 = 10_000; // milliseconds
 #[cfg(test)]
 const MAX_IDLE_TIMEOUT: u32 = 0; // No timeout
+/// The amount of time to wait keeping a connection alive
 const KEEP_ALIVE_INTERVAL: u64 = 3_000; // milliseconds
+/// The name of the server
 pub(crate) const SERVER_NAME: &str = "otter.cash"; // dummy value
 
 /// Builds the configs for quinn p2p communication

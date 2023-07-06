@@ -1,27 +1,33 @@
-mod authenticated_ristretto;
-mod authenticated_scalar;
-mod mpc_ristretto;
-mod mpc_scalar;
-mod network;
-
-use std::{borrow::Borrow, cell::RefCell, net::SocketAddr, process::exit, rc::Rc};
+use std::{borrow::Borrow, io::Write, net::SocketAddr, process::exit, thread, time::Duration};
 
 use clap::Parser;
 use colored::Colorize;
-use curve25519_dalek::{constants, ristretto::RistrettoPoint, scalar::Scalar};
 use dns_lookup::lookup_host;
+use env_logger::Builder;
+use helpers::PartyIDBeaverSource;
+use mpc_stark::{
+    fabric::MpcFabric,
+    network::{MpcNetwork, NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
+    PARTY0,
+};
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
+use tracing::log::{self, LevelFilter};
 
-use ::mpc_ristretto::{mpc_scalar::MpcScalar, network::QuicTwoPartyNet};
-use mpc_scalar::PartyIDBeaverSource;
+mod authenticated_scalar;
+mod authenticated_stark_point;
+mod fabric;
+mod helpers;
+mod mpc_scalar;
+mod mpc_stark_point;
+
+/// The amount of time to sleep after sending a shutdown
+const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
 
 /// Integration test arguments, common to all tests
 #[derive(Clone, Debug)]
 struct IntegrationTestArgs {
     party_id: u64,
-    net_ref: Rc<RefCell<QuicTwoPartyNet>>,
-    beaver_source: Rc<RefCell<PartyIDBeaverSource>>,
-    mac_key: MpcScalar<QuicTwoPartyNet, PartyIDBeaverSource>,
+    fabric: MpcFabric,
 }
 
 /// Integration test format
@@ -56,6 +62,9 @@ struct Args {
 
 #[allow(unused_doc_comments, clippy::await_holding_refcell_ref)]
 fn main() {
+    // Setup logging
+    init_logger();
+
     // Parse the cli args
     let args = Args::parse();
     let args_clone = args.clone();
@@ -104,15 +113,20 @@ fn main() {
         let mut net = QuicTwoPartyNet::new(args.party, local_addr, peer_addr);
         Handle::current().block_on(net.connect()).unwrap();
 
-        // Share the global mac key (hardcoded to Scalar(15))
-        let net_ref = Rc::new(RefCell::new(net));
-        let beaver_source = PartyIDBeaverSource::new(args.party);
-        let shared_beaver_source = Rc::new(RefCell::new(beaver_source));
-
-        let mac_key =
-            MpcScalar::from_private_u64(15, net_ref.clone(), shared_beaver_source.clone())
-                .share_secret(0 /* party_id */)
+        // Send a byte to give the connection time to establish
+        if args.party == 0 {
+            Handle::current()
+                .block_on(net.send_message(NetworkOutbound {
+                    op_id: 1,
+                    payload: NetworkPayload::Bytes(vec![1u8]),
+                }))
                 .unwrap();
+        } else {
+            let _recv_bytes = Handle::current().block_on(net.receive_message()).unwrap();
+        }
+
+        let beaver_source = PartyIDBeaverSource::new(args.party);
+        let fabric = MpcFabric::new(net, beaver_source);
 
         // ----------------
         // | Test Harness |
@@ -124,11 +138,8 @@ fn main() {
 
         let test_args = IntegrationTestArgs {
             party_id: args.party,
-            net_ref,
-            beaver_source: shared_beaver_source,
-            mac_key,
+            fabric: fabric.clone(),
         };
-
         let mut all_success = true;
 
         for test in inventory::iter::<IntegrationTest> {
@@ -147,13 +158,21 @@ fn main() {
             all_success &= validate_success(res, args.party);
         }
 
+        if test_args.party_id == PARTY0 {
+            log::info!("Tearing down fabric...");
+        }
+
+        thread::sleep(Duration::from_millis(SHUTDOWN_TIMEOUT_MS));
+        fabric.shutdown();
         all_success
     });
 
+    // Run the tests and delay shutdown to allow graceful network teardown
     let all_success = runtime.block_on(result).unwrap();
+
     if all_success {
         if args_clone.party == 0 {
-            println!("\n{}", "Integration tests successful!".green(),);
+            log::info!("{}", "Integration tests successful!".green(),);
         }
 
         exit(0);
@@ -162,10 +181,13 @@ fn main() {
     exit(-1);
 }
 
-/// Computes a * G where G is the generator of the Ristretto group
-#[inline]
-pub(crate) fn base_point_mul(a: u64) -> RistrettoPoint {
-    constants::RISTRETTO_BASEPOINT_POINT * Scalar::from(a)
+/// Setups up logging for the test suite
+fn init_logger() {
+    // Configure logging
+    Builder::new()
+        .format(|buf, record| writeln!(buf, "[{}] - {}", record.level(), record.args()))
+        .filter(None, LevelFilter::Info)
+        .init();
 }
 
 /// Prints a success or failure message, returns true if success, false if failure

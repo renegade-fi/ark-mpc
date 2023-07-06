@@ -5,594 +5,472 @@
 //! cleaner interface for consumers of the library; i.e. clients do not have to hold onto
 //! references of the network layer or the beaver sources to allocate values.
 
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    net::SocketAddr,
-    rc::Rc,
-};
+mod executor;
+mod network_sender;
+mod result;
 
-use curve25519_dalek::{
-    ristretto::{CompressedRistretto, RistrettoPoint},
-    scalar::Scalar,
+pub(crate) use result::cast_args;
+pub use result::{ResultHandle, ResultId, ResultValue};
+
+use futures::executor::block_on;
+use tracing::log;
+
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Formatter, Result as FmtResult},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, RwLock,
+    },
+    task::Waker,
 };
+use tokio::sync::broadcast::{self, Sender as BroadcastSender};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
+
 use itertools::Itertools;
-use tokio::runtime::Handle;
 
 use crate::{
-    authenticated_ristretto::{AuthenticatedCompressedRistretto, AuthenticatedRistretto},
-    authenticated_scalar::AuthenticatedScalar,
+    algebra::{authenticated_scalar::AuthenticatedScalarResult, mpc_scalar::MpcScalarResult},
     beaver::SharedValueSource,
-    error::MpcError,
-    mpc_scalar::{scalar_to_u64, MpcScalar},
-    network::{MpcNetwork, QuicTwoPartyNet},
-    BeaverSource, SharedNetwork, Visibility,
+    network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
+    Shared, PARTY0,
 };
 
-#[derive(Clone, Debug)]
-pub struct AuthenticatedMpcFabric<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> {
-    /// The ID of this party in the MPC execution
-    party_id: u64,
-    /// The key share used to authenticate shared value openings
-    key_share: MpcScalar<N, S>,
-    /// The underlying network interface used to communicate between parties
-    network: SharedNetwork<N>,
-    /// The source from which the local party can draw results of the
-    /// preprocessing functionality; i.e. Beaver triplets and shared scalars
-    beaver_source: BeaverSource<S>,
+use self::{
+    executor::{Executor, ExecutorMessage},
+    network_sender::NetworkSender,
+    result::OpResult,
+};
+
+/// An operation within the network, describes the arguments and function to evaluate
+/// once the arguments are ready
+pub(crate) struct Operation {
+    /// Identifier of the result that this operation emits
+    id: ResultId,
+    /// The number of arguments that are still in-flight for this operation
+    inflight_args: AtomicUsize,
+    /// The IDs of the inputs to this operation
+    args: Vec<ResultId>,
+    /// The type of the operation
+    op_type: OperationType,
 }
 
-impl<S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<QuicTwoPartyNet, S> {
-    /// Create a new AuthenticatedMpcFabric with the default (QUIC two party) network
-    pub fn new(
-        local_addr: SocketAddr,
-        peer_addr: SocketAddr,
-        beaver_source: BeaverSource<S>,
-        party_id: u64,
-    ) -> Result<Self, MpcError> {
-        // Build the network and dial the peer
-        let mut network = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
-        Handle::current()
-            .block_on(network.connect())
-            .map_err(MpcError::NetworkError)?;
-
-        Ok(Self::new_with_network(
-            party_id,
-            Rc::new(RefCell::new(network)),
-            beaver_source,
-        ))
+impl Debug for Operation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "Operation {}", self.id)
     }
 }
 
-impl<N: MpcNetwork + Send, S: SharedValueSource<Scalar>> AuthenticatedMpcFabric<N, S> {
-    /// Create a new AuthenticatedMpcFabric with a specific network implementation
-    pub fn new_with_network(
-        party_id: u64,
-        network: SharedNetwork<N>,
-        beaver_source: BeaverSource<S>,
-    ) -> Self {
-        // Create a shared key from the beaver source
-        let shared_value = beaver_source.as_ref().borrow_mut().next_shared_value();
-        let key_share = MpcScalar::from_scalar_with_visibility(
-            shared_value,
-            crate::Visibility::Shared,
-            network.clone(),
-            beaver_source.clone(),
-        );
+/// Defines the different types of operations available in the computation graph
+pub(crate) enum OperationType {
+    /// A gate operation; may be evaluated locally given its ready inputs
+    Gate {
+        /// The function to apply to the inputs
+        function: Box<dyn FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync>,
+    },
+    /// A network operation, requires that a value be sent over the network
+    Network {
+        /// The function to apply to the inputs to derive a Network payload
+        function: Box<dyn FnOnce(Vec<ResultValue>) -> NetworkPayload + Send + Sync>,
+    },
+}
 
+/// A fabric for the MPC protocol, defines a dependency injection layer that dynamically schedules
+/// circuit gate evaluations onto the network to be executed
+///
+/// The fabric does not block on gate evaluations, but instead returns a handle to a future result
+/// that may be polled to obtain the materialized result. This allows the application layer to
+/// continue using the fabric, scheduling more gates to be evaluated and maximally exploiting
+/// gate-level parallelism within the circuit
+#[derive(Clone)]
+pub struct MpcFabric {
+    /// The inner fabric
+    inner: FabricInner,
+    /// The local party's share of the global MAC key
+    ///
+    /// The parties collectively hold an additive sharing of the global key
+    ///
+    /// We wrap in a reference counting structure to avoid recursive type issues
+    mac_key: Option<Arc<MpcScalarResult>>,
+    /// The channel on which shutdown messages are sent to blocking workers
+    shutdown: BroadcastSender<()>,
+}
+
+impl Debug for MpcFabric {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "MpcFabric")
+    }
+}
+
+/// The inner component of the fabric, allows the constructor to allocate executor and network
+/// sender objects at the same level as the fabric
+#[derive(Clone)]
+pub(crate) struct FabricInner {
+    /// The ID of the local party in the MPC execution
+    party_id: u64,
+    /// The next identifier to assign to an operation
+    next_id: Arc<AtomicUsize>,
+    /// The completed results of operations
+    results: Shared<HashMap<ResultId, OpResult>>,
+    /// The list of in-flight operations
+    operations: Shared<HashMap<ResultId, Operation>>,
+    /// The dependency map; maps in-flight results to operations that are dependent on them
+    dependencies: Shared<HashMap<ResultId, Vec<ResultId>>>,
+    /// A map of operations to wakers of tasks that are waiting on the operation to complete
+    wakers: Shared<HashMap<ResultId, Vec<Waker>>>,
+    /// A sender to the executor
+    execution_queue: TokioSender<ExecutorMessage>,
+    /// The underlying queue to the network
+    outbound_queue: TokioSender<NetworkOutbound>,
+    /// The underlying shared randomness source
+    beaver_source: Arc<Mutex<Box<dyn SharedValueSource>>>,
+}
+
+impl Debug for FabricInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "FabricInner")
+    }
+}
+
+impl FabricInner {
+    /// Constructor
+    pub fn new<S: 'static + SharedValueSource>(
+        party_id: u64,
+        execution_queue: TokioSender<ExecutorMessage>,
+        outbound_queue: TokioSender<NetworkOutbound>,
+        beaver_source: S,
+    ) -> Self {
         Self {
             party_id,
-            key_share,
-            network,
+            next_id: Arc::new(AtomicUsize::new(0)),
+            results: Arc::new(RwLock::new(HashMap::new())),
+            operations: Arc::new(RwLock::new(HashMap::new())),
+            dependencies: Arc::new(RwLock::new(HashMap::new())),
+            wakers: Arc::new(RwLock::new(HashMap::new())),
+            execution_queue,
+            outbound_queue,
+            beaver_source: Arc::new(Mutex::new(Box::new(beaver_source))),
+        }
+    }
+
+    /// Increment the operation counter and return the existing value
+    fn new_id(&self) -> ResultId {
+        self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    // ------------------------
+    // | Low Level Allocation |
+    // ------------------------
+
+    /// Allocate a new plaintext value in the fabric
+    pub(crate) fn allocate_value(&self, value: ResultValue) -> ResultId {
+        // Acquire locks
+        let mut locked_results = self.results.write().expect("results poisoned");
+
+        // Update fabric state
+        let id = self.new_id();
+        locked_results.insert(id, OpResult { id, value });
+
+        id
+    }
+
+    /// Allocate a secret shared value in the network
+    pub(crate) fn allocate_shared_value(
+        &self,
+        my_share: ResultValue,
+        their_share: ResultValue,
+    ) -> ResultId {
+        // Acquire locks
+        let mut locked_results = self.results.write().expect("results poisoned");
+
+        // Add my share to the results
+        let id = self.new_id();
+        locked_results.insert(
+            id,
+            OpResult {
+                id,
+                value: my_share,
+            },
+        );
+
+        // Send the counterparty their share
+        if let Err(e) = self.outbound_queue.send(NetworkOutbound {
+            op_id: id,
+            payload: their_share.into(),
+        }) {
+            log::error!("error sending share to counterparty: {e:?}");
+        }
+
+        id
+    }
+
+    /// Receive a value from a network operation initiated by a peer
+    ///
+    /// The peer will already send the value with the corresponding ID, so all that is needed
+    /// is to allocate a slot in the result buffer for the receipt
+    pub(crate) fn receive_value(&self) -> ResultId {
+        self.new_id()
+    }
+
+    // --------------
+    // | Operations |
+    // --------------
+
+    /// Allocate a new in-flight gate operation in the fabric
+    pub(crate) fn new_op(&self, args: Vec<ResultId>, op_type: OperationType) -> ResultId {
+        // Acquire all locks
+        let locked_results = self.results.read().expect("results poisoned");
+        let mut locked_ops = self.operations.write().expect("ops poisoned");
+        let mut locked_deps = self.dependencies.write().expect("deps poisoned");
+
+        // Get an ID for the result
+        let id = self.new_id();
+
+        // Count the args that are not yet ready
+        let inputs = args
+            .iter()
+            .filter_map(|id| locked_results.get(id))
+            .map(|op_res| op_res.value.clone())
+            .collect_vec();
+        let n_inflight = args.len() - inputs.len();
+
+        // Create an operation and handle it
+        let op = Operation {
+            id,
+            inflight_args: AtomicUsize::new(n_inflight),
+            args,
+            op_type,
+        };
+
+        // If all arguments are already resolved, forward to the executor for immediate execution
+        if n_inflight == 0 {
+            self.execution_queue
+                .send(ExecutorMessage::Op(op))
+                .expect("error sending op to executor");
+        } else {
+            // Update the dependency map
+            for arg in op.args.iter() {
+                locked_deps.entry(*arg).or_insert_with(Vec::new).push(id);
+            }
+
+            locked_ops.insert(id, op);
+        }
+
+        id
+    }
+}
+
+impl MpcFabric {
+    /// Constructor
+    pub fn new<S: 'static + SharedValueSource>(network: QuicTwoPartyNet, beaver_source: S) -> Self {
+        // Build communication primitives
+        let (result_sender, result_receiver) = unbounded_channel();
+        let (outbound_sender, outbound_receiver) = unbounded_channel();
+        let (shutdown_sender, shutdown_receiver) = broadcast::channel(1 /* capacity */);
+
+        // Build a fabric
+        let fabric = FabricInner::new(
+            network.party_id(),
+            result_sender.clone(),
+            outbound_sender,
             beaver_source,
-        }
+        );
+
+        // Start a network sender and operator executor
+        let network_sender = NetworkSender::new(
+            outbound_receiver,
+            result_sender.clone(),
+            network,
+            shutdown_receiver,
+        );
+        tokio::task::spawn_blocking(move || block_on(network_sender.run()));
+
+        let executor = Executor::new(
+            result_receiver,
+            result_sender,
+            fabric.clone(),
+            shutdown_sender.subscribe(),
+        );
+        tokio::task::spawn_blocking(move || block_on(executor.run()));
+
+        // Create the fabric and fill in the MAC key after
+        let mut self_ = Self {
+            inner: fabric.clone(),
+            shutdown: shutdown_sender,
+            mac_key: None,
+        };
+
+        // Sample a MAC key from the pre-shared values in the beaver source
+        let mac_key_id = fabric.allocate_value(ResultValue::Scalar(
+            fabric
+                .beaver_source
+                .lock()
+                .expect("beaver source poisoned")
+                .next_shared_value(),
+        ));
+        let mac_key = MpcScalarResult::new_shared(ResultHandle::new(mac_key_id, self_.clone()));
+
+        // Set the MAC key
+        self_.mac_key.replace(Arc::new(mac_key));
+
+        self_
     }
 
-    /// Read the party_id field
-    pub fn party_id(&self) -> u64 {
-        self.party_id
+    /// Get the party ID of the local party
+    pub fn party_id(&self) -> PartyId {
+        self.inner.party_id
     }
 
-    /// Borrow the beaver source from the fabric
-    pub fn borrow_beaver_source(&self) -> Ref<S> {
-        self.beaver_source.as_ref().borrow()
+    /// Shutdown the fabric and the threads it has spawned
+    pub fn shutdown(self) {
+        log::debug!("shutting down fabric");
+        self.shutdown
+            .send(())
+            .expect("error sending shutdown signal");
     }
 
-    /// Mutably borrow the beaver source from the fabric
-    pub fn borrow_beaver_source_mut(&self) -> RefMut<S> {
-        self.beaver_source.as_ref().borrow_mut()
+    /// Immutably borrow the MAC key
+    pub(crate) fn borrow_mac_key(&self) -> &MpcScalarResult {
+        // Unwrap is safe, the constructor sets the MAC key
+        self.mac_key.as_ref().unwrap()
     }
 
-    /// Allocate a single zero valued authenticated scalar
-    pub fn allocate_zero(&self) -> AuthenticatedScalar<N, S> {
-        AuthenticatedScalar::zero(
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
-        )
+    // ---------------------
+    // | Direct Allocation |
+    // ---------------------
+
+    /// Allocate a new plaintext value in the fabric
+    pub fn allocate_value<T: From<ResultValue>>(&self, value: ResultValue) -> ResultHandle<T> {
+        let id = self.inner.allocate_value(value);
+        ResultHandle::new(id, self.clone())
     }
 
-    /// Allocate a vector of zero valued authenticated scalars
-    pub fn allocate_zeros(&self, n: usize) -> Vec<AuthenticatedScalar<N, S>> {
-        (0..n)
-            .map(|_| {
-                AuthenticatedScalar::zero(
-                    self.key_share.clone(),
-                    self.network.clone(),
-                    self.beaver_source.clone(),
-                )
-            })
-            .collect()
-    }
-
-    /// Share a public u64 value in plaintext
-    pub fn share_plaintext_u64(&self, owning_party: u64, value: u64) -> Result<u64, MpcError> {
-        self.share_plaintext_scalar(owning_party, Scalar::from(value))
-            .map(|val| scalar_to_u64(&val))
-    }
-
-    /// Share a batch of public u64 values in plaintext
-    pub fn batch_share_plaintext_u64s(
+    /// Allocate a shared value in the fabric
+    pub fn allocate_shared_value<T: From<ResultValue>>(
         &self,
-        owning_party: u64,
-        values: &[u64],
-    ) -> Result<Vec<u64>, MpcError> {
-        let scalar_values = values.iter().map(|x| Scalar::from(*x)).collect_vec();
-        self.batch_share_plaintext_scalars(owning_party, &scalar_values)
-            .map(|values| values.iter().map(scalar_to_u64).collect_vec())
+        my_share: ResultValue,
+        their_share: ResultValue,
+    ) -> ResultHandle<T> {
+        let id = self.inner.allocate_shared_value(my_share, their_share);
+        ResultHandle::new(id, self.clone())
     }
 
-    /// Share a public scalar value in plaintext
-    pub fn share_plaintext_scalar(
+    /// Send a value to the peer, placing the identity in the local result buffer at the send ID
+    pub fn send_value<T: From<ResultValue> + Into<NetworkPayload>>(
         &self,
-        owning_party: u64,
-        value: Scalar,
-    ) -> Result<Scalar, MpcError> {
-        self.batch_share_plaintext_scalars(owning_party, &[value])
-            .map(|vec| vec[0])
+        value: ResultHandle<T>,
+    ) -> ResultHandle<T> {
+        self.new_network_op(vec![value.id], |args| {
+            let [value]: [T; 1] = cast_args(args);
+            value.into()
+        })
     }
 
-    /// Share a batch of public scalar values in plaintext
-    pub fn batch_share_plaintext_scalars(
-        &self,
-        owning_party: u64,
-        values: &[Scalar],
-    ) -> Result<Vec<Scalar>, MpcError> {
-        // Mux between send and receive
-        if self.party_id() == owning_party {
-            Handle::current()
-                .block_on(self.network.borrow_mut().send_scalars(values))
-                .map_err(MpcError::NetworkError)?;
+    /// Receive a value from the peer
+    pub fn receive_value<T: From<ResultValue>>(&self) -> ResultHandle<T> {
+        let id = self.inner.receive_value();
+        ResultHandle::new(id, self.clone())
+    }
 
-            Ok(values.to_vec())
+    /// Exchange a value with the peer, i.e. send then receive or receive then send
+    /// based on the party ID
+    ///
+    /// Returns a handle to the received value, which will be different for different parties
+    pub fn exchange_value<T: From<ResultValue> + Into<NetworkPayload>>(
+        &self,
+        value: ResultHandle<T>,
+    ) -> ResultHandle<T> {
+        if self.party_id() == PARTY0 {
+            // Party 0 sends first then receives
+            self.send_value(value);
+            self.receive_value()
         } else {
-            let received_values = Handle::current()
-                .block_on(self.network.borrow_mut().receive_scalars(values.len()))
-                .map_err(MpcError::NetworkError)?;
-            Ok(received_values)
+            // Party 1 receives first then sends
+            let handle = self.receive_value();
+            self.send_value(value);
+            handle
         }
     }
 
-    /// Share a serialized byte array directly
-    pub fn share_bytes(&self, owning_party: u64, value: &[u8]) -> Result<Vec<u8>, MpcError> {
-        if self.party_id() == owning_party {
-            Handle::current()
-                .block_on(self.network.borrow_mut().send_bytes(value))
-                .map_err(MpcError::NetworkError)?;
+    // -------------------
+    // | Gate Definition |
+    // -------------------
 
-            Ok(value.to_vec())
-        } else {
-            Handle::current()
-                .block_on(self.network.borrow_mut().receive_bytes())
-                .map_err(MpcError::NetworkError)
-        }
+    /// Construct a new gate operation in the fabric, i.e. one that can be evaluated immediate given
+    /// its inputs
+    pub fn new_gate_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<T>
+    where
+        F: 'static + FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync,
+        T: From<ResultValue>,
+    {
+        let function = Box::new(function);
+        let id = self.inner.new_op(args, OperationType::Gate { function });
+        ResultHandle::new(id, self.clone())
     }
 
-    /// Allocate a scalar that acts as one of the given party's private inputs to the protocol
-    ///
-    /// If the local party is the specified party, then this method will construct an additive sharing
-    /// of the input and distribute the shares amongst the peers.
-    ///
-    /// If the local party is not the specified party, this method will await a share distributed by
-    /// the owner of the input value.
-    pub fn allocate_private_scalar(
-        &self,
-        owning_party: u64,
-        value: Scalar,
-    ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
-        // Create the wrapped scalar and share it
-        let authenticated_value = AuthenticatedScalar::from_private_scalar(
-            value,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
-        );
-
-        authenticated_value
-            .share_secret(owning_party)
-            .map_err(MpcError::NetworkError)
+    /// Construct a new network operation in the fabric, i.e. one that requires a value to be sent
+    /// over the channel
+    pub fn new_network_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<T>
+    where
+        F: 'static + FnOnce(Vec<ResultValue>) -> NetworkPayload + Send + Sync,
+        T: From<ResultValue>,
+    {
+        let function = Box::new(function);
+        let id = self.inner.new_op(args, OperationType::Network { function });
+        ResultHandle::new(id, self.clone())
     }
 
-    /// Allocate a batch of private scalars
-    pub fn batch_allocate_private_scalars(
-        &self,
-        owning_party: u64,
-        values: &[Scalar],
-    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
-        let authenticated_values = values
-            .iter()
-            .map(|value| {
-                AuthenticatedScalar::from_private_scalar(
-                    *value,
-                    self.key_share.clone(),
-                    self.network.clone(),
-                    self.beaver_source.clone(),
-                )
-            })
-            .collect_vec();
+    // -----------------
+    // | Beaver Source |
+    // -----------------
 
-        AuthenticatedScalar::batch_share_secrets(owning_party, &authenticated_values)
-            .map_err(MpcError::NetworkError)
-    }
-
-    /// Allocate a scalar that acts as a public value within the MPC protocol
-    ///
-    /// No secret shares are constructed from this, it is assumed that all parties call this method
-    /// with the same (known) value
-    pub fn allocate_public_scalar(&self, value: Scalar) -> AuthenticatedScalar<N, S> {
-        AuthenticatedScalar::from_public_scalar(
-            value,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
-        )
-    }
-
-    /// Allocate a batch of public scalars
-    pub fn batch_allocate_public_scalar(
-        &self,
-        values: &[Scalar],
-    ) -> Vec<AuthenticatedScalar<N, S>> {
-        values
-            .iter()
-            .map(|value| self.allocate_public_scalar(*value))
-            .collect_vec()
-    }
-
-    /// Allocate a scalar from a u64 as a private input to the MPC protocol
-    pub fn allocate_private_u64(
-        &self,
-        owning_party: u64,
-        value: u64,
-    ) -> Result<AuthenticatedScalar<N, S>, MpcError> {
-        self.allocate_private_scalar(owning_party, Scalar::from(value))
-    }
-
-    /// Allocate a batch of private u64s
-    pub fn batch_allocate_private_u64s(
-        &self,
-        owning_party: u64,
-        values: &[u64],
-    ) -> Result<Vec<AuthenticatedScalar<N, S>>, MpcError> {
-        self.batch_allocate_private_scalars(
-            owning_party,
-            &values.iter().map(|a| Scalar::from(*a)).collect_vec(),
-        )
-    }
-
-    /// Allocate a scalar from a u64 as a public input to the MPC protocol
-    pub fn allocate_public_u64(&self, value: u64) -> AuthenticatedScalar<N, S> {
-        self.allocate_public_scalar(Scalar::from(value))
-    }
-
-    /// Allocate a batch of public u64s
-    pub fn batch_allocate_public_u64s(&self, values: &[u64]) -> Vec<AuthenticatedScalar<N, S>> {
-        values
-            .iter()
-            .map(|x| self.allocate_public_u64(*x))
-            .collect_vec()
-    }
-
-    /// Allocate a random shared bit in the network from the pre-processing functionality (beaver source)
-    ///
-    /// Returns a scalar representing a shared bit
-    pub fn allocate_random_shared_bit(&self) -> AuthenticatedScalar<N, S> {
-        let random_bit = self.borrow_beaver_source_mut().next_shared_bit();
-        let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
-            random_bit,
-            Visibility::Shared,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
-        );
-
-        // The value comes from the pre-processing functionality without a MAC, compute one on the fly
-        shared_value.recompute_mac();
-        shared_value
-    }
-
-    /// Allocate a batch of random bits in the network from the beaver source
-    ///
-    /// Returns a vector of scalars, each one representing a shared bit
-    pub fn allocate_random_shared_bit_batch(
-        &self,
-        num_scalars: usize,
-    ) -> Vec<AuthenticatedScalar<N, S>> {
-        let random_bits = self
-            .borrow_beaver_source_mut()
-            .next_shared_bit_batch(num_scalars);
-        random_bits
-            .into_iter()
-            .map(|bit| {
-                let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
-                    bit,
-                    Visibility::Shared,
-                    self.key_share.clone(),
-                    self.network.clone(),
-                    self.beaver_source.clone(),
-                );
-                shared_value.recompute_mac();
-                shared_value
-            })
-            .collect_vec()
-    }
-
-    /// Allocate a random scalar in the network and construct secret shares of it
-    /// Uses the beaver source to generate the random scalar
-    pub fn allocate_random_shared_scalar(&self) -> AuthenticatedScalar<N, S> {
-        // The pre-processing functionality provides a set of additive shares of random values
-        // pull one from the source.
-        let random_scalar = self.beaver_source.as_ref().borrow_mut().next_shared_value();
-
-        let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
-            random_scalar,
-            Visibility::Shared,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
-        );
-
-        // No MAC exists on the value when it is created from a shared pre-processing value
-        // explicitly compute the MAC so that it can be validly used
-        shared_value.recompute_mac();
-        shared_value
-    }
-
-    /// Allocate a batch of random scalars in the network and construct secret shares of them
-    /// Uses the beaver source to generate the random scalar
-    pub fn allocate_random_scalars_batch(
-        &self,
-        num_scalars: usize,
-    ) -> Vec<AuthenticatedScalar<N, S>> {
-        let mut shared_values = self
+    /// Sample the next beaver triplet from the beaver source
+    pub fn next_beaver_triple(&self) -> (MpcScalarResult, MpcScalarResult, MpcScalarResult) {
+        // Sample the triple and allocate it in the fabric, the counterparty will do the same
+        let (a, b, c) = self
+            .inner
             .beaver_source
-            .as_ref()
-            .borrow_mut()
-            .next_shared_value_batch(num_scalars)
-            .iter()
-            .map(|value| {
-                AuthenticatedScalar::from_scalar_with_visibility(
-                    *value,
-                    Visibility::Shared,
-                    self.key_share.clone(),
-                    self.network.clone(),
-                    self.beaver_source.clone(),
-                )
-            })
-            .collect::<Vec<AuthenticatedScalar<N, S>>>();
+            .lock()
+            .expect("beaver source poisoned")
+            .next_triplet();
 
-        // TODO: This can be done as a batch_mul
-        // Recompute the MACs in a separate step (i.e. outside map) to allow the mutable borrow
-        // of `self.beaver_source` to be released.
-        // `recompute_mac` requires a `Mul` which obtains a mutable borrow of the beaver source
-        shared_values
-            .iter_mut()
-            .for_each(|value| value.recompute_mac());
-        shared_values
-    }
+        let a_val = self.allocate_value(ResultValue::Scalar(a));
+        let b_val = self.allocate_value(ResultValue::Scalar(b));
+        let c_val = self.allocate_value(ResultValue::Scalar(c));
 
-    /// Allocate a random pair of multiplicative inverses using the beaver source; i.e. (b, b^-1)
-    pub fn allocate_random_inverse_pair(
-        &self,
-    ) -> (AuthenticatedScalar<N, S>, AuthenticatedScalar<N, S>) {
-        let inverse_pair = self
-            .beaver_source
-            .as_ref()
-            .borrow_mut()
-            .next_shared_inverse_pair();
-
-        let mut shared_scalars = (
-            AuthenticatedScalar::from_scalar_with_visibility(
-                inverse_pair.0,
-                Visibility::Shared,
-                self.key_share.clone(),
-                self.network.clone(),
-                self.beaver_source.clone(),
-            ),
-            AuthenticatedScalar::from_scalar_with_visibility(
-                inverse_pair.1,
-                Visibility::Shared,
-                self.key_share.clone(),
-                self.network.clone(),
-                self.beaver_source.clone(),
-            ),
-        );
-
-        // The values from the beaver source have no MAC, compute them now
-        shared_scalars.0.recompute_mac();
-        shared_scalars.1.recompute_mac();
-        shared_scalars
-    }
-
-    /// TODO: Optimize MAC recomputation to use batch mul interface (in a single round)
-    /// Allocate a batch of random pairs of multiplicative inverses from the beaver source, i.e.:
-    ///     [(b_1, b_1^-1), ..., (b_n, b_n^-1)]
-    pub fn allocate_random_inverse_pair_batch(
-        &self,
-        num_inverses: usize,
-    ) -> Vec<(AuthenticatedScalar<N, S>, AuthenticatedScalar<N, S>)> {
-        let inverse_pairs = self
-            .beaver_source
-            .as_ref()
-            .borrow_mut()
-            .next_shared_inverse_pair_batch(num_inverses);
-
-        let mut shared_scalars = inverse_pairs
-            .into_iter()
-            .map(|(b, b_inv)| {
-                (
-                    AuthenticatedScalar::from_scalar_with_visibility(
-                        b,
-                        Visibility::Shared,
-                        self.key_share.clone(),
-                        self.network.clone(),
-                        self.beaver_source.clone(),
-                    ),
-                    AuthenticatedScalar::from_scalar_with_visibility(
-                        b_inv,
-                        Visibility::Shared,
-                        self.key_share.clone(),
-                        self.network.clone(),
-                        self.beaver_source.clone(),
-                    ),
-                )
-            })
-            .collect_vec();
-        shared_scalars.iter_mut().for_each(|(b, b_inv)| {
-            b.recompute_mac();
-            b_inv.recompute_mac();
-        });
-
-        shared_scalars
-    }
-
-    /// Allocates an `AuthenticatedScalar` from a value that is presumed to be a valid additive Shamir
-    /// share of some underlying secret value.
-    pub fn allocate_preshared_scalar(&self, value: Scalar) -> AuthenticatedScalar<N, S> {
-        let mut shared_value = AuthenticatedScalar::from_scalar_with_visibility(
-            value,
-            crate::Visibility::Shared,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
-        );
-
-        shared_value.recompute_mac();
-        shared_value
-    }
-
-    /// Allocates a batch of `AuthenticatedScalar`s which are presumed to be a valid additive sharing
-    /// of some underlying secret value
-    pub fn batch_allocate_preshared_scalar(
-        &self,
-        values: &[Scalar],
-    ) -> Vec<AuthenticatedScalar<N, S>> {
-        values
-            .iter()
-            .map(|val| {
-                let mut authenticated = AuthenticatedScalar::from_scalar_with_visibility(
-                    *val,
-                    Visibility::Shared,
-                    self.key_share.clone(),
-                    self.network.clone(),
-                    self.beaver_source.clone(),
-                );
-                authenticated.recompute_mac();
-                authenticated
-            })
-            .collect()
-    }
-
-    /// Allocate a RistrettoPoint that acts as one of the given party's private inputs to the protocol
-    ///
-    /// If the local party is the specified party, then this method will construct an additive sharing
-    /// of the input and distribute the shares amongst the peers.
-    ///
-    /// If the local party is not the specified party, this method will await a share distributed by
-    /// the owner of the input value.
-    pub fn allocate_private_ristretto(
-        &self,
-        owning_party: u64,
-        value: RistrettoPoint,
-    ) -> Result<AuthenticatedRistretto<N, S>, MpcError> {
-        let authenticated_value = AuthenticatedRistretto::from_private_ristretto_point(
-            value,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
-        );
-
-        authenticated_value
-            .share_secret(owning_party)
-            .map_err(MpcError::NetworkError)
-    }
-
-    /// Allocate a batch of private ristretto points
-    pub fn batch_allocate_private_ristrettos(
-        &self,
-        owning_party: u64,
-        values: &[RistrettoPoint],
-    ) -> Result<Vec<AuthenticatedRistretto<N, S>>, MpcError> {
-        let authenticated_values = values
-            .iter()
-            .map(|value| {
-                AuthenticatedRistretto::from_private_ristretto_point(
-                    *value,
-                    self.key_share.clone(),
-                    self.network.clone(),
-                    self.beaver_source.clone(),
-                )
-            })
-            .collect_vec();
-
-        AuthenticatedRistretto::batch_share_secrets(owning_party, &authenticated_values)
-            .map_err(MpcError::NetworkError)
-    }
-
-    /// Allocate a RistrettoPoint that acts as a public value within the MPC protocol
-    ///
-    /// No secret shares are constructed from this, it is assumed that all parties call this method
-    /// with the same (known) value
-    pub fn allocate_public_ristretto(&self, value: RistrettoPoint) -> AuthenticatedRistretto<N, S> {
-        AuthenticatedRistretto::from_public_ristretto_point(
-            value,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
+        (
+            MpcScalarResult::new_shared(a_val),
+            MpcScalarResult::new_shared(b_val),
+            MpcScalarResult::new_shared(c_val),
         )
     }
 
-    /// Allocate a batch of public Ristretto points
-    pub fn batch_allocate_public_ristretto(
+    /// Sample the next beaver triplet with MACs from the beaver source
+    ///
+    /// TODO: Authenticate these values either here or in the pre-processing phase as per
+    /// the SPDZ paper
+    pub fn next_authenticated_beaver_triple(
         &self,
-        values: &[RistrettoPoint],
-    ) -> Vec<AuthenticatedRistretto<N, S>> {
-        values
-            .iter()
-            .map(|value| self.allocate_public_ristretto(*value))
-            .collect_vec()
-    }
+    ) -> (
+        AuthenticatedScalarResult,
+        AuthenticatedScalarResult,
+        AuthenticatedScalarResult,
+    ) {
+        let (a, b, c) = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_triplet();
 
-    /// Allocate a public compressed ristretto point in the MPC network
-    pub fn allocate_public_compressed_ristretto(
-        &self,
-        value: CompressedRistretto,
-    ) -> AuthenticatedCompressedRistretto<N, S> {
-        AuthenticatedCompressedRistretto::from_public_compressed_ristretto(
-            value,
-            self.key_share.clone(),
-            self.network.clone(),
-            self.beaver_source.clone(),
+        let a_val = self.allocate_value(ResultValue::Scalar(a));
+        let b_val = self.allocate_value(ResultValue::Scalar(b));
+        let c_val = self.allocate_value(ResultValue::Scalar(c));
+
+        (
+            AuthenticatedScalarResult::new_shared(a_val),
+            AuthenticatedScalarResult::new_shared(b_val),
+            AuthenticatedScalarResult::new_shared(c_val),
         )
-    }
-
-    /// Allocate a batch of public compressed Ristretto points
-    pub fn batch_allocate_public_compressed_ristretto(
-        &self,
-        values: &[CompressedRistretto],
-    ) -> Vec<AuthenticatedCompressedRistretto<N, S>> {
-        values
-            .iter()
-            .map(|value| self.allocate_public_compressed_ristretto(*value))
-            .collect_vec()
     }
 }
