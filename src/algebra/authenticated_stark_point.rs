@@ -54,7 +54,8 @@ impl AuthenticatedStarkPointResult {
         let mac = fabric_clone.borrow_mac_key() * &mpc_value;
 
         // Allocate a zero point for the public modifier
-        let public_modifier = fabric_clone.allocate_value(ResultValue::Point(StarkPoint::zero()));
+        let public_modifier =
+            fabric_clone.allocate_value(ResultValue::Point(StarkPoint::identity()));
 
         Self {
             value: mpc_value,
@@ -134,7 +135,7 @@ impl AuthenticatedStarkPointResult {
 
                 // Check that the MAC check shares add up to the additive identity in
                 // the Starknet curve group
-                if my_mac_check + peer_mac_check != StarkPoint::zero() {
+                if my_mac_check + peer_mac_check != StarkPoint::identity() {
                     return ResultValue::Scalar(Scalar::from(0));
                 }
 
@@ -191,7 +192,7 @@ impl Add<&StarkPoint> for &AuthenticatedStarkPointResult {
         } else {
             // Other parties just add the identity to the value to allocate a new op and keep
             // in sync with party 0
-            &self.value + StarkPoint::zero()
+            &self.value + StarkPoint::identity()
         };
 
         // Add the public value to the MAC
@@ -217,7 +218,7 @@ impl Add<&StarkPointResult> for &AuthenticatedStarkPointResult {
         } else {
             // Other parties just add the identity to the value to allocate a new op and keep
             // in sync with party 0
-            &self.value + StarkPoint::zero()
+            &self.value + StarkPoint::identity()
         };
 
         // Add the public value to the MAC
@@ -263,7 +264,7 @@ impl Sub<&StarkPoint> for &AuthenticatedStarkPointResult {
         } else {
             // Other parties just subtract the identity from the value to allocate a new op and keep
             // in sync with party 0
-            &self.value - StarkPoint::zero()
+            &self.value - StarkPoint::identity()
         };
 
         // Subtract the public value from the MAC
@@ -289,7 +290,7 @@ impl Sub<&StarkPointResult> for &AuthenticatedStarkPointResult {
         } else {
             // Other parties just subtract the identity from the value to allocate a new op and keep
             // in sync with party 0
-            &self.value - StarkPoint::zero()
+            &self.value - StarkPoint::identity()
         };
 
         // Subtract the public value from the MAC

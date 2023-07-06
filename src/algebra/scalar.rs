@@ -9,7 +9,8 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use ark_ff::{Fp256, MontBackend, MontConfig, PrimeField};
+use ark_ff::{batch_inversion, Field, Fp256, MontBackend, MontConfig, PrimeField};
+use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +37,7 @@ pub struct StarknetFrConfig;
 /// the order of the curve's group, see [here](https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve)
 /// for more information
 pub(crate) type ScalarInner = Fp256<MontBackend<StarknetFrConfig, 4>>;
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 /// A wrapper around the inner scalar that allows us to implement foreign traits for the `Scalar`
 pub struct Scalar(pub(crate) ScalarInner);
 
@@ -53,6 +54,30 @@ impl Scalar {
     /// The scalar field's multiplicative identity
     pub fn one() -> Scalar {
         Scalar(ScalarInner::from(1))
+    }
+
+    /// Generate a random scalar
+    ///
+    /// n.b. The `rand::random` method uses `ThreadRng` type which implements
+    /// the `CryptoRng` traits
+    pub fn random() -> Scalar {
+        let bytes: [u8; 32] = rand::random();
+        Scalar::from_be_bytes_mod_order(&bytes)
+    }
+
+    /// Compute the multiplicative inverse of the scalar in its field
+    pub fn inverse(&self) -> Scalar {
+        Scalar(self.0.inverse().unwrap())
+    }
+
+    /// Compute the batch inversion of a list of Scalars
+    pub fn batch_inverse(vals: &mut [Scalar]) {
+        let mut values = vals.iter().map(|x| x.0).collect_vec();
+        batch_inversion(&mut values);
+
+        for (i, val) in vals.iter_mut().enumerate() {
+            *val = Scalar(values[i]);
+        }
     }
 
     /// Construct a scalar from the given bytes and reduce modulo the field's modulus

@@ -78,7 +78,7 @@ impl<'de> Deserialize<'de> for StarkPoint {
 
 impl StarkPoint {
     /// The additive identity in the curve group
-    pub fn zero() -> StarkPoint {
+    pub fn identity() -> StarkPoint {
         StarkPoint(StarkPointInner::zero())
     }
 
@@ -314,7 +314,7 @@ impl MulAssign<&Scalar> for StarkPoint {
 
 impl Sum for StarkPoint {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(StarkPoint::zero(), |acc, x| acc + x)
+        iter.fold(StarkPoint::identity(), |acc, x| acc + x)
     }
 }
 
@@ -431,7 +431,7 @@ mod test {
     #[test]
     fn test_additive_identity() {
         let p1 = random_point();
-        let res = p1 + StarkPoint::zero();
+        let res = p1 + StarkPoint::identity();
 
         assert_eq!(p1, res);
     }
