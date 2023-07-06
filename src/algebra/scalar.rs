@@ -4,7 +4,7 @@
 // | Scalar Field Definitions |
 // ----------------------------
 
-use std::ops::{Add, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use ark_ff::{Fp256, MontBackend, MontConfig, PrimeField};
 use num_bigint::BigUint;
@@ -96,6 +96,8 @@ impl<'de> Deserialize<'de> for Scalar {
 // | Arithmetic |
 // --------------
 
+// === Addition === //
+
 /// A type alias for a result that resolves to a `Scalar`
 pub type ScalarResult = ResultHandle<Scalar>;
 
@@ -135,6 +137,16 @@ impl Add<&ScalarResult> for &ScalarResult {
 }
 impl_borrow_variants!(ScalarResult, Add, add, +, ScalarResult);
 
+// === AddAssign === //
+
+impl AddAssign for Scalar {
+    fn add_assign(&mut self, rhs: Scalar) {
+        *self = *self + rhs;
+    }
+}
+
+// === Subtraction === //
+
 impl Sub<&Scalar> for &Scalar {
     type Output = Scalar;
 
@@ -170,6 +182,16 @@ impl Sub<&ScalarResult> for &ScalarResult {
     }
 }
 impl_borrow_variants!(ScalarResult, Sub, sub, -, ScalarResult);
+
+// === SubAssign === //
+
+impl SubAssign for Scalar {
+    fn sub_assign(&mut self, rhs: Scalar) {
+        *self = *self - rhs;
+    }
+}
+
+// === Multiplication === //
 
 impl Mul<&Scalar> for &Scalar {
     type Output = Scalar;
@@ -227,6 +249,14 @@ impl Neg for &ScalarResult {
     }
 }
 impl_borrow_variants!(ScalarResult, Neg, neg, -);
+
+// === MulAssign === //
+
+impl MulAssign for Scalar {
+    fn mul_assign(&mut self, rhs: Scalar) {
+        *self = *self * rhs;
+    }
+}
 
 // ---------------
 // | Conversions |

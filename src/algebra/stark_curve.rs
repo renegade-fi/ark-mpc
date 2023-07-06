@@ -2,7 +2,7 @@
 
 use std::{
     mem::size_of,
-    ops::{Add, Mul, Neg, Sub},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 use ark_ec::{
@@ -102,6 +102,8 @@ impl StarkPoint {
 // | Curve Arithmetic Implementations |
 // ------------------------------------
 
+// === Addition === //
+
 impl Add<&StarkPointInner> for &StarkPoint {
     type Output = StarkPoint;
 
@@ -150,6 +152,16 @@ impl Add<&StarkPoint> for &StarkPointResult {
 impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPoint);
 impl_commutative!(StarkPointResult, Add, add, +, StarkPoint);
 
+// === AddAssign === //
+
+impl AddAssign for StarkPoint {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+// === Subtraction === //
+
 impl Sub<&StarkPoint> for &StarkPoint {
     type Output = StarkPoint;
 
@@ -196,6 +208,16 @@ impl Sub<&StarkPointResult> for &StarkPoint {
     }
 }
 
+// === SubAssign === //
+
+impl SubAssign for StarkPoint {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
+}
+
+// === Negation === //
+
 impl Neg for &StarkPoint {
     type Output = StarkPoint;
 
@@ -216,6 +238,8 @@ impl Neg for &StarkPointResult {
     }
 }
 impl_borrow_variants!(StarkPointResult, Neg, neg, -);
+
+// === Scalar Multiplication === //
 
 impl Mul<&Scalar> for &StarkPoint {
     type Output = StarkPoint;
@@ -269,6 +293,14 @@ impl Mul<&ScalarResult> for &StarkPointResult {
 }
 impl_borrow_variants!(StarkPointResult, Mul, mul, *, ScalarResult);
 impl_commutative!(StarkPointResult, Mul, mul, *, ScalarResult);
+
+// === MulAssign === //
+
+impl MulAssign<&Scalar> for StarkPoint {
+    fn mul_assign(&mut self, rhs: &Scalar) {
+        self.0 *= rhs.0;
+    }
+}
 
 // ---------
 // | Tests |
