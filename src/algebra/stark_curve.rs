@@ -27,6 +27,9 @@ use super::{
 /// performing a multiscalar multiplication
 const MSM_CHUNK_SIZE: usize = 1 << 16;
 
+/// The number of bytes needed to serialize a `StarkPoint`
+pub const STARK_POINT_BYTES: usize = 32;
+
 /// The Stark curve in the arkworks short Weierstrass curve representation
 pub struct StarknetCurveConfig;
 impl CurveConfig for StarknetCurveConfig {
@@ -82,6 +85,11 @@ impl StarkPoint {
         StarkPoint(StarkPointInner::zero())
     }
 
+    /// Check whether the given point is the identity point in the group
+    pub fn is_identity(&self) -> bool {
+        self == &StarkPoint::identity()
+    }
+
     /// The group generator
     pub fn generator() -> StarkPoint {
         StarkPoint(StarkPointInner::generator())
@@ -91,7 +99,7 @@ impl StarkPoint {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out: Vec<u8> = Vec::with_capacity(size_of::<StarkPoint>());
         self.0
-            .serialize_uncompressed(&mut out)
+            .serialize_compressed(&mut out)
             .expect("Failed to serialize point");
 
         out
@@ -99,7 +107,7 @@ impl StarkPoint {
 
     /// Deserialize a point from a byte buffer
     pub fn from_bytes(bytes: &[u8]) -> Result<StarkPoint, SerializationError> {
-        let point = StarkPointInner::deserialize_uncompressed(bytes)?;
+        let point = StarkPointInner::deserialize_compressed(bytes)?;
         Ok(StarkPoint(point))
     }
 }
@@ -434,5 +442,19 @@ mod test {
         let res = p1 + StarkPoint::identity();
 
         assert_eq!(p1, res);
+    }
+
+    /// Tests the size of the curve point serialization
+    #[test]
+    fn test_point_serialized() {
+        // Sample a random point and serialize it to bytes
+        let point = random_point();
+        let res = point.to_bytes();
+
+        assert_eq!(res.len(), STARK_POINT_BYTES);
+
+        // Deserialize and verify the points are equal
+        let deserialized = StarkPoint::from_bytes(&res).unwrap();
+        assert_eq!(point, deserialized);
     }
 }

@@ -18,6 +18,9 @@ use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
 use super::macros::{impl_borrow_variants, impl_commutative};
 
+/// The number of bytes in a `Scalar`
+pub const SCALAR_BYTES: usize = 32;
+
 /// The config for finite field that the Starknet curve is defined over
 #[derive(MontConfig)]
 #[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
@@ -309,5 +312,27 @@ impl Sum for Scalar {
 impl Product for Scalar {
     fn product<I: Iterator<Item = Scalar>>(iter: I) -> Self {
         iter.fold(Scalar::one(), |acc, x| acc * x)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        algebra::scalar::{Scalar, SCALAR_BYTES},
+        random_scalar,
+    };
+
+    /// Tests serializing and deserializing a scalar
+    #[test]
+    fn test_scalar_serialize() {
+        // Sample a random scalar and convert it to bytes
+        let scalar = random_scalar();
+        let bytes = scalar.to_bytes_be();
+
+        assert_eq!(bytes.len(), SCALAR_BYTES);
+
+        // Deserialize and validate the scalar
+        let scalar_deserialized = Scalar::from_be_bytes_mod_order(&bytes);
+        assert_eq!(scalar, scalar_deserialized);
     }
 }
