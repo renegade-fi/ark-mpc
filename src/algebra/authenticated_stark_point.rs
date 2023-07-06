@@ -7,8 +7,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use ark_ec::Group;
-use ark_ff::Zero;
 use futures::{Future, FutureExt};
 
 use crate::{
@@ -23,7 +21,8 @@ use super::{
     authenticated_scalar::AuthenticatedScalarResult,
     macros::{impl_borrow_variants, impl_commutative},
     mpc_stark_point::MpcStarkPointResult,
-    stark_curve::{Scalar, ScalarResult, StarkPointResult},
+    scalar::{Scalar, ScalarResult},
+    stark_curve::StarkPointResult,
 };
 
 /// A maliciously secure wrapper around `MpcStarkPoint` that includes a MAC as per
@@ -409,6 +408,29 @@ impl Mul<&AuthenticatedScalarResult> for &AuthenticatedStarkPointResult {
 }
 impl_borrow_variants!(AuthenticatedStarkPointResult, Mul, mul, *, AuthenticatedScalarResult);
 impl_commutative!(AuthenticatedStarkPointResult, Mul, mul, *, AuthenticatedScalarResult);
+
+// === Multiscalar Multiplication === //
+
+impl AuthenticatedStarkPointResult {
+    /// Multiscalar multiplication
+    ///
+    /// TODO: Batch this implementation onto the network if necessary
+    pub fn multiscalar_mul(
+        scalars: &[AuthenticatedScalarResult],
+        points: &[AuthenticatedStarkPointResult],
+    ) -> AuthenticatedStarkPointResult {
+        assert_eq!(
+            scalars.len(),
+            points.len(),
+            "multiscalar_mul requires equal length vectors"
+        );
+        let init = &scalars[0] * &points[0];
+        scalars[1..]
+            .iter()
+            .zip(points[1..].iter())
+            .fold(init, |acc, (s, p)| acc + (s * p))
+    }
+}
 
 // ----------------
 // | Test Helpers |

@@ -1,13 +1,13 @@
 //! Defines Pedersen commitments over the Stark curve used to commit to a value
 //! before opening it
 
-use ark_ec::Group;
-use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
 use sha3::{Digest, Sha3_256};
 
 use crate::{
-    algebra::stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
+    algebra::{
+        scalar::{Scalar, ScalarResult},
+        stark_curve::{StarkPoint, StarkPointResult},
+    },
     fabric::ResultValue,
     random_scalar,
 };
@@ -51,7 +51,7 @@ impl PedersenCommitmentResult {
         // in dalek-cryptography: https://github.com/dalek-cryptography/bulletproofs/blob/main/src/generators.rs#L44-L53
         let blinder = random_scalar();
         let generator = StarkPoint::generator();
-        let commitment = &generator * &value + generator * blinder;
+        let commitment = generator * &value + generator * blinder;
 
         PedersenCommitmentResult {
             value,
@@ -81,16 +81,15 @@ impl HashCommitment {
     /// Verify that the given commitment is valid
     pub(crate) fn verify(&self) -> bool {
         // Create the bytes buffer
-        let mut bytes = Vec::<u8>::new();
-        self.value.serialize_uncompressed(&mut bytes).unwrap();
-        self.blinder.serialize_uncompressed(&mut bytes).unwrap();
+        let mut bytes = self.value.to_bytes();
+        bytes.append(&mut self.blinder.to_bytes_be());
 
         // Hash the bytes, squeeze an output, verify that it is equal to the commitment
         let mut hasher = Sha3_256::new();
         hasher.update(bytes);
 
         let out_bytes = hasher.finalize();
-        let out = Scalar::from_le_bytes_mod_order(out_bytes.as_slice());
+        let out = Scalar::from_be_bytes_mod_order(out_bytes.as_slice());
 
         out == self.commitment
     }
@@ -110,21 +109,19 @@ impl HashCommitmentResult {
     /// Create a new hash commitment to an underlying value
     pub(crate) fn commit(value: StarkPointResult) -> HashCommitmentResult {
         let blinder = random_scalar();
-        let blinder_clone = blinder;
         let comm = value.fabric.new_gate_op(vec![value.id], move |mut args| {
             let value: StarkPoint = args.remove(0).into();
 
-            // Compute the hash of the point's bytes and the blinder
-            let mut bytes = Vec::<u8>::new();
-            value.serialize_uncompressed(&mut bytes).unwrap();
-            blinder_clone.serialize_uncompressed(&mut bytes).unwrap();
+            // Create the bytes buffer
+            let mut bytes = value.to_bytes();
+            bytes.append(&mut blinder.to_bytes_be());
 
             // Hash the bytes, squeeze an output, verify that it is equal to the commitment
             let mut hasher = Sha3_256::new();
             hasher.update(bytes);
 
             let out_bytes = hasher.finalize();
-            let out = Scalar::from_le_bytes_mod_order(out_bytes.as_slice());
+            let out = Scalar::from_be_bytes_mod_order(out_bytes.as_slice());
 
             ResultValue::Scalar(out)
         });

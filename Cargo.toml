@@ -24,7 +24,6 @@ required-features = ["test_helpers"]
 
 [dependencies]
 # == Async == #
-async-std = "1.12"
 async-trait = "0.1"
 futures = "0.3"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
@@ -37,7 +36,6 @@ digest = "0.10"
 num-bigint = "0.4"
 rand = "0.8"
 sha3 = { version = "0.10" }
-subtle = "2.4.1"
 
 # == Networking + Messaging == # 
 rcgen = "0.9"
@@ -48,9 +46,7 @@ quinn = { version = "0.9", features = ["tls-rustls", "native-certs"] }
 
 # == Misc == #
 bytes = "1.2"
-clear_on_drop = "0.2"
 itertools = "0.10"
-lazy_static = "1.4"
 tracing = { version = "0.1", features = ["log"] }
 zeroize = "1.3"
 

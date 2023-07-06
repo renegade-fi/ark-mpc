@@ -36,6 +36,7 @@ pub(super) struct Executor {
 ///  execute any operations that are now ready
 /// - An operation directly, which the executor will execute immediately if all of its
 ///  arguments are ready
+#[derive(Debug)]
 pub(crate) enum ExecutorMessage {
     /// A result of an operation
     Result(OpResult),

@@ -6,10 +6,8 @@ use futures::Future;
 use mpc_stark::{
     algebra::{
         authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointResult,
-        mpc_scalar::MpcScalarResult,
-        mpc_stark_point::MpcStarkPointResult,
-        stark_curve::{Scalar, StarkPoint},
+        authenticated_stark_point::AuthenticatedStarkPointResult, mpc_scalar::MpcScalarResult,
+        mpc_stark_point::MpcStarkPointResult, scalar::Scalar, stark_curve::StarkPoint,
     },
     beaver::SharedValueSource,
     fabric::{MpcFabric, ResultHandle, ResultValue},

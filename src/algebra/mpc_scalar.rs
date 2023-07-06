@@ -12,7 +12,8 @@ use crate::{
 use super::{
     macros::{impl_borrow_variants, impl_commutative},
     mpc_stark_point::{MpcStarkPoint, MpcStarkPointResult},
-    stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
+    scalar::{Scalar, ScalarResult},
+    stark_curve::{StarkPoint, StarkPointResult},
 };
 
 /// Defines a secret shared type over the `Scalar` field

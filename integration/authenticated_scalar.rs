@@ -2,7 +2,7 @@
 //! a malicious-secure primitive
 
 use mpc_stark::{
-    algebra::{authenticated_scalar::test_helpers::*, stark_curve::Scalar},
+    algebra::{authenticated_scalar::test_helpers::*, scalar::Scalar},
     fabric::ResultValue,
     random_scalar, PARTY0, PARTY1,
 };

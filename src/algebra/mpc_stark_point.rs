@@ -3,8 +3,6 @@
 
 use std::ops::{Add, Mul, Neg, Sub};
 
-use ark_ec::Group;
-
 use crate::{
     fabric::{cast_args, MpcFabric, ResultHandle, ResultValue},
     network::NetworkPayload,
@@ -14,7 +12,8 @@ use crate::{
 use super::{
     macros::{impl_borrow_variants, impl_commutative},
     mpc_scalar::MpcScalarResult,
-    stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
+    scalar::{Scalar, ScalarResult},
+    stark_curve::{StarkPoint, StarkPointResult},
 };
 
 /// Defines a secret shared type of a curve point

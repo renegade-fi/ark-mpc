@@ -13,9 +13,8 @@ use itertools::Itertools;
 
 use crate::{
     algebra::{
-        mpc_scalar::MpcScalar,
-        mpc_stark_point::MpcStarkPoint,
-        stark_curve::{Scalar, StarkPoint},
+        mpc_scalar::MpcScalar, mpc_stark_point::MpcStarkPoint, scalar::Scalar,
+        stark_curve::StarkPoint,
     },
     network::NetworkPayload,
 };

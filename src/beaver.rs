@@ -3,7 +3,7 @@
 
 use itertools::Itertools;
 
-use crate::algebra::stark_curve::Scalar;
+use crate::algebra::scalar::Scalar;
 
 /// SharedValueSource implements both the functionality for:
 ///     1. Single additively shared values [x] where party 1 holds
@@ -60,18 +60,18 @@ impl DummySharedScalarSource {
 #[cfg(test)]
 impl SharedValueSource for DummySharedScalarSource {
     fn next_shared_bit(&mut self) -> Scalar {
-        Scalar::from(1)
+        Scalar::one()
     }
 
     fn next_shared_value(&mut self) -> Scalar {
-        Scalar::from(1)
+        Scalar::one()
     }
 
     fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (Scalar::from(1), Scalar::from(1))
+        (Scalar::one(), Scalar::one())
     }
 
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
-        (Scalar::from(1), Scalar::from(1), Scalar::from(1))
+        (Scalar::one(), Scalar::one(), Scalar::one())
     }
 }

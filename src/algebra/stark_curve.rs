@@ -1,68 +1,31 @@
 //! Defines the `Scalar` type of the Starknet field
 
-use std::ops::{Add, Mul, Neg, Sub};
+use std::{
+    mem::size_of,
+    ops::{Add, Mul, Neg, Sub},
+};
 
 use ark_ec::{
     short_weierstrass::{Affine, Projective, SWCurveConfig},
-    CurveConfig,
+    CurveConfig, Group,
 };
-use ark_ff::{
-    fields::{Fp256, MontBackend, MontConfig},
-    MontFp, PrimeField,
-};
-use num_bigint::BigUint;
+use ark_ff::{MontFp, Zero};
+
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
-use super::macros::{impl_borrow_variants, impl_commutative};
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Convert a scalar to a `BigUint`
-pub fn scalar_to_biguint<F: PrimeField>(scalar: &F) -> num_bigint::BigUint {
-    (*scalar).into()
-}
-
-/// Convert a `BigUint` to a scalar
-pub fn biguint_to_scalar<F: PrimeField>(biguint: &BigUint) -> F {
-    let bytes = biguint.to_bytes_le();
-    F::from_le_bytes_mod_order(&bytes)
-}
-
-// -------------------------------
-// | Curve and Scalar Definition |
-// -------------------------------
-
-/// The config for finite field that the Starknet curve is defined over
-#[derive(MontConfig)]
-#[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
-#[generator = "3"]
-pub struct StarknetFqConfig;
-/// The finite field that the Starknet curve is defined over
-pub type StarknetBaseFelt = Fp256<MontBackend<StarknetFqConfig, 4>>;
-
-/// The config for the scalar field of the Starknet curve
-#[derive(MontConfig)]
-#[modulus = "3618502788666131213697322783095070105526743751716087489154079457884512865583"]
-#[generator = "3"]
-pub struct StarknetFrConfig;
-/// The finite field representing the curve group of the Starknet curve
-///
-/// Note that this is not the field that the curve is defined over, but field of integers modulo
-/// the order of the curve's group, see [here](https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve)
-/// for more information
-pub type Scalar = Fp256<MontBackend<StarknetFrConfig, 4>>;
-
-/// A type alias for a projective curve point on the Stark curve
-pub type StarkPoint = Projective<StarknetCurveConfig>;
+use super::{
+    macros::{impl_borrow_variants, impl_commutative},
+    scalar::{Scalar, ScalarInner, ScalarResult, StarknetBaseFelt},
+};
 
 /// The Stark curve in the arkworks short Weierstrass curve representation
 pub struct StarknetCurveConfig;
 impl CurveConfig for StarknetCurveConfig {
     type BaseField = StarknetBaseFelt;
-    type ScalarField = Scalar;
+    type ScalarField = ScalarInner;
 
     const COFACTOR: &'static [u64] = &[1];
     const COFACTOR_INV: Self::ScalarField = MontFp!("1");
@@ -82,102 +45,81 @@ impl SWCurveConfig for StarknetCurveConfig {
     };
 }
 
-// -----------------------------
-// | Circuit Result Definition |
-// -----------------------------
+/// A type alias for a projective curve point on the Stark curve
+pub(crate) type StarkPointInner = Projective<StarknetCurveConfig>;
+/// A wrapper around the inner point that allows us to define foreign traits on the point
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct StarkPoint(pub(crate) StarkPointInner);
 
-/// A type alias for a result that resolves to a `Scalar`
-pub type ScalarResult = ResultHandle<Scalar>;
-
-impl Add<&Scalar> for &ScalarResult {
-    type Output = ScalarResult;
-
-    fn add(self, rhs: &Scalar) -> Self::Output {
-        let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
-            ResultValue::Scalar(lhs + rhs)
-        })
+impl Serialize for StarkPoint {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let bytes = self.to_bytes();
+        bytes.serialize(serializer)
     }
 }
-impl_borrow_variants!(ScalarResult, Add, add, +, Scalar);
-impl_commutative!(ScalarResult, Add, add, +, Scalar);
 
-impl Add<&ScalarResult> for &ScalarResult {
-    type Output = ScalarResult;
-
-    fn add(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
-            ResultValue::Scalar(lhs + rhs)
-        })
+impl<'de> Deserialize<'de> for StarkPoint {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let bytes = <Vec<u8>>::deserialize(deserializer)?;
+        StarkPoint::from_bytes(&bytes)
+            .map_err(|err| DeError::custom(format!("Failed to deserialize point: {err:?}")))
     }
 }
-impl_borrow_variants!(ScalarResult, Add, add, +, ScalarResult);
 
-impl Sub<&Scalar> for &ScalarResult {
-    type Output = ScalarResult;
+// ------------------------
+// | Misc Implementations |
+// ------------------------
 
-    fn sub(self, rhs: &Scalar) -> Self::Output {
-        let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
-            ResultValue::Scalar(lhs - rhs)
-        })
+impl StarkPoint {
+    /// The additive identity in the curve group
+    pub fn zero() -> StarkPoint {
+        StarkPoint(StarkPointInner::zero())
+    }
+
+    /// The group generator
+    pub fn generator() -> StarkPoint {
+        StarkPoint(StarkPointInner::generator())
+    }
+
+    /// Serialize this point to a byte buffer
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out: Vec<u8> = Vec::with_capacity(size_of::<StarkPoint>());
+        self.0
+            .serialize_uncompressed(&mut out)
+            .expect("Failed to serialize point");
+
+        out
+    }
+
+    /// Deserialize a point from a byte buffer
+    pub fn from_bytes(bytes: &[u8]) -> Result<StarkPoint, SerializationError> {
+        let point = StarkPointInner::deserialize_uncompressed(bytes)?;
+        Ok(StarkPoint(point))
     }
 }
-impl_borrow_variants!(ScalarResult, Sub, sub, -, Scalar);
-impl_commutative!(ScalarResult, Sub, sub, -, Scalar);
 
-impl Sub<&ScalarResult> for &ScalarResult {
-    type Output = ScalarResult;
+// ------------------------------------
+// | Curve Arithmetic Implementations |
+// ------------------------------------
 
-    fn sub(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
-            ResultValue::Scalar(lhs - rhs)
-        })
+impl Add<&StarkPointInner> for &StarkPoint {
+    type Output = StarkPoint;
+
+    fn add(self, rhs: &StarkPointInner) -> Self::Output {
+        StarkPoint(self.0 + rhs)
     }
 }
-impl_borrow_variants!(ScalarResult, Sub, sub, -, ScalarResult);
+impl_borrow_variants!(StarkPoint, Add, add, +, StarkPointInner);
+impl_commutative!(StarkPoint, Add, add, +, StarkPointInner);
 
-impl Mul<&Scalar> for &ScalarResult {
-    type Output = ScalarResult;
+impl Add<&StarkPoint> for &StarkPoint {
+    type Output = StarkPoint;
 
-    fn mul(self, rhs: &Scalar) -> Self::Output {
-        let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
-            ResultValue::Scalar(lhs * rhs)
-        })
+    fn add(self, rhs: &StarkPoint) -> Self::Output {
+        StarkPoint(self.0 + rhs.0)
     }
 }
-impl_borrow_variants!(ScalarResult, Mul, mul, *, Scalar);
-impl_commutative!(ScalarResult, Mul, mul, *, Scalar);
-
-impl Mul<&ScalarResult> for &ScalarResult {
-    type Output = ScalarResult;
-
-    fn mul(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
-            ResultValue::Scalar(lhs * rhs)
-        })
-    }
-}
-impl_borrow_variants!(ScalarResult, Mul, mul, *, ScalarResult);
-
-impl Neg for &ScalarResult {
-    type Output = ScalarResult;
-
-    fn neg(self) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id], |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
-            ResultValue::Scalar(-lhs)
-        })
-    }
-}
-impl_borrow_variants!(ScalarResult, Neg, neg, -);
+impl_borrow_variants!(StarkPoint, Add, add, +, StarkPoint);
 
 /// A type alias for a result that resolves to a `StarkPoint`
 pub type StarkPointResult = ResultHandle<StarkPoint>;
@@ -188,7 +130,7 @@ impl Add<&StarkPointResult> for &StarkPointResult {
     fn add(self, rhs: &StarkPointResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
             let [lhs, rhs]: [StarkPoint; 2] = cast_args(args);
-            ResultValue::Point(lhs + rhs)
+            ResultValue::Point(StarkPoint(lhs.0 + rhs.0))
         })
     }
 }
@@ -201,12 +143,21 @@ impl Add<&StarkPoint> for &StarkPointResult {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             let [lhs]: [StarkPoint; 1] = cast_args(args);
-            ResultValue::Point(lhs + rhs)
+            ResultValue::Point(StarkPoint(lhs.0 + rhs.0))
         })
     }
 }
 impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPoint);
 impl_commutative!(StarkPointResult, Add, add, +, StarkPoint);
+
+impl Sub<&StarkPoint> for &StarkPoint {
+    type Output = StarkPoint;
+
+    fn sub(self, rhs: &StarkPoint) -> Self::Output {
+        StarkPoint(self.0 - rhs.0)
+    }
+}
+impl_borrow_variants!(StarkPoint, Sub, sub, -, StarkPoint);
 
 impl Sub<&StarkPointResult> for &StarkPointResult {
     type Output = StarkPointResult;
@@ -214,7 +165,7 @@ impl Sub<&StarkPointResult> for &StarkPointResult {
     fn sub(self, rhs: &StarkPointResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
             let [lhs, rhs]: [StarkPoint; 2] = cast_args(args);
-            ResultValue::Point(lhs - rhs)
+            ResultValue::Point(StarkPoint(lhs.0 - rhs.0))
         })
     }
 }
@@ -227,7 +178,7 @@ impl Sub<&StarkPoint> for &StarkPointResult {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             let [lhs]: [StarkPoint; 1] = cast_args(args);
-            ResultValue::Point(lhs - rhs)
+            ResultValue::Point(StarkPoint(lhs.0 - rhs.0))
         })
     }
 }
@@ -240,10 +191,19 @@ impl Sub<&StarkPointResult> for &StarkPoint {
         let self_owned = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
             let [rhs]: [StarkPoint; 1] = cast_args(args);
-            ResultValue::Point(self_owned - rhs)
+            ResultValue::Point(StarkPoint(self_owned.0 - rhs.0))
         })
     }
 }
+
+impl Neg for &StarkPoint {
+    type Output = StarkPoint;
+
+    fn neg(self) -> Self::Output {
+        StarkPoint(-self.0)
+    }
+}
+impl_borrow_variants!(StarkPoint, Neg, neg, -);
 
 impl Neg for &StarkPointResult {
     type Output = StarkPointResult;
@@ -251,11 +211,21 @@ impl Neg for &StarkPointResult {
     fn neg(self) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id], |args| {
             let [lhs]: [StarkPoint; 1] = cast_args(args);
-            ResultValue::Point(-lhs)
+            ResultValue::Point(StarkPoint(-lhs.0))
         })
     }
 }
 impl_borrow_variants!(StarkPointResult, Neg, neg, -);
+
+impl Mul<&Scalar> for &StarkPoint {
+    type Output = StarkPoint;
+
+    fn mul(self, rhs: &Scalar) -> Self::Output {
+        StarkPoint(self.0 * rhs.0)
+    }
+}
+impl_borrow_variants!(StarkPoint, Mul, mul, *, Scalar);
+impl_commutative!(StarkPoint, Mul, mul, *, Scalar);
 
 impl Mul<&Scalar> for &StarkPointResult {
     type Output = StarkPointResult;
@@ -264,7 +234,7 @@ impl Mul<&Scalar> for &StarkPointResult {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             let [lhs]: [StarkPoint; 1] = cast_args(args);
-            ResultValue::Point(lhs * rhs)
+            ResultValue::Point(StarkPoint(lhs.0 * rhs.0))
         })
     }
 }
@@ -278,10 +248,12 @@ impl Mul<&ScalarResult> for &StarkPoint {
         let self_owned = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
             let [rhs]: [Scalar; 1] = cast_args(args);
-            ResultValue::Point(self_owned * rhs)
+            ResultValue::Point(StarkPoint(self_owned.0 * rhs.0))
         })
     }
 }
+impl_borrow_variants!(StarkPoint, Mul, mul, *, ScalarResult, Output=StarkPointResult);
+impl_commutative!(StarkPoint, Mul, mul, *, ScalarResult, Output=StarkPointResult);
 
 impl Mul<&ScalarResult> for &StarkPointResult {
     type Output = StarkPointResult;
@@ -291,7 +263,7 @@ impl Mul<&ScalarResult> for &StarkPointResult {
             let lhs: StarkPoint = args.remove(0).into();
             let rhs: Scalar = args.remove(0).into();
 
-            ResultValue::Point(lhs * rhs)
+            ResultValue::Point(StarkPoint(lhs.0 * rhs.0))
         })
     }
 }
@@ -306,13 +278,11 @@ impl_commutative!(StarkPointResult, Mul, mul, *, ScalarResult);
 ///     https://github.com/xJonathanLEI/starknet-rs
 #[cfg(test)]
 mod test {
-    use ark_ec::short_weierstrass::Projective;
-    use ark_ff::Zero;
     use starknet_curve::{curve_params::GENERATOR, ProjectivePoint};
 
     use crate::{
         algebra::test_helper::{
-            arkworks_point_to_starknet, compare_points, random_point, scalar_to_starknet_felt,
+            arkworks_point_to_starknet, compare_points, prime_field_to_starknet_felt, random_point,
             starknet_rs_scalar_mul,
         },
         random_scalar,
@@ -322,7 +292,7 @@ mod test {
     /// Test that the generators are the same between the two curve representations
     #[test]
     fn test_generators() {
-        let generator_1 = Projective::from(StarknetCurveConfig::GENERATOR);
+        let generator_1 = StarkPoint::generator();
         let generator_2 = ProjectivePoint::from_affine_point(&GENERATOR);
 
         assert!(compare_points(&generator_1, &generator_2));
@@ -352,7 +322,7 @@ mod test {
         let s1 = random_scalar();
         let p1 = random_point();
 
-        let s2 = scalar_to_starknet_felt(&s1);
+        let s2 = prime_field_to_starknet_felt(&s1.0);
         let p2 = arkworks_point_to_starknet(&p1);
 
         let r1 = p1 * s1;

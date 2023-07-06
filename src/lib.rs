@@ -11,9 +11,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use algebra::stark_curve::{Scalar, StarkPoint};
-use ark_ec::Group;
-use ark_ff::PrimeField;
+use algebra::{scalar::Scalar, stark_curve::StarkPoint};
 use beaver::SharedValueSource;
 
 use network::MpcNetwork;

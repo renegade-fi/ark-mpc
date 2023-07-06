@@ -1,6 +1,6 @@
 //! Defines unit tests for `MpcScalar` types
 use mpc_stark::{
-    algebra::stark_curve::Scalar,
+    algebra::scalar::Scalar,
     fabric::{ResultHandle, ResultValue},
     random_scalar, PARTY0, PARTY1,
 };

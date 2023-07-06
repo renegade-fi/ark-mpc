@@ -10,7 +10,7 @@ use std::{convert::TryInto, net::SocketAddr};
 use tracing::log;
 
 use crate::{
-    algebra::stark_curve::{Scalar, StarkPoint},
+    algebra::{scalar::Scalar, stark_curve::StarkPoint},
     error::{MpcNetworkError, SetupError},
     fabric::ResultId,
     PARTY0,
@@ -43,16 +43,8 @@ pub enum NetworkPayload {
     /// A byte value
     Bytes(Vec<u8>),
     /// A scalar value
-    #[serde(
-        serialize_with = "crate::algebra::serialize_scalar",
-        deserialize_with = "crate::algebra::deserialize_scalar"
-    )]
     Scalar(Scalar),
     /// A point on the curve
-    #[serde(
-        serialize_with = "crate::algebra::serialize_point",
-        deserialize_with = "crate::algebra::deserialize_point"
-    )]
     Point(StarkPoint),
 }
 

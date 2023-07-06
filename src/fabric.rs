@@ -55,6 +55,12 @@ pub(crate) struct Operation {
     op_type: OperationType,
 }
 
+impl Debug for Operation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "Operation {}", self.id)
+    }
+}
+
 /// Defines the different types of operations available in the computation graph
 pub(crate) enum OperationType {
     /// A gate operation; may be evaluated locally given its ready inputs

@@ -1,64 +1,12 @@
 //! Defines algebraic MPC types and operations on them
 
-use std::mem::size_of;
-
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use serde::{
-    de::Error as DeserializeError, ser::Error as SerializeError, Deserialize, Deserializer,
-    Serializer,
-};
-
-use self::stark_curve::{Scalar, StarkPoint};
-
 pub mod authenticated_scalar;
 pub mod authenticated_stark_point;
 pub mod macros;
 pub mod mpc_scalar;
 pub mod mpc_stark_point;
+pub mod scalar;
 pub mod stark_curve;
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Serialize a `Scalar` type by calling out to the Arkworks implementation
-pub fn serialize_scalar<S: Serializer>(scalar: &Scalar, serializer: S) -> Result<S::Ok, S::Error> {
-    let mut out: Vec<u8> = Vec::with_capacity(size_of::<Scalar>());
-    scalar
-        .serialize_compressed(&mut out)
-        .map_err(|err| SerializeError::custom(err.to_string()))?;
-
-    serializer.serialize_bytes(&out)
-}
-
-/// Deserialize a `Scalar` by calling out to the Arkworks implementation
-pub fn deserialize_scalar<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Scalar, D::Error> {
-    let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
-    Scalar::deserialize_compressed(&bytes[..])
-        .map_err(|err| DeserializeError::custom(err.to_string()))
-}
-
-/// Serialize a `StarkPoint` type by calling out to the Arkworks implementation
-pub fn serialize_point<S: Serializer>(
-    point: &StarkPoint,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    let mut out: Vec<u8> = Vec::with_capacity(size_of::<stark_curve::StarkPoint>());
-    point
-        .serialize_uncompressed(&mut out)
-        .map_err(|err| SerializeError::custom(err.to_string()))?;
-
-    serializer.serialize_bytes(&out)
-}
-
-/// Deserialize a `StarkPoint` by calling out to the Arkworks implementation
-pub fn deserialize_point<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<StarkPoint, D::Error> {
-    let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
-    StarkPoint::deserialize_uncompressed(&bytes[..])
-        .map_err(|err| DeserializeError::custom(err.to_string()))
-}
 
 /// Helpers useful for testing throughout the `algebra` module
 #[cfg(test)]
@@ -67,12 +15,9 @@ pub(crate) mod test_helper {
 
     use crate::random_scalar;
 
-    use super::stark_curve::{scalar_to_biguint, StarknetCurveConfig};
+    use super::stark_curve::StarkPoint;
 
-    use ark_ec::{
-        short_weierstrass::{Projective, SWCurveConfig},
-        CurveGroup,
-    };
+    use ark_ec::CurveGroup;
     use ark_ff::PrimeField;
     use num_bigint::BigUint;
     use starknet::core::types::FieldElement as StarknetFelt;
@@ -83,9 +28,9 @@ pub(crate) mod test_helper {
     // -----------
 
     /// Generate a random point, by multiplying the basepoint with a random scalar
-    pub fn random_point() -> Projective<StarknetCurveConfig> {
+    pub fn random_point() -> StarkPoint {
         let scalar = random_scalar();
-        let point = StarknetCurveConfig::GENERATOR * scalar;
+        let point = StarkPoint::generator() * scalar;
         point * scalar
     }
 
@@ -106,16 +51,21 @@ pub(crate) mod test_helper {
         StarknetFelt::from_bytes_be(&padded_bytes.try_into().unwrap()).unwrap()
     }
 
+    /// Convert a prime field element to a `BigUint`
+    pub fn prime_field_to_biguint<F: PrimeField>(val: &F) -> BigUint {
+        (*val).into()
+    }
+
     /// Convert a `Scalar` to a `StarknetFelt`
-    pub fn scalar_to_starknet_felt<F: PrimeField>(scalar: &F) -> StarknetFelt {
-        biguint_to_starknet_felt(&scalar_to_biguint(scalar))
+    pub fn prime_field_to_starknet_felt<F: PrimeField>(scalar: &F) -> StarknetFelt {
+        biguint_to_starknet_felt(&prime_field_to_biguint(scalar))
     }
 
     /// Convert a point in the arkworks representation to a point in the starknet representation
-    pub fn arkworks_point_to_starknet(point: &Projective<StarknetCurveConfig>) -> ProjectivePoint {
-        let affine = point.into_affine();
-        let x = scalar_to_starknet_felt(&affine.x);
-        let y = scalar_to_starknet_felt(&affine.y);
+    pub fn arkworks_point_to_starknet(point: &StarkPoint) -> ProjectivePoint {
+        let affine = point.0.into_affine();
+        let x = prime_field_to_starknet_felt(&affine.x);
+        let y = prime_field_to_starknet_felt(&affine.y);
 
         ProjectivePoint::from_affine_point(&AffinePoint {
             x,
@@ -138,16 +88,16 @@ pub(crate) mod test_helper {
 
     /// Compare scalars from the two curve implementations
     pub fn compare_scalars<F: PrimeField>(s1: &F, s2: &StarknetFelt) -> bool {
-        let s1_biguint = scalar_to_biguint(s1);
+        let s1_biguint = prime_field_to_biguint(s1);
         let s2_biguint = starknet_felt_to_biguint(s2);
 
         s1_biguint == s2_biguint
     }
 
     /// Compare curve points between the two implementation
-    pub fn compare_points(p1: &Projective<StarknetCurveConfig>, p2: &ProjectivePoint) -> bool {
+    pub fn compare_points(p1: &StarkPoint, p2: &ProjectivePoint) -> bool {
         // Convert the points to affine coordinates
-        let p1_affine = p1.into_affine();
+        let p1_affine = p1.0.into_affine();
         let x_1 = p1_affine.x;
         let y_1 = p1_affine.y;
 
@@ -156,53 +106,5 @@ pub(crate) mod test_helper {
         let y_2 = p2.y * z_inv;
 
         compare_scalars(&x_1, &x_2) && compare_scalars(&y_1, &y_2)
-    }
-}
-
-// ---------
-// | Tests |
-// ---------
-
-#[cfg(test)]
-mod test {
-    use crate::{
-        algebra::{deserialize_point, serialize_point},
-        random_scalar,
-    };
-
-    use super::{deserialize_scalar, serialize_scalar, test_helper::random_point};
-
-    /// Test (de)serialization of a `Scalar`
-    #[test]
-    fn test_serde_scalar() {
-        let scalar = random_scalar();
-
-        // Serialize
-        let mut out_buf = Vec::new();
-        let mut serializer = serde_json::Serializer::new(&mut out_buf);
-        serialize_scalar(&scalar, &mut serializer).unwrap();
-
-        // Deserialize
-        let mut deserializer = serde_json::Deserializer::from_slice(&out_buf);
-        let out = deserialize_scalar(&mut deserializer).unwrap();
-
-        assert_eq!(scalar, out);
-    }
-
-    /// Test (de)serialization of a `StarkPoint`
-    #[test]
-    fn test_serde_point() {
-        let point = random_point();
-
-        // Serialize
-        let mut out_buf = Vec::new();
-        let mut serializer = serde_json::Serializer::new(&mut out_buf);
-        serialize_point(&point, &mut serializer).unwrap();
-
-        // Deserialize
-        let mut deserializer = serde_json::Deserializer::from_slice(&out_buf);
-        let out = deserialize_point(&mut deserializer).unwrap();
-
-        assert_eq!(point, out);
     }
 }

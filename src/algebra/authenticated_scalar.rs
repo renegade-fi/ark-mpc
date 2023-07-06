@@ -19,7 +19,8 @@ use super::{
     authenticated_stark_point::AuthenticatedStarkPointResult,
     macros::{impl_borrow_variants, impl_commutative},
     mpc_scalar::{MpcScalar, MpcScalarResult},
-    stark_curve::{Scalar, ScalarResult, StarkPoint, StarkPointResult},
+    scalar::{Scalar, ScalarResult},
+    stark_curve::{StarkPoint, StarkPointResult},
 };
 
 /// A maliciously secure wrapper around an `MpcScalar`, includes a MAC as per the
@@ -437,7 +438,7 @@ impl_commutative!(StarkPointResult, Mul, mul, *, AuthenticatedScalarResult, Outp
 #[cfg(feature = "test_helpers")]
 pub mod test_helpers {
     use crate::{
-        algebra::{mpc_scalar::MpcScalar, stark_curve::Scalar},
+        algebra::{mpc_scalar::MpcScalar, scalar::Scalar},
         fabric::ResultValue,
     };
 
