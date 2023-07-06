@@ -4,7 +4,10 @@
 // | Scalar Field Definitions |
 // ----------------------------
 
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::{
+    iter::{Product, Sum},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 
 use ark_ff::{Fp256, MontBackend, MontConfig, PrimeField};
 use num_bigint::BigUint;
@@ -265,5 +268,21 @@ impl MulAssign for Scalar {
 impl<T: Into<ScalarInner>> From<T> for Scalar {
     fn from(val: T) -> Self {
         Scalar(val.into())
+    }
+}
+
+// -------------------
+// | Iterator Traits |
+// -------------------
+
+impl Sum for Scalar {
+    fn sum<I: Iterator<Item = Scalar>>(iter: I) -> Self {
+        iter.fold(Scalar::zero(), |acc, x| acc + x)
+    }
+}
+
+impl Product for Scalar {
+    fn product<I: Iterator<Item = Scalar>>(iter: I) -> Self {
+        iter.fold(Scalar::one(), |acc, x| acc * x)
     }
 }

@@ -1,17 +1,19 @@
 //! Defines the `Scalar` type of the Starknet field
 
 use std::{
+    iter::Sum,
     mem::size_of,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 use ark_ec::{
     short_weierstrass::{Affine, Projective, SWCurveConfig},
-    CurveConfig, Group,
+    CurveConfig, CurveGroup, Group, VariableBaseMSM,
 };
 use ark_ff::{MontFp, Zero};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use itertools::Itertools;
 use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
@@ -20,6 +22,10 @@ use super::{
     macros::{impl_borrow_variants, impl_commutative},
     scalar::{Scalar, ScalarInner, ScalarResult, StarknetBaseFelt},
 };
+
+/// The number of points and scalars to pull from an iterated MSM when
+/// performing a multiscalar multiplication
+const MSM_CHUNK_SIZE: usize = 1 << 16;
 
 /// The Stark curve in the arkworks short Weierstrass curve representation
 pub struct StarknetCurveConfig;
@@ -299,6 +305,64 @@ impl_commutative!(StarkPointResult, Mul, mul, *, ScalarResult);
 impl MulAssign<&Scalar> for StarkPoint {
     fn mul_assign(&mut self, rhs: &Scalar) {
         self.0 *= rhs.0;
+    }
+}
+
+// -------------------
+// | Iterator Traits |
+// -------------------
+
+impl Sum for StarkPoint {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(StarkPoint::zero(), |acc, x| acc + x)
+    }
+}
+
+/// MSM Implementation
+impl StarkPoint {
+    /// Compute the multiscalar multiplication of the given scalars and points
+    pub fn msm(scalars: &[Scalar], points: &[StarkPoint]) -> StarkPoint {
+        assert_eq!(
+            scalars.len(),
+            points.len(),
+            "msm cannot compute on vectors of unequal length"
+        );
+
+        let affine_points = points.iter().map(|p| p.0.into_affine()).collect_vec();
+        let stripped_scalars = scalars.iter().map(|s| s.0).collect_vec();
+        StarkPointInner::msm(&affine_points, &stripped_scalars)
+            .map(StarkPoint)
+            .unwrap()
+    }
+
+    /// Compute the multiscalar multiplication of the given scalars and points
+    /// represented as streaming iterators
+    ///
+    /// This is roughly a re-implementation of the `ark-ec` msm defined here:
+    ///     https://github.com/arkworks-rs/algebra/blob/master/ec/src/scalar_mul/variable_base/mod.rs#L54-L60
+    /// but with less restrictive trait bounds
+    pub fn msm_iter<I, J>(scalars: I, points: J) -> StarkPoint
+    where
+        I: IntoIterator<Item = Scalar>,
+        J: IntoIterator<Item = StarkPoint>,
+    {
+        let scalars = scalars.into_iter().map(|s| s.0).chunks(MSM_CHUNK_SIZE);
+        let points = points
+            .into_iter()
+            .map(|p| p.0.into_affine())
+            .chunks(MSM_CHUNK_SIZE);
+
+        let mut res = StarkPointInner::zero();
+        for (scalar_chunk, point_chunk) in scalars.into_iter().zip(points.into_iter()) {
+            let scalar_chunk: Vec<ScalarInner> = scalar_chunk.collect();
+            let point_chunk: Vec<Affine<StarknetCurveConfig>> = point_chunk.collect();
+
+            let chunk_res = StarkPointInner::msm_unchecked(&point_chunk, &scalar_chunk);
+
+            res += chunk_res;
+        }
+
+        StarkPoint(res)
     }
 }
 
