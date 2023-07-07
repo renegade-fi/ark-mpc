@@ -429,12 +429,9 @@ mod test {
     use rand::{thread_rng, RngCore};
     use starknet_curve::{curve_params::GENERATOR, ProjectivePoint};
 
-    use crate::{
-        algebra::test_helper::{
-            arkworks_point_to_starknet, compare_points, prime_field_to_starknet_felt, random_point,
-            starknet_rs_scalar_mul,
-        },
-        random_scalar,
+    use crate::algebra::test_helper::{
+        arkworks_point_to_starknet, compare_points, prime_field_to_starknet_felt, random_point,
+        starknet_rs_scalar_mul,
     };
 
     use super::*;
@@ -468,7 +465,8 @@ mod test {
     /// Tests scalar multiplication
     #[test]
     fn test_scalar_mul() {
-        let s1 = random_scalar();
+        let mut rng = thread_rng();
+        let s1 = Scalar::random(&mut rng);
         let p1 = random_point();
 
         let s2 = prime_field_to_starknet_felt(&s1.0);

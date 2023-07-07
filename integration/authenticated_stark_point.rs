@@ -1,11 +1,15 @@
 //! Integration tests for the `AuthenticatedStarkPoint` type
 
 use mpc_stark::{
-    algebra::authenticated_stark_point::test_helpers::{
-        modify_mac, modify_public_modifier, modify_share,
+    algebra::{
+        authenticated_stark_point::test_helpers::{
+            modify_mac, modify_public_modifier, modify_share,
+        },
+        scalar::Scalar,
     },
-    random_point, random_scalar, PARTY0, PARTY1,
+    random_point, PARTY0, PARTY1,
 };
+use rand::thread_rng;
 
 use crate::{
     helpers::{
@@ -176,8 +180,9 @@ fn test_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Test multiplication with a public scalar
 fn test_multiplication_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
+    let mut rng = thread_rng();
     let point = random_point();
-    let scalar = random_scalar();
+    let scalar = Scalar::random(&mut rng);
 
     // Share the point
     let party0_point = share_authenticated_point(point, PARTY0, test_args);
@@ -197,8 +202,9 @@ fn test_multiplication_public_scalar(test_args: &IntegrationTestArgs) -> Result<
 /// Test multiplication with a secret shared scalar
 fn test_multiplication(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
+    let mut rng = thread_rng();
     let point = random_point();
-    let scalar = random_scalar();
+    let scalar = Scalar::random(&mut rng);
 
     // Share the point
     let party0_point = share_authenticated_point(point, PARTY0, test_args);

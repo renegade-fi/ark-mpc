@@ -15,6 +15,7 @@ use algebra::{scalar::Scalar, stark_curve::StarkPoint};
 use beaver::SharedValueSource;
 
 use network::MpcNetwork;
+use rand::thread_rng;
 
 pub mod algebra;
 pub mod beaver;
@@ -36,16 +37,11 @@ pub const PARTY1: u64 = 1;
 // | Helpers |
 // -----------
 
-/// Generate a random scalar
-pub fn random_scalar() -> Scalar {
-    let bytes: [u8; 32] = rand::random();
-    Scalar::from_be_bytes_mod_order(&bytes)
-}
-
 /// Generate a random curve point by multiplying a random scalar with the
 /// Stark curve group generator
 pub fn random_point() -> StarkPoint {
-    StarkPoint::generator() * random_scalar()
+    let mut rng = thread_rng();
+    StarkPoint::generator() * Scalar::random(&mut rng)
 }
 
 // --------------------

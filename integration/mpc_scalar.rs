@@ -2,8 +2,9 @@
 use mpc_stark::{
     algebra::scalar::Scalar,
     fabric::{ResultHandle, ResultValue},
-    random_scalar, PARTY0, PARTY1,
+    PARTY0, PARTY1,
 };
+use rand::thread_rng;
 
 use crate::{
     helpers::{assert_scalars_eq, await_result, share_plaintext_value, share_scalar},
@@ -13,7 +14,8 @@ use crate::{
 /// Test addition of `MpcScalar` types
 fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty
@@ -38,7 +40,8 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Party 0 chooses an MPC scalar and party 1 chooses a plaintext scalar
 fn test_add_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty
@@ -62,7 +65,8 @@ fn test_add_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), Strin
 /// Test subtraction of `MpcScalar` types
 fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty
@@ -87,7 +91,8 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Party 0 chooses an MPC scalar and party 1 chooses a plaintext scalar
 fn test_sub_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty
@@ -113,7 +118,8 @@ fn test_sub_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), Strin
 /// Only party0 chooses the value
 fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty
@@ -134,7 +140,8 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Test multiplication of `MpcScalar` types
 fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty
@@ -159,7 +166,8 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Party 0 chooses an MPC scalar and party 1 chooses a plaintext scalar
 fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty

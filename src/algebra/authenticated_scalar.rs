@@ -1,6 +1,7 @@
 //! Defines the authenticated (malicious secure) variant of the MPC scalar type
 
 use std::{
+    fmt::Debug,
     ops::{Add, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
@@ -45,6 +46,16 @@ pub struct AuthenticatedScalarResult {
     pub(crate) public_modifier: ScalarResult,
     /// A reference to the underlying fabric
     fabric: MpcFabric,
+}
+
+impl Debug for AuthenticatedScalarResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthenticatedScalarResult")
+            .field("value", &self.value.id)
+            .field("mac", &self.mac.id)
+            .field("public_modifier", &self.public_modifier.id)
+            .finish()
+    }
 }
 
 impl AuthenticatedScalarResult {

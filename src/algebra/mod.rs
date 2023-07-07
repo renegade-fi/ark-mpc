@@ -13,13 +13,12 @@ pub mod stark_curve;
 pub(crate) mod test_helper {
     use std::iter;
 
-    use crate::random_scalar;
-
-    use super::stark_curve::StarkPoint;
+    use super::{scalar::Scalar, stark_curve::StarkPoint};
 
     use ark_ec::CurveGroup;
     use ark_ff::PrimeField;
     use num_bigint::BigUint;
+    use rand::thread_rng;
     use starknet::core::types::FieldElement as StarknetFelt;
     use starknet_curve::{AffinePoint, ProjectivePoint};
 
@@ -29,7 +28,8 @@ pub(crate) mod test_helper {
 
     /// Generate a random point, by multiplying the basepoint with a random scalar
     pub fn random_point() -> StarkPoint {
-        let scalar = random_scalar();
+        let mut rng = thread_rng();
+        let scalar = Scalar::random(&mut rng);
         let point = StarkPoint::generator() * scalar;
         point * scalar
     }

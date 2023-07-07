@@ -12,6 +12,7 @@ use std::{
 use ark_ff::{batch_inversion, Field, Fp256, MontBackend, MontConfig, PrimeField};
 use itertools::Itertools;
 use num_bigint::BigUint;
+use rand::{CryptoRng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
@@ -65,9 +66,9 @@ impl Scalar {
     ///
     /// n.b. The `rand::random` method uses `ThreadRng` type which implements
     /// the `CryptoRng` traits
-    pub fn random() -> Scalar {
-        let bytes: [u8; 32] = rand::random();
-        Scalar::from_be_bytes_mod_order(&bytes)
+    pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Scalar {
+        let inner: ScalarInner = rng.sample(rand::distributions::Standard);
+        Scalar(inner)
     }
 
     /// Compute the multiplicative inverse of the scalar in its field
@@ -92,9 +93,17 @@ impl Scalar {
     }
 
     /// Convert to big endian bytes
+    ///
+    /// Pad to the maximum amount of bytes needed so that the resulting bytes are
+    /// of predictable length
     pub fn to_bytes_be(&self) -> Vec<u8> {
         let val_biguint = self.to_biguint();
-        val_biguint.to_bytes_be()
+        let mut bytes = val_biguint.to_bytes_be();
+
+        let mut padding = vec![0u8; SCALAR_BYTES - bytes.len()];
+        padding.append(&mut bytes);
+
+        padding
     }
 
     /// Convert the underlying value to a BigUint
@@ -320,17 +329,16 @@ impl Product for Scalar {
 #[cfg(test)]
 mod test {
     use super::StarknetBaseFelt;
-    use crate::{
-        algebra::scalar::{Scalar, BASE_FIELD_BYTES, SCALAR_BYTES},
-        random_scalar,
-    };
+    use crate::algebra::scalar::{Scalar, BASE_FIELD_BYTES, SCALAR_BYTES};
     use num_bigint::BigUint;
+    use rand::thread_rng;
 
     /// Tests serializing and deserializing a scalar
     #[test]
     fn test_scalar_serialize() {
         // Sample a random scalar and convert it to bytes
-        let scalar = random_scalar();
+        let mut rng = thread_rng();
+        let scalar = Scalar::random(&mut rng);
         let bytes = scalar.to_bytes_be();
 
         assert_eq!(bytes.len(), SCALAR_BYTES);
@@ -343,7 +351,8 @@ mod test {
     /// Tests that the constant `BASE_FIELD_BYTES` is correct
     #[test]
     fn test_base_field_bytes() {
-        let elem = random_scalar();
+        let mut rng = thread_rng();
+        let elem = Scalar::random(&mut rng);
         let elem_bytes = elem.to_bytes_be();
         let biguint = BigUint::from_bytes_be(&elem_bytes);
         let base_elem: StarknetBaseFelt = biguint.into();

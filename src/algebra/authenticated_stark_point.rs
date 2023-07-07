@@ -2,6 +2,7 @@
 //! for ensuring computational integrity of an opened point
 
 use std::{
+    fmt::Debug,
     ops::{Add, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
@@ -42,6 +43,16 @@ pub struct AuthenticatedStarkPointResult {
     pub(crate) public_modifier: StarkPointResult,
     /// A reference to the underlying fabric
     pub(crate) fabric: MpcFabric,
+}
+
+impl Debug for AuthenticatedStarkPointResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthenticatedStarkPointResult")
+            .field("value", &self.value.id)
+            .field("mac", &self.mac.id)
+            .field("public_modifier", &self.public_modifier.id)
+            .finish()
+    }
 }
 
 impl AuthenticatedStarkPointResult {

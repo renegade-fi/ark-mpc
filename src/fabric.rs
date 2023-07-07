@@ -30,7 +30,10 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
 use itertools::Itertools;
 
 use crate::{
-    algebra::{authenticated_scalar::AuthenticatedScalarResult, mpc_scalar::MpcScalarResult},
+    algebra::{
+        authenticated_scalar::AuthenticatedScalarResult, mpc_scalar::MpcScalarResult,
+        scalar::Scalar,
+    },
     beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
     Shared, PARTY0,
@@ -353,6 +356,11 @@ impl MpcFabric {
     ) -> ResultHandle<T> {
         let id = self.inner.allocate_shared_value(my_share, their_share);
         ResultHandle::new(id, self.clone())
+    }
+
+    /// Allocate a public value in the fabric
+    pub fn allocate_scalar<T: Into<Scalar>>(&self, value: T) -> ResultHandle<Scalar> {
+        self.allocate_value(ResultValue::Scalar(value.into()))
     }
 
     /// Send a value to the peer, placing the identity in the local result buffer at the send ID

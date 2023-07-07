@@ -4,8 +4,9 @@
 use mpc_stark::{
     algebra::{authenticated_scalar::test_helpers::*, scalar::Scalar},
     fabric::ResultValue,
-    random_scalar, PARTY0, PARTY1,
+    PARTY0, PARTY1,
 };
+use rand::thread_rng;
 
 use crate::{
     helpers::{
@@ -22,7 +23,8 @@ use crate::{
 /// Tests the authenticated opening of a shared value with no arithmetic done on it
 fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
 
     // Share the values with the counterparty and compute the expected result
     let party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
@@ -42,11 +44,12 @@ fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String
 /// Tests opening with a corrupted MAC
 #[allow(non_snake_case)]
 fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
     let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
 
     // Corrupt the MAC
-    modify_mac(&mut party0_value, random_scalar());
+    modify_mac(&mut party0_value, Scalar::random(&mut rng));
 
     // Attempt to open and authenticate the value
     let res = party0_value.open_authenticated();
@@ -56,11 +59,12 @@ fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(
 /// Tests opening with a corrupted secret share
 #[allow(non_snake_case)]
 fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result<(), String> {
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
     let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
 
     // Corrupt the secret share
-    modify_share(&mut party0_value, random_scalar());
+    modify_share(&mut party0_value, Scalar::random(&mut rng));
 
     // Attempt to open and authenticate the value
     let res = party0_value.open_authenticated();
@@ -72,11 +76,12 @@ fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result
 fn test_open_authenticated__bad_public_modifier(
     test_args: &IntegrationTestArgs,
 ) -> Result<(), String> {
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
     let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
 
     // Corrupt the public modifier
-    modify_public_modifier(&mut party0_value, random_scalar());
+    modify_public_modifier(&mut party0_value, Scalar::random(&mut rng));
 
     // Attempt to open and authenticate the value
     let res = party0_value.open_authenticated();
@@ -90,7 +95,8 @@ fn test_open_authenticated__bad_public_modifier(
 /// Test addition with a public value
 fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty in the plaintext and compute the expected result
@@ -112,7 +118,8 @@ fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> 
 /// Test addition between two secret shared values
 fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
 
     // Share the values with the counterparty and compute the expected result
     let party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
@@ -134,7 +141,8 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Test subtraction between a shared point and a public scalar
 fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty in the plaintext and compute the expected result
@@ -156,7 +164,8 @@ fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
 /// Test subtraction between two secret shared values
 fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
 
     // Share the values with the counterparty and compute the expected result
     let party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
@@ -178,7 +187,8 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Test negation of a value
 fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
 
     // Share the values with the counterparty and compute the expected result
     let party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
@@ -198,7 +208,8 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Test multiplication between a shared point and a public scalar
 fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
-    let val = random_scalar();
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
     let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
 
     // Share the value with the counterparty in the plaintext and compute the expected result
@@ -220,7 +231,8 @@ fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
 /// Test multiplication between two secret shared values
 fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
-    let my_val = random_scalar();
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
 
     // Share the values with the counterparty and compute the expected result
     let party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);

@@ -12,8 +12,9 @@ use mpc_stark::{
     beaver::SharedValueSource,
     fabric::{MpcFabric, ResultHandle, ResultValue},
     network::{NetworkPayload, PartyId},
-    random_point, random_scalar,
+    random_point,
 };
+use rand::thread_rng;
 use tokio::runtime::Handle;
 
 // -----------
@@ -53,7 +54,8 @@ pub(crate) fn assert_err<T, E>(res: Result<T, E>) -> Result<(), String> {
 
 /// Construct two secret shares of a given scalar value
 pub(crate) fn create_scalar_secret_shares(a: Scalar) -> (Scalar, Scalar) {
-    let random = random_scalar();
+    let mut rng = thread_rng();
+    let random = Scalar::random(&mut rng);
     (a - random, random)
 }
 

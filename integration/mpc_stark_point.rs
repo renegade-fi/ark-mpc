@@ -2,12 +2,13 @@
 
 use mpc_stark::{
     algebra::{
-        scalar::ScalarResult,
+        scalar::{Scalar, ScalarResult},
         stark_curve::{StarkPoint, StarkPointResult},
     },
     fabric::{ResultHandle, ResultValue},
-    random_point, random_scalar, PARTY0, PARTY1,
+    random_point, PARTY0, PARTY1,
 };
+use rand::thread_rng;
 
 use crate::{
     helpers::{assert_points_eq, await_result, share_plaintext_value, share_point, share_scalar},
@@ -137,8 +138,9 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
 ///
 /// Party 0 chooses the point, party 1 chooses the scalar
 fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let mut rng = thread_rng();
     let point = random_point();
-    let scalar = random_scalar();
+    let scalar = Scalar::random(&mut rng);
 
     // Share the values with the counterparty
     let plaintext_point: StarkPointResult = share_plaintext_value(
@@ -169,8 +171,9 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 ///
 /// Party 0 chooses the point, party 1 chooses the scalar
 fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let mut rng = thread_rng();
     let point = random_point();
-    let scalar = random_scalar();
+    let scalar = Scalar::random(&mut rng);
 
     // Share the values with the counterparty
     let plaintext_point: StarkPointResult = share_plaintext_value(

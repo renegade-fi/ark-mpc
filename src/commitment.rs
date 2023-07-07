@@ -1,6 +1,7 @@
 //! Defines Pedersen commitments over the Stark curve used to commit to a value
 //! before opening it
 
+use rand::thread_rng;
 use sha3::{Digest, Sha3_256};
 
 use crate::{
@@ -9,7 +10,6 @@ use crate::{
         stark_curve::{StarkPoint, StarkPointResult},
     },
     fabric::ResultValue,
-    random_scalar,
 };
 
 /// A handle on the result of a Pedersen commitment, including the committed secret
@@ -49,7 +49,8 @@ impl PedersenCommitmentResult {
     pub(crate) fn commit(value: ScalarResult) -> PedersenCommitmentResult {
         // Concretely, we use the curve generator for both `G` and `H` as is done
         // in dalek-cryptography: https://github.com/dalek-cryptography/bulletproofs/blob/main/src/generators.rs#L44-L53
-        let blinder = random_scalar();
+        let mut rng = thread_rng();
+        let blinder = Scalar::random(&mut rng);
         let generator = StarkPoint::generator();
         let commitment = generator * &value + generator * blinder;
 
@@ -108,7 +109,8 @@ pub(crate) struct HashCommitmentResult {
 impl HashCommitmentResult {
     /// Create a new hash commitment to an underlying value
     pub(crate) fn commit(value: StarkPointResult) -> HashCommitmentResult {
-        let blinder = random_scalar();
+        let mut rng = thread_rng();
+        let blinder = Scalar::random(&mut rng);
         let comm = value.fabric.new_gate_op(vec![value.id], move |mut args| {
             let value: StarkPoint = args.remove(0).into();
 
