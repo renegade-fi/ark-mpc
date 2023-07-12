@@ -26,7 +26,7 @@ use super::MpcFabric;
 // -----------
 
 /// A helper to cast the args in a vector to an array for destructuring
-pub(crate) fn cast_args<const N: usize, T: From<ResultValue>>(args: Vec<ResultValue>) -> [T; N] {
+pub fn cast_args<const N: usize, T: From<ResultValue>>(args: Vec<ResultValue>) -> [T; N] {
     assert_eq!(args.len(), N, "wrong number of args");
     args.into_iter()
         .map(|arg| arg.into())
@@ -145,7 +145,7 @@ impl From<ResultValue> for MpcStarkPoint {
 ///
 /// This allows for construction of the graph concurrently with execution, giving the
 /// fabric the opportunity to schedule all results onto the network optimistically
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ResultHandle<T: From<ResultValue>> {
     /// The id of the result
     pub(crate) id: ResultId,
@@ -163,6 +163,11 @@ impl<T: From<ResultValue>> ResultHandle<T> {
             fabric,
             phantom: PhantomData,
         }
+    }
+
+    /// Get the ids that this result represents, awaiting these IDs is awaiting this result
+    pub fn op_ids(&self) -> Vec<ResultId> {
+        vec![self.id]
     }
 }
 

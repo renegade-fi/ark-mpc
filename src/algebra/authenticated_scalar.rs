@@ -45,7 +45,7 @@ pub struct AuthenticatedScalarResult {
     /// until the point that the value is opened and the MAC is checked
     pub(crate) public_modifier: ScalarResult,
     /// A reference to the underlying fabric
-    fabric: MpcFabric,
+    pub(crate) fabric: MpcFabric,
 }
 
 impl Debug for AuthenticatedScalarResult {
@@ -68,7 +68,7 @@ impl AuthenticatedScalarResult {
         let mac = fabric.borrow_mac_key() * mpc_value.clone();
 
         // Allocate a zero for the public modifier
-        let public_modifier = fabric.allocate_value(ResultValue::Scalar(Scalar::from(0)));
+        let public_modifier = fabric.zero();
 
         Self {
             value: mpc_value,

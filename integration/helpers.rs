@@ -113,7 +113,7 @@ pub(crate) fn share_point(
         test_args.fabric.receive_value()
     };
 
-    MpcStarkPointResult::new_shared(point, test_args.fabric.clone())
+    MpcStarkPointResult::new_shared(point)
 }
 
 /// Send or receive a secret shared scalar from the given party and allocate it as an authenticated value

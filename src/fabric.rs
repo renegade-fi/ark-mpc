@@ -9,8 +9,7 @@ mod executor;
 mod network_sender;
 mod result;
 
-pub(crate) use result::cast_args;
-pub use result::{ResultHandle, ResultId, ResultValue};
+pub use result::{cast_args, ResultHandle, ResultId, ResultValue};
 
 use futures::executor::block_on;
 use tracing::log;
@@ -31,8 +30,12 @@ use itertools::Itertools;
 
 use crate::{
     algebra::{
-        authenticated_scalar::AuthenticatedScalarResult, mpc_scalar::MpcScalarResult,
-        scalar::Scalar,
+        authenticated_scalar::AuthenticatedScalarResult,
+        authenticated_stark_point::AuthenticatedStarkPointResult,
+        mpc_scalar::MpcScalarResult,
+        mpc_stark_point::MpcStarkPointResult,
+        scalar::{Scalar, ScalarResult},
+        stark_curve::StarkPoint,
     },
     beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
@@ -44,6 +47,13 @@ use self::{
     network_sender::NetworkSender,
     result::OpResult,
 };
+
+/// The result id that is hardcoded to zero
+const RESULT_ZERO: ResultId = 0;
+/// The result id that is hardcoded to one
+const RESULT_ONE: ResultId = 1;
+/// The result id that is hardcoded to the curve identity point
+const RESULT_IDENTITY: ResultId = 2;
 
 /// An operation within the network, describes the arguments and function to evaluate
 /// once the arguments are ready
@@ -143,10 +153,32 @@ impl FabricInner {
         outbound_queue: TokioSender<NetworkOutbound>,
         beaver_source: S,
     ) -> Self {
+        // Allocate a zero and a one as well as the curve identity in the fabric to begin,
+        // for convenience
+        let zero = ResultValue::Scalar(Scalar::zero());
+        let one = ResultValue::Scalar(Scalar::one());
+        let identity = ResultValue::Point(StarkPoint::identity());
+
+        let results: HashMap<ResultId, OpResult> = vec![
+            (RESULT_ZERO, OpResult { id: 0, value: zero }),
+            (RESULT_ONE, OpResult { id: 1, value: one }),
+            (
+                RESULT_IDENTITY,
+                OpResult {
+                    id: 2,
+                    value: identity,
+                },
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let next_id = Arc::new(AtomicUsize::new(2));
+
         Self {
             party_id,
-            next_id: Arc::new(AtomicUsize::new(0)),
-            results: Arc::new(RwLock::new(HashMap::new())),
+            next_id,
+            results: Arc::new(RwLock::new(results)),
             operations: Arc::new(RwLock::new(HashMap::new())),
             dependencies: Arc::new(RwLock::new(HashMap::new())),
             wakers: Arc::new(RwLock::new(HashMap::new())),
@@ -156,9 +188,28 @@ impl FabricInner {
         }
     }
 
+    /// -----------
+    /// | Getters |
+    /// -----------
+
     /// Increment the operation counter and return the existing value
     fn new_id(&self) -> ResultId {
         self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Get the hardcoded zero value in the fabric
+    pub(crate) fn zero(&self) -> ResultId {
+        RESULT_ZERO
+    }
+
+    /// Get the hardcoded one value in the fabric
+    pub(crate) fn one(&self) -> ResultId {
+        RESULT_ONE
+    }
+
+    /// Get the hardcoded curve identity value in the fabric
+    pub(crate) fn curve_identity(&self) -> ResultId {
+        RESULT_IDENTITY
     }
 
     // ------------------------
@@ -342,6 +393,95 @@ impl MpcFabric {
     // | Direct Allocation |
     // ---------------------
 
+    /// Get the hardcoded zero wire as a raw `ScalarResult`
+    pub fn zero(&self) -> ScalarResult {
+        ResultHandle::new(self.inner.zero(), self.clone())
+    }
+
+    /// Get the hardcoded one wire as a raw `ScalarResult`
+    pub fn one(&self) -> ScalarResult {
+        ResultHandle::new(self.inner.one(), self.clone())
+    }
+
+    /// Get the hardcoded curve identity wire as a raw `StarkPoint`
+    pub fn curve_identity(&self) -> ResultHandle<StarkPoint> {
+        ResultHandle::new(self.inner.curve_identity(), self.clone())
+    }
+
+    /// Get the hardcoded zero wire as an `AuthenticatedScalarResult`
+    ///
+    /// Both parties hold the share 0 directly in this case
+    pub fn zero_authenticated(&self) -> AuthenticatedScalarResult {
+        let zero_value = self.zero();
+        let share_value = MpcScalarResult::new_shared(zero_value.clone());
+        let mac_value = MpcScalarResult::new_shared(zero_value.clone());
+
+        AuthenticatedScalarResult {
+            value: share_value,
+            mac: mac_value,
+            public_modifier: zero_value,
+            fabric: self.clone(),
+        }
+    }
+
+    /// Get a batch of references to the zero wire as an `AuthenticatedScalarResult`
+    pub fn zeros_authenticated(&self, n: usize) -> Vec<AuthenticatedScalarResult> {
+        let val = self.zero_authenticated();
+        (0..n).map(|_| val.clone()).collect_vec()
+    }
+
+    /// Get the hardcoded one wire as an `AuthenticatedScalarResult`
+    ///
+    /// Party 0 holds the value zero and party 1 holds the value one
+    pub fn one_authenticated(&self) -> AuthenticatedScalarResult {
+        if self.party_id() == PARTY0 {
+            let zero_value = self.zero();
+            let share_value = MpcScalarResult::new_shared(zero_value.clone());
+            let mac_value = MpcScalarResult::new_shared(zero_value.clone());
+
+            AuthenticatedScalarResult {
+                value: share_value,
+                mac: mac_value,
+                public_modifier: zero_value,
+                fabric: self.clone(),
+            }
+        } else {
+            let zero_value = self.zero();
+            let one_value = self.one();
+            let share_value = MpcScalarResult::new_shared(one_value);
+            let mac_value = self.borrow_mac_key().clone();
+
+            AuthenticatedScalarResult {
+                value: share_value,
+                mac: mac_value,
+                public_modifier: zero_value,
+                fabric: self.clone(),
+            }
+        }
+    }
+
+    /// Get a batch of references to the one wire as an `AuthenticatedScalarResult`
+    pub fn ones_authenticated(&self, n: usize) -> Vec<AuthenticatedScalarResult> {
+        let val = self.one_authenticated();
+        (0..n).map(|_| val.clone()).collect_vec()
+    }
+
+    /// Get the hardcoded curve identity wire as an `AuthenticatedStarkPointResult`
+    ///
+    /// Both parties hold the identity point directly in this case
+    pub fn curve_identity_authenticated(&self) -> AuthenticatedStarkPointResult {
+        let identity_val = self.curve_identity();
+        let share_value = MpcStarkPointResult::new_shared(identity_val.clone());
+        let mac_value = MpcStarkPointResult::new_shared(identity_val.clone());
+
+        AuthenticatedStarkPointResult {
+            value: share_value,
+            mac: mac_value,
+            public_modifier: identity_val,
+            fabric: self.clone(),
+        }
+    }
+
     /// Allocate a new plaintext value in the fabric
     pub fn allocate_value<T: From<ResultValue>>(&self, value: ResultValue) -> ResultHandle<T> {
         let id = self.inner.allocate_value(value);
@@ -361,6 +501,11 @@ impl MpcFabric {
     /// Allocate a public value in the fabric
     pub fn allocate_scalar<T: Into<Scalar>>(&self, value: T) -> ResultHandle<Scalar> {
         self.allocate_value(ResultValue::Scalar(value.into()))
+    }
+
+    /// Allocate a public curve point in the fabric
+    pub fn allocate_point(&self, value: StarkPoint) -> ResultHandle<StarkPoint> {
+        self.allocate_value(ResultValue::Point(value))
     }
 
     /// Send a value to the peer, placing the identity in the local result buffer at the send ID

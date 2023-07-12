@@ -24,6 +24,8 @@ use serde::{de::Error as DeError, Deserialize, Serialize};
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
 use super::{
+    authenticated_scalar::AuthenticatedScalarResult,
+    authenticated_stark_point::AuthenticatedStarkPointResult,
     macros::{impl_borrow_variants, impl_commutative},
     scalar::{Scalar, ScalarInner, ScalarResult, StarknetBaseFelt, BASE_FIELD_BYTES},
 };
@@ -370,6 +372,14 @@ impl Sum for StarkPoint {
     }
 }
 
+impl Sum for StarkPointResult {
+    /// Assumes the iterator is non-empty
+    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
+        let first = iter.next().expect("empty iterator");
+        iter.fold(first, |acc, x| acc + x)
+    }
+}
+
 /// MSM Implementation
 impl StarkPoint {
     /// Compute the multiscalar multiplication of the given scalars and points
@@ -415,6 +425,125 @@ impl StarkPoint {
         }
 
         StarkPoint(res)
+    }
+
+    /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
+    pub fn msm_results(scalars: &[ScalarResult], points: &[StarkPoint]) -> StarkPointResult {
+        assert_eq!(
+            scalars.len(),
+            points.len(),
+            "msm cannot compute on vectors of unequal length"
+        );
+
+        Self::msm_results_iter(scalars.iter().cloned(), points.iter().copied())
+    }
+
+    /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
+    /// as iterators. Assumes the iterators are non-empty
+    pub fn msm_results_iter<I, J>(scalars: I, points: J) -> StarkPointResult
+    where
+        I: IntoIterator<Item = ScalarResult>,
+        J: IntoIterator<Item = StarkPoint>,
+    {
+        scalars
+            .into_iter()
+            .zip(points.into_iter())
+            .map(|(s, p)| s * p)
+            .sum()
+    }
+
+    /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
+    pub fn msm_authenticated(
+        scalars: &[AuthenticatedScalarResult],
+        points: &[StarkPoint],
+    ) -> AuthenticatedStarkPointResult {
+        assert_eq!(
+            scalars.len(),
+            points.len(),
+            "msm cannot compute on vectors of unequal length"
+        );
+
+        Self::msm_authenticated_iter(scalars.iter().cloned(), points.iter().copied())
+    }
+
+    /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
+    /// as iterators
+    /// This method assumes that the iterators are of the same length
+    ///
+    /// TODO: One potential optimization is to chunk the gates, so that we can perform an optimized MSM
+    /// gate level on a chunk as the chunk becomes available
+    ///
+    /// TODO: We may be able to compute a partial MSM on the results that are already present in the
+    /// result buffer using an optimized algorithm
+    pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedStarkPointResult
+    where
+        I: IntoIterator<Item = AuthenticatedScalarResult>,
+        J: IntoIterator<Item = StarkPoint>,
+    {
+        scalars
+            .into_iter()
+            .zip(points.into_iter())
+            .map(|(s, p)| s * p)
+            .sum()
+    }
+}
+
+impl StarkPointResult {
+    /// Compute the multiscalar multiplication of the given scalars and points
+    pub fn msm_results(scalars: &[ScalarResult], points: &[StarkPointResult]) -> StarkPointResult {
+        assert_eq!(
+            scalars.len(),
+            points.len(),
+            "msm cannot compute on vectors of unequal length"
+        );
+
+        // Re-implement the same code as below to avoid cloning the results
+        scalars.iter().zip(points.iter()).map(|(s, p)| s * p).sum()
+    }
+
+    /// Compute the multiscalar multiplication of the given scalars and points
+    /// represented as streaming iterators
+    ///
+    /// Assumes the iterator is non-empty
+    pub fn msm_results_iter<I, J>(scalars: I, points: J) -> StarkPointResult
+    where
+        I: IntoIterator<Item = ScalarResult>,
+        J: IntoIterator<Item = StarkPointResult>,
+    {
+        scalars
+            .into_iter()
+            .zip(points.into_iter())
+            .map(|(s, p)| s * p)
+            .sum()
+    }
+
+    /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
+    pub fn msm_authenticated(
+        scalars: &[AuthenticatedScalarResult],
+        points: &[StarkPointResult],
+    ) -> AuthenticatedStarkPointResult {
+        assert_eq!(
+            scalars.len(),
+            points.len(),
+            "msm cannot compute on vectors of unequal length"
+        );
+
+        // Re-implement the same code as below to avoid cloning the results
+        scalars.iter().zip(points.iter()).map(|(s, p)| s * p).sum()
+    }
+
+    /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
+    /// represented as streaming iterators
+    pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedStarkPointResult
+    where
+        I: IntoIterator<Item = AuthenticatedScalarResult>,
+        J: IntoIterator<Item = StarkPointResult>,
+    {
+        scalars
+            .into_iter()
+            .zip(points.into_iter())
+            .map(|(s, p)| s * p)
+            .sum()
     }
 }
 

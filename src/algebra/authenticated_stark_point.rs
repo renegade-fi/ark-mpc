@@ -2,7 +2,8 @@
 //! for ensuring computational integrity of an opened point
 
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Formatter, Result as FmtResult},
+    iter::Sum,
     ops::{Add, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
@@ -61,7 +62,7 @@ impl AuthenticatedStarkPointResult {
         // Create an `MpcStarkPoint` from the value
         let fabric_clone = value.fabric.clone();
 
-        let mpc_value = MpcStarkPointResult::new_shared(value, fabric_clone.clone());
+        let mpc_value = MpcStarkPointResult::new_shared(value);
         let mac = fabric_clone.borrow_mac_key() * &mpc_value;
 
         // Allocate a zero point for the public modifier
@@ -166,9 +167,18 @@ impl AuthenticatedStarkPointResult {
 #[derive(Clone)]
 pub struct AuthenticatedStarkPointOpenResult {
     /// The underlying value
-    pub(crate) value: StarkPointResult,
+    pub value: StarkPointResult,
     /// The result of the MAC check
-    pub(crate) mac_check: ScalarResult,
+    pub mac_check: ScalarResult,
+}
+
+impl Debug for AuthenticatedStarkPointOpenResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("AuthenticatedStarkPointOpenResult")
+            .field("value", &self.value.id)
+            .field("mac_check", &self.mac_check.id)
+            .finish()
+    }
 }
 
 impl Future for AuthenticatedStarkPointOpenResult {
@@ -184,6 +194,16 @@ impl Future for AuthenticatedStarkPointOpenResult {
         } else {
             Poll::Ready(Err(MpcError::AuthenticationError))
         }
+    }
+}
+
+impl Sum for AuthenticatedStarkPointResult {
+    // Assumes the iterator is non-empty
+    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
+        let first = iter
+            .next()
+            .expect("AuthenticatedStarkPointResult::sum requires a non-empty iterator");
+        iter.fold(first, |acc, x| acc + x)
     }
 }
 
@@ -427,7 +447,7 @@ impl AuthenticatedStarkPointResult {
     /// Multiscalar multiplication
     ///
     /// TODO: Batch this implementation onto the network if necessary
-    pub fn multiscalar_mul(
+    pub fn msm(
         scalars: &[AuthenticatedScalarResult],
         points: &[AuthenticatedStarkPointResult],
     ) -> AuthenticatedStarkPointResult {
@@ -441,6 +461,18 @@ impl AuthenticatedStarkPointResult {
             .iter()
             .zip(points[1..].iter())
             .fold(init, |acc, (s, p)| acc + (s * p))
+    }
+
+    /// Multiscalar multiplication on iterator types
+    pub fn msm_iter<S, P>(scalars: S, points: P) -> AuthenticatedStarkPointResult
+    where
+        S: IntoIterator<Item = AuthenticatedScalarResult>,
+        P: IntoIterator<Item = AuthenticatedStarkPointResult>,
+    {
+        let scalars = scalars.into_iter().collect::<Vec<_>>();
+        let points = points.into_iter().collect::<Vec<_>>();
+
+        Self::msm(&scalars, &points)
     }
 }
 

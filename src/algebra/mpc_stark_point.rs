@@ -29,12 +29,9 @@ pub struct MpcStarkPoint {
 pub type MpcStarkPointResult = ResultHandle<MpcStarkPoint>;
 impl MpcStarkPointResult {
     /// Creates an `MpcStarkPoint` from a given underlying point assumed to be a secret share
-    pub fn new_shared(
-        value: ResultHandle<StarkPoint>,
-        fabric: MpcFabric,
-    ) -> ResultHandle<MpcStarkPoint> {
-        let fabric_clone = fabric.clone();
-        fabric.new_gate_op(vec![value.id], move |args| {
+    pub fn new_shared(value: ResultHandle<StarkPoint>) -> ResultHandle<MpcStarkPoint> {
+        let fabric_clone = value.fabric.clone();
+        value.fabric.new_gate_op(vec![value.id], move |args| {
             // Cast the args
             let [value]: [StarkPoint; 1] = cast_args(args);
             ResultValue::MpcStarkPoint(MpcStarkPoint {

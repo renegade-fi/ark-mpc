@@ -142,6 +142,15 @@ impl<'de> Deserialize<'de> for Scalar {
 
 /// A type alias for a result that resolves to a `Scalar`
 pub type ScalarResult = ResultHandle<Scalar>;
+impl ScalarResult {
+    /// Compute the multiplicative inverse of the scalar in its field
+    pub fn inverse(&self) -> ScalarResult {
+        self.fabric.new_gate_op(vec![self.id], |mut args| {
+            let val: Scalar = args.remove(0).into();
+            ResultValue::Scalar(Scalar(val.0.inverse().unwrap()))
+        })
+    }
+}
 
 impl Add<&Scalar> for &Scalar {
     type Output = Scalar;
