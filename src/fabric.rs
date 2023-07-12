@@ -9,6 +9,7 @@ mod executor;
 mod network_sender;
 mod result;
 
+use rand::thread_rng;
 pub use result::{cast_args, ResultHandle, ResultId, ResultValue};
 
 use futures::executor::block_on;
@@ -35,7 +36,7 @@ use crate::{
         mpc_scalar::MpcScalarResult,
         mpc_stark_point::MpcStarkPointResult,
         scalar::{Scalar, ScalarResult},
-        stark_curve::StarkPoint,
+        stark_curve::{StarkPoint, StarkPointResult},
     },
     beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
@@ -389,9 +390,9 @@ impl MpcFabric {
         self.mac_key.as_ref().unwrap()
     }
 
-    // ---------------------
-    // | Direct Allocation |
-    // ---------------------
+    // ------------------------
+    // | Constants Allocation |
+    // ------------------------
 
     /// Get the hardcoded zero wire as a raw `ScalarResult`
     pub fn zero(&self) -> ScalarResult {
@@ -482,6 +483,10 @@ impl MpcFabric {
         }
     }
 
+    // -------------------
+    // | Wire Allocation |
+    // -------------------
+
     /// Allocate a new plaintext value in the fabric
     pub fn allocate_value<T: From<ResultValue>>(&self, value: ResultValue) -> ResultHandle<T> {
         let id = self.inner.allocate_value(value);
@@ -496,6 +501,53 @@ impl MpcFabric {
     ) -> ResultHandle<T> {
         let id = self.inner.allocate_shared_value(my_share, their_share);
         ResultHandle::new(id, self.clone())
+    }
+
+    /// Share a `Scalar` value with the counterparty
+    pub fn share_scalar<T: Into<Scalar>>(
+        &self,
+        val: T,
+        sender: PartyId,
+    ) -> AuthenticatedScalarResult {
+        let scalar: ScalarResult = if self.party_id() == sender {
+            let scalar_val = val.into();
+            let mut rng = thread_rng();
+            let random = Scalar::random(&mut rng);
+
+            let (my_share, their_share) = (scalar_val - random, random);
+            self.allocate_shared_value(
+                ResultValue::Scalar(my_share),
+                ResultValue::Scalar(their_share),
+            )
+        } else {
+            self.receive_value()
+        };
+
+        AuthenticatedScalarResult::new_shared(scalar)
+    }
+
+    /// Share a `StarkPoint` value with the counterparty
+    pub fn share_point(&self, val: StarkPoint, sender: PartyId) -> AuthenticatedStarkPointResult {
+        let point: StarkPointResult = if self.party_id() == sender {
+            // As mentioned in https://eprint.iacr.org/2009/226.pdf
+            // it is okay to sample a random point by sampling a random `Scalar` and multiplying
+            // by the generator in the case that the discrete log of the output may be leaked with
+            // respect to the generator. Leaking the discrete log (i.e. the random `Scalar`) is okay
+            // when it is used to generate secret shares
+            let mut rng = thread_rng();
+            let random = Scalar::random(&mut rng);
+            let random_point = random * StarkPoint::generator();
+
+            let (my_share, their_share) = (val - random_point, random_point);
+            self.allocate_shared_value(
+                ResultValue::Point(my_share),
+                ResultValue::Point(their_share),
+            )
+        } else {
+            self.receive_value()
+        };
+
+        AuthenticatedStarkPointResult::new_shared(point)
     }
 
     /// Allocate a public value in the fabric
