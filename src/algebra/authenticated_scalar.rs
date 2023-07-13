@@ -2,6 +2,7 @@
 
 use std::{
     fmt::Debug,
+    iter::Sum,
     ops::{Add, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
@@ -89,6 +90,13 @@ impl AuthenticatedScalarResult {
         self.value.open()
     }
 
+    /// Open a batch of values without checking their MACs
+    ///
+    /// TODO: Optimize this to use a single gate
+    pub fn open_batch(values: &[Self]) -> Vec<ScalarResult> {
+        values.iter().map(|val| val.open()).collect()
+    }
+
     /// Open the value and check its MAC
     ///
     /// This follows the protocol detailed in:
@@ -168,6 +176,13 @@ impl AuthenticatedScalarResult {
             value: recovered_value,
             mac_check: commitment_check,
         }
+    }
+
+    /// Open a batch of values and check their MACs
+    ///
+    /// TODO: Optimize this to use a single gate
+    pub fn open_authenticated_batch(values: &[Self]) -> Vec<AuthenticatedScalarOpenResult> {
+        values.iter().map(|val| val.open_authenticated()).collect()
     }
 }
 
@@ -266,6 +281,14 @@ impl Add<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult, Add, add, +, AuthenticatedScalarResult, Output=AuthenticatedScalarResult);
+
+impl Sum for AuthenticatedScalarResult {
+    /// Assumes the iterator is non-empty
+    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
+        let seed = iter.next().expect("Cannot sum empty iterator");
+        iter.fold(seed, |acc, val| acc + &val)
+    }
+}
 
 // === Subtraction === //
 
@@ -408,6 +431,18 @@ impl Mul<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult, Mul, mul, *, AuthenticatedScalarResult, Output=AuthenticatedScalarResult);
+
+impl AuthenticatedScalarResult {
+    /// Multiply a batch of values using the Beaver trick
+    ///
+    /// TODO: Optimize this to use a network message
+    pub fn batch_mul(
+        a: &[AuthenticatedScalarResult],
+        b: &[AuthenticatedScalarResult],
+    ) -> Vec<AuthenticatedScalarResult> {
+        a.iter().zip(b.iter()).map(|(a, b)| a * b).collect()
+    }
+}
 
 // === Curve Scalar Multiplication === //
 

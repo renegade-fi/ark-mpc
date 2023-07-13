@@ -82,6 +82,13 @@ impl AuthenticatedStarkPointResult {
         self.value.open()
     }
 
+    /// Open a batch of values without checking the MAC
+    ///
+    /// TODO: Optimize this to use a single communication
+    pub fn open_batch(values: &[Self]) -> Vec<StarkPointResult> {
+        values.iter().map(|v| v.open()).collect()
+    }
+
     /// Open the value and check the MAC
     ///
     /// This follows the protocol detailed in
@@ -159,6 +166,13 @@ impl AuthenticatedStarkPointResult {
             value: recovered_value,
             mac_check: commitment_check,
         }
+    }
+
+    /// Open a batch of values and check the MACs
+    ///
+    /// TODO: Optimize this to use a single communication
+    pub fn open_authenticated_batch(values: &[Self]) -> Vec<AuthenticatedStarkPointOpenResult> {
+        values.iter().map(|v| v.open_authenticated()).collect()
     }
 }
 

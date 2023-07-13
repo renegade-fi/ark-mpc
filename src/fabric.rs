@@ -678,4 +678,39 @@ impl MpcFabric {
             AuthenticatedScalarResult::new_shared(c_val),
         )
     }
+
+    /// Sample a batch of random shared values from the beaver source
+    pub fn random_shared_scalars(&self, n: usize) -> Vec<ScalarResult> {
+        let values_raw = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_shared_value_batch(n);
+
+        // Wrap the values in a result handle
+        values_raw
+            .into_iter()
+            .map(|value| self.allocate_value(ResultValue::Scalar(value)))
+            .collect_vec()
+    }
+
+    /// Sample a batch of random shared values from the beaver source and allocate them as `AuthenticatedScalars`
+    pub fn random_shared_scalars_authenticated(&self, n: usize) -> Vec<AuthenticatedScalarResult> {
+        let values_raw = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_shared_value_batch(n);
+
+        // Wrap the values in an authenticated wrapper
+        values_raw
+            .into_iter()
+            .map(|value| {
+                let value = self.allocate_value(ResultValue::Scalar(value));
+                AuthenticatedScalarResult::new_shared(value)
+            })
+            .collect_vec()
+    }
 }
