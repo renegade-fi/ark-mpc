@@ -128,6 +128,7 @@ impl AuthenticatedStarkPointResult {
         let peer_blinder = self.fabric.exchange_value(blinder_result);
 
         // Check the peer's commitment and the sum of the MAC checks
+        let res_id = recovered_value.id;
         let commitment_check: ScalarResult = self.fabric.new_gate_op(
             vec![
                 mac_check.id,
@@ -135,7 +136,7 @@ impl AuthenticatedStarkPointResult {
                 peer_blinder.id,
                 peer_commit.id,
             ],
-            |mut args| {
+            move |mut args| {
                 let my_mac_check: StarkPoint = args.remove(0).into();
                 let peer_mac_check: StarkPoint = args.remove(0).into();
                 let peer_blinder: Scalar = args.remove(0).into();
@@ -149,12 +150,14 @@ impl AuthenticatedStarkPointResult {
                     commitment: peer_commitment,
                 };
                 if !peer_comm.verify() {
+                    println!("Peer comm failed");
                     return ResultValue::Scalar(Scalar::from(0));
                 }
 
                 // Check that the MAC check shares add up to the additive identity in
                 // the Starknet curve group
                 if my_mac_check + peer_mac_check != StarkPoint::identity() {
+                    println!("mac check failed for op_res: {:?}", res_id);
                     return ResultValue::Scalar(Scalar::from(0));
                 }
 
@@ -290,7 +293,7 @@ impl Add<&AuthenticatedStarkPointResult> for &AuthenticatedStarkPointResult {
         AuthenticatedStarkPointResult {
             value: new_share,
             mac: new_mac,
-            public_modifier: self.public_modifier.clone(),
+            public_modifier: self.public_modifier.clone() + other.public_modifier.clone(),
             fabric: self.fabric.clone(),
         }
     }

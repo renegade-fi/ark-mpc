@@ -275,7 +275,7 @@ impl Add<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
         AuthenticatedScalarResult {
             value: &self.value + &rhs.value,
             mac: &self.mac + &rhs.mac,
-            public_modifier: self.public_modifier.clone(),
+            public_modifier: self.public_modifier.clone() + rhs.public_modifier.clone(),
             fabric: self.fabric.clone(),
         }
     }

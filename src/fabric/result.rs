@@ -156,6 +156,13 @@ pub struct ResultHandle<T: From<ResultValue>> {
 }
 
 impl<T: From<ResultValue>> ResultHandle<T> {
+    /// Get a reference to the underlying fabric
+    pub fn clone_fabric(&self) -> MpcFabric {
+        self.fabric.clone()
+    }
+}
+
+impl<T: From<ResultValue>> ResultHandle<T> {
     /// Constructor
     pub(crate) fn new(id: ResultId, fabric: MpcFabric) -> Self {
         Self {

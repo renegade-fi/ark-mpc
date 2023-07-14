@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 
 use futures::Future;
+use itertools::Itertools;
 use mpc_stark::{
     algebra::{
         authenticated_scalar::AuthenticatedScalarResult,
@@ -68,6 +69,13 @@ pub(crate) fn create_point_secret_shares(a: StarkPoint) -> (StarkPoint, StarkPoi
 /// Await a result in the computation graph by blocking the current task
 pub(crate) fn await_result<R, T: Future<Output = R>>(res: T) -> R {
     Handle::current().block_on(res)
+}
+
+/// Await a batch of results
+pub(crate) fn await_result_batch<R, T: Future<Output = R> + Clone>(res: &[T]) -> Vec<R> {
+    res.iter()
+        .map(|res| await_result(res.clone()))
+        .collect_vec()
 }
 
 pub(crate) fn await_result_with_error<R, E: Debug, T: Future<Output = Result<R, E>>>(
@@ -165,6 +173,18 @@ pub(crate) fn share_plaintext_value<T: From<ResultValue> + Into<NetworkPayload>>
     } else {
         fabric.receive_value()
     }
+}
+
+/// Share a batch of values in the plaintext
+pub(crate) fn share_plaintext_values_batch<T: From<ResultValue> + Into<NetworkPayload> + Clone>(
+    values: &[ResultHandle<T>],
+    sender: PartyId,
+    fabric: &MpcFabric,
+) -> Vec<ResultHandle<T>> {
+    values
+        .iter()
+        .map(|v| share_plaintext_value(v.clone(), sender, fabric))
+        .collect_vec()
 }
 
 // ---------

@@ -15,6 +15,7 @@ use tracing::log::{self, LevelFilter};
 
 mod authenticated_scalar;
 mod authenticated_stark_point;
+mod circuits;
 mod fabric;
 mod helpers;
 mod mpc_scalar;

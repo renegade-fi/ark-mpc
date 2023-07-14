@@ -16,7 +16,7 @@ use super::{Operation, OperationType, ResultId, ResultValue};
 /// Error dequeuing a result from the queue
 const ERR_DEQUEUE: &str = "error dequeuing result";
 
-/// The executor is responsible for executing operation that are ready for execution, etiher
+/// The executor is responsible for executing operation that are ready for execution, either
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
 pub(super) struct Executor {
     /// The receiver on the result queue, where operation results are first materialized
