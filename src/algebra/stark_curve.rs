@@ -122,6 +122,18 @@ impl StarkPoint {
         out
     }
 
+    /// Serialize this point to a byte buffer in a way that is consistent
+    /// with the Cairo serialization of EC points, such that it can be absorbed
+    /// into a Fiat-Shamir transcript
+    pub fn to_transcript_bytes(&self) -> Vec<u8> {
+        let mut out: Vec<u8> = Vec::with_capacity(size_of::<StarkPoint>());
+        self.0
+            .serialize_uncompressed(&mut out)
+            .expect("Failed to serialize point");
+
+        out
+    }
+
     /// Deserialize a point from a byte buffer
     pub fn from_bytes(bytes: &[u8]) -> Result<StarkPoint, SerializationError> {
         let point = StarkPointInner::deserialize_compressed(bytes)?;
