@@ -6,9 +6,8 @@ use dns_lookup::lookup_host;
 use env_logger::Builder;
 use helpers::PartyIDBeaverSource;
 use mpc_stark::{
-    fabric::MpcFabric,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
-    PARTY0,
+    MpcFabric, PARTY0,
 };
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use tracing::log::{self, LevelFilter};

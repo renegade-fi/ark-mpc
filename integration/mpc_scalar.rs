@@ -1,9 +1,5 @@
 //! Defines unit tests for `MpcScalar` types
-use mpc_stark::{
-    algebra::scalar::Scalar,
-    fabric::{ResultHandle, ResultValue},
-    PARTY0, PARTY1,
-};
+use mpc_stark::{algebra::scalar::Scalar, ResultHandle, ResultValue, PARTY0, PARTY1};
 use rand::thread_rng;
 
 use crate::{

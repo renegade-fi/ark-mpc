@@ -21,7 +21,11 @@ pub mod algebra;
 pub mod beaver;
 pub mod commitment;
 pub mod error;
-pub mod fabric;
+mod fabric;
+#[cfg(feature = "benchmarks")]
+pub use fabric::*;
+#[cfg(not(feature = "benchmarks"))]
+pub use fabric::{FabricInner, MpcFabric, ResultHandle, ResultId, ResultValue};
 pub mod network;
 
 // -------------

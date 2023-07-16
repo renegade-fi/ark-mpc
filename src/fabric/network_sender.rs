@@ -7,7 +7,7 @@ use tracing::log;
 
 use crate::{
     error::MpcNetworkError,
-    network::{MpcNetwork, NetworkOutbound, QuicTwoPartyNet},
+    network::{MpcNetwork, NetworkOutbound},
 };
 
 use super::executor::ExecutorMessage;
@@ -28,23 +28,23 @@ const ERR_SEND_FAILURE: &str = "error sending value";
 
 /// The network sender sits behind the scheduler and is responsible for forwarding messages
 /// onto the network and pulling results off the network, re-enqueuing them for processing
-pub(crate) struct NetworkSender {
+pub(crate) struct NetworkSender<N: MpcNetwork> {
     /// The outbound queue of messages to send
     outbound: TokioReceiver<NetworkOutbound>,
     /// The queue of completed results
     result_queue: TokioSender<ExecutorMessage>,
     /// The underlying network connection
-    network: QuicTwoPartyNet,
+    network: N,
     /// The broadcast channel on which shutdown signals are sent
     shutdown: BroadcastReceiver<()>,
 }
 
-impl NetworkSender {
+impl<N: MpcNetwork> NetworkSender<N> {
     /// Creates a new network sender
     pub fn new(
         outbound: TokioReceiver<NetworkOutbound>,
         result_queue: TokioSender<ExecutorMessage>,
-        network: QuicTwoPartyNet,
+        network: N,
         shutdown: BroadcastReceiver<()>,
     ) -> Self {
         NetworkSender {

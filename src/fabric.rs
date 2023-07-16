@@ -9,6 +9,10 @@ mod executor;
 mod network_sender;
 mod result;
 
+#[cfg(feature = "benchmarks")]
+pub use executor::{Executor, ExecutorMessage};
+#[cfg(not(feature = "benchmarks"))]
+use executor::{Executor, ExecutorMessage};
 use rand::thread_rng;
 pub use result::{cast_args, ResultHandle, ResultId, ResultValue};
 
@@ -43,11 +47,7 @@ use crate::{
     Shared, PARTY0,
 };
 
-use self::{
-    executor::{Executor, ExecutorMessage},
-    network_sender::NetworkSender,
-    result::OpResult,
-};
+use self::{network_sender::NetworkSender, result::OpResult};
 
 /// The result id that is hardcoded to zero
 const RESULT_ZERO: ResultId = 0;
@@ -58,7 +58,7 @@ const RESULT_IDENTITY: ResultId = 2;
 
 /// An operation within the network, describes the arguments and function to evaluate
 /// once the arguments are ready
-pub(crate) struct Operation {
+pub struct Operation {
     /// Identifier of the result that this operation emits
     id: ResultId,
     /// The number of arguments that are still in-flight for this operation
@@ -99,15 +99,27 @@ pub(crate) enum OperationType {
 #[derive(Clone)]
 pub struct MpcFabric {
     /// The inner fabric
+    #[cfg(not(feature = "benchmarks"))]
     inner: FabricInner,
+    /// The inner fabric, accessible publicly for benchmark mocking
+    #[cfg(feature = "benchmarks")]
+    pub inner: FabricInner,
     /// The local party's share of the global MAC key
     ///
     /// The parties collectively hold an additive sharing of the global key
     ///
     /// We wrap in a reference counting structure to avoid recursive type issues
+    #[cfg(not(feature = "benchmarks"))]
     mac_key: Option<Arc<MpcScalarResult>>,
+    /// The MAC key, accessible publicly for benchmark mocking
+    #[cfg(feature = "benchmarks")]
+    pub mac_key: Option<Arc<MpcScalarResult>>,
     /// The channel on which shutdown messages are sent to blocking workers
+    #[cfg(not(feature = "benchmarks"))]
     shutdown: BroadcastSender<()>,
+    /// The shutdown channel, made publicly available for benchmark mocking
+    #[cfg(feature = "benchmarks")]
+    pub shutdown: BroadcastSender<()>,
 }
 
 impl Debug for MpcFabric {
@@ -119,7 +131,7 @@ impl Debug for MpcFabric {
 /// The inner component of the fabric, allows the constructor to allocate executor and network
 /// sender objects at the same level as the fabric
 #[derive(Clone)]
-pub(crate) struct FabricInner {
+pub struct FabricInner {
     /// The ID of the local party in the MPC execution
     party_id: u64,
     /// The next identifier to assign to an operation
@@ -174,7 +186,7 @@ impl FabricInner {
         .into_iter()
         .collect();
 
-        let next_id = Arc::new(AtomicUsize::new(2));
+        let next_id = Arc::new(AtomicUsize::new(results.len()));
 
         Self {
             party_id,
@@ -317,7 +329,10 @@ impl FabricInner {
 
 impl MpcFabric {
     /// Constructor
-    pub fn new<S: 'static + SharedValueSource>(network: QuicTwoPartyNet, beaver_source: S) -> Self {
+    pub fn new<N: 'static + MpcNetwork, S: 'static + SharedValueSource>(
+        network: N,
+        beaver_source: S,
+    ) -> Self {
         // Build communication primitives
         let (result_sender, result_receiver) = unbounded_channel();
         let (outbound_sender, outbound_receiver) = unbounded_channel();
@@ -569,6 +584,12 @@ impl MpcFabric {
             let [value]: [T; 1] = cast_args(args);
             value.into()
         })
+    }
+
+    /// Send a `Scalar` that has not been previously allocated in the mpc fabric
+    pub fn send_scalar<T: Into<Scalar>>(&self, value: T) -> ResultHandle<Scalar> {
+        let scalar: Scalar = value.into();
+        self.new_network_op(vec![], move |_args| scalar.into())
     }
 
     /// Receive a value from the peer

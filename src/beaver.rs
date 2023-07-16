@@ -45,19 +45,20 @@ pub trait SharedValueSource: Send + Sync {
 
 /// A dummy value source that outputs only ones
 /// Used for testing
-#[cfg(test)]
+#[cfg(feature = "test_helpers")]
 #[derive(Clone, Debug, Default)]
 pub struct DummySharedScalarSource;
 
-#[cfg(test)]
+#[cfg(feature = "test_helpers")]
 #[allow(dead_code)]
 impl DummySharedScalarSource {
+    /// Constructor
     pub fn new() -> Self {
         Self
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "test_helpers")]
 impl SharedValueSource for DummySharedScalarSource {
     fn next_shared_bit(&mut self) -> Scalar {
         Scalar::one()

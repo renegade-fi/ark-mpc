@@ -18,7 +18,7 @@ const ERR_DEQUEUE: &str = "error dequeuing result";
 
 /// The executor is responsible for executing operation that are ready for execution, either
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
-pub(super) struct Executor {
+pub struct Executor {
     /// The receiver on the result queue, where operation results are first materialized
     /// so that their dependents may be evaluated
     result_queue: TokioReceiver<ExecutorMessage>,
@@ -37,7 +37,7 @@ pub(super) struct Executor {
 /// - An operation directly, which the executor will execute immediately if all of its
 ///  arguments are ready
 #[derive(Debug)]
-pub(crate) enum ExecutorMessage {
+pub enum ExecutorMessage {
     /// A result of an operation
     Result(OpResult),
     /// An operation that is ready for execution

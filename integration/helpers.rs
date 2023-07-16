@@ -11,9 +11,8 @@ use mpc_stark::{
         mpc_stark_point::MpcStarkPointResult, scalar::Scalar, stark_curve::StarkPoint,
     },
     beaver::SharedValueSource,
-    fabric::{MpcFabric, ResultHandle, ResultValue},
     network::{NetworkPayload, PartyId},
-    random_point,
+    random_point, {MpcFabric, ResultHandle, ResultValue},
 };
 use rand::thread_rng;
 use tokio::runtime::Handle;

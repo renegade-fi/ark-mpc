@@ -3,8 +3,7 @@
 
 use mpc_stark::{
     algebra::{authenticated_scalar::test_helpers::*, scalar::Scalar},
-    fabric::ResultValue,
-    PARTY0, PARTY1,
+    ResultValue, PARTY0, PARTY1,
 };
 use rand::thread_rng;
 

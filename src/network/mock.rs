@@ -7,7 +7,13 @@ use crate::{algebra::scalar::Scalar, error::MpcNetworkError, PARTY0};
 use super::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId};
 
 /// A dummy network implementation used for unit testing
-pub(crate) struct MockNetwork;
+pub struct MockNetwork;
+impl MockNetwork {
+    /// Constructor
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl MpcNetwork for MockNetwork {
@@ -15,7 +21,7 @@ impl MpcNetwork for MockNetwork {
         PARTY0
     }
 
-    async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
+    async fn send_message(&mut self, _message: NetworkOutbound) -> Result<(), MpcNetworkError> {
         Ok(())
     }
 
@@ -28,7 +34,7 @@ impl MpcNetwork for MockNetwork {
 
     async fn exchange_messages(
         &mut self,
-        message: NetworkOutbound,
+        _message: NetworkOutbound,
     ) -> Result<NetworkOutbound, MpcNetworkError> {
         Ok(NetworkOutbound {
             op_id: 0,

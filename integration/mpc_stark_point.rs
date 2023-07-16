@@ -5,8 +5,7 @@ use mpc_stark::{
         scalar::{Scalar, ScalarResult},
         stark_curve::{StarkPoint, StarkPointResult},
     },
-    fabric::{ResultHandle, ResultValue},
-    random_point, PARTY0, PARTY1,
+    random_point, ResultHandle, ResultValue, PARTY0, PARTY1,
 };
 use rand::thread_rng;
 
