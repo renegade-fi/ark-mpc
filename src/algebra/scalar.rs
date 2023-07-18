@@ -42,8 +42,7 @@ pub struct StarknetFrConfig;
 /// Note that this is not the field that the curve is defined over, but field of integers modulo
 /// the order of the curve's group, see [here](https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve)
 /// for more information
-// pub(crate) type ScalarInner = Fp256<MontBackend<StarknetFrConfig, 4>>;
-pub(crate) type ScalarInner = StarknetBaseFelt;
+pub(crate) type ScalarInner = Fp256<MontBackend<StarknetFrConfig, 4>>;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 /// A wrapper around the inner scalar that allows us to implement foreign traits for the `Scalar`
 pub struct Scalar(pub(crate) ScalarInner);
