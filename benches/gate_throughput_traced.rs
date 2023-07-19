@@ -13,7 +13,7 @@ use rand::thread_rng;
 // -----------
 
 /// The number of gates to use in the benchmark
-const NUM_GATES: usize = 1_000_000;
+const NUM_GATES: usize = 10_000_000;
 
 /// Create a mock fabric for testing
 pub fn mock_fabric() -> MpcFabric {
@@ -44,6 +44,9 @@ struct Args {
     /// Whether to enable on-cpu stack sampled profiling
     #[clap(long, takes_value = false, value_parser)]
     profiled: bool,
+    /// The bench argument, needed for all benchmarks
+    #[clap(long, takes_value = true, value_parser)]
+    bench: bool,
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]

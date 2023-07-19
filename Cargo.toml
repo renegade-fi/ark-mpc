@@ -62,6 +62,7 @@ quinn = { version = "0.9", features = ["tls-rustls", "native-certs"] }
 # == Misc == #
 bytes = "1.2"
 itertools = "0.10"
+rustc-hash = "1.1"
 tracing = { version = "0.1", features = ["log"] }
 zeroize = "1.3"
 

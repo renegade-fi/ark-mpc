@@ -1,6 +1,7 @@
 //! The executor receives IDs of operations that are ready for execution, executes
 //! them, and places the result back into the fabric for further executions
 
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 
 use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
@@ -22,9 +23,9 @@ pub struct Executor {
     /// recursive evaluation
     result_sender: CrossbeamSender<ExecutorMessage>,
     /// The operation buffer, stores in-flight operations
-    operations: HashMap<ResultId, Operation>,
+    operations: FxHashMap<ResultId, Operation>,
     /// The dependency map; maps in-flight results to operations that are waiting for them
-    dependencies: HashMap<ResultId, Vec<ResultId>>,
+    dependencies: FxHashMap<ResultId, Vec<ResultId>>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
 }
@@ -61,8 +62,8 @@ impl Executor {
         Self {
             result_receiver,
             result_sender,
-            operations: HashMap::new(),
-            dependencies: HashMap::new(),
+            operations: FxHashMap::default(),
+            dependencies: FxHashMap::default(),
             fabric,
         }
     }
