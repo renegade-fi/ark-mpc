@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Mutex, time::Instant};
+use std::{path::Path, sync::Mutex};
 
 use cpuprofiler::{Profiler as CpuProfiler, PROFILER};
 use criterion::{
@@ -6,7 +6,7 @@ use criterion::{
     Criterion,
 };
 use mpc_stark::{
-    algebra::scalar::Scalar, beaver::DummySharedScalarSource, network::MockNetwork, MpcFabric,
+    algebra::scalar::Scalar, beaver::DummySharedScalarSource, network::NoRecvNetwork, MpcFabric,
 };
 use rand::{rngs::OsRng, thread_rng};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -42,7 +42,7 @@ pub fn config() -> Criterion {
 
 /// Create a mock fabric for testing
 pub fn mock_fabric() -> MpcFabric {
-    let network = MockNetwork::default();
+    let network = NoRecvNetwork::default();
     let beaver_source = DummySharedScalarSource::new();
     MpcFabric::new(network, beaver_source)
 }
@@ -87,14 +87,10 @@ pub fn circuit_scalar_addition(c: &mut Criterion) {
                 let mock_fabric = mock_fabric();
                 let mock_scalar = mock_fabric.allocate_scalar(Scalar::random(&mut rng));
 
-                let starttime = Instant::now();
                 let mut res = mock_scalar;
                 for _ in 0..circuit_size {
                     res = &res + &res;
                 }
-
-                let elapsed = starttime.elapsed();
-                println!("created circuit in {}ms", elapsed.as_millis());
 
                 res.await;
                 mock_fabric.shutdown();

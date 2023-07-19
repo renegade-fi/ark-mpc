@@ -5,7 +5,7 @@ mod config;
 mod mock;
 
 #[cfg(feature = "test_helpers")]
-pub use mock::MockNetwork;
+pub use mock::{MockNetwork, NoRecvNetwork};
 
 use async_trait::async_trait;
 use quinn::{Endpoint, RecvStream, SendStream};

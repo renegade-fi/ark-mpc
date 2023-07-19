@@ -71,7 +71,7 @@ pub struct Operation {
     /// Identifier of the result that this operation emits
     id: ResultId,
     /// The number of arguments that are still in-flight for this operation
-    inflight_args: AtomicUsize,
+    inflight_args: usize,
     /// The IDs of the inputs to this operation
     args: Vec<ResultId>,
     /// The type of the operation
@@ -85,7 +85,7 @@ impl Debug for Operation {
 }
 
 /// Defines the different types of operations available in the computation graph
-pub(crate) enum OperationType {
+pub enum OperationType {
     /// A gate operation; may be evaluated locally given its ready inputs
     Gate {
         /// The function to apply to the inputs
@@ -96,6 +96,15 @@ pub(crate) enum OperationType {
         /// The function to apply to the inputs to derive a Network payload
         function: Box<dyn FnOnce(Vec<ResultValue>) -> NetworkPayload + Send + Sync>,
     },
+}
+
+impl Debug for OperationType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            OperationType::Gate { .. } => write!(f, "Gate"),
+            OperationType::Network { .. } => write!(f, "Network"),
+        }
+    }
 }
 
 /// A fabric for the MPC protocol, defines a dependency injection layer that dynamically schedules
@@ -147,10 +156,6 @@ pub struct FabricInner {
     next_id: Arc<AtomicUsize>,
     /// The completed results of operations
     results: Shared<HashMap<ResultId, OpResult>>,
-    /// The list of in-flight operations
-    operations: Shared<HashMap<ResultId, Operation>>,
-    /// The dependency map; maps in-flight results to operations that are dependent on them
-    dependencies: Shared<HashMap<ResultId, Vec<ResultId>>>,
     /// A map of operations to wakers of tasks that are waiting on the operation to complete
     wakers: Shared<HashMap<ResultId, Vec<Waker>>>,
     /// A sender to the executor
@@ -201,8 +206,6 @@ impl FabricInner {
             party_id,
             next_id,
             results: Arc::new(RwLock::new(results)),
-            operations: Arc::new(RwLock::new(HashMap::new())),
-            dependencies: Arc::new(RwLock::new(HashMap::new())),
             wakers: Arc::new(RwLock::new(HashMap::new())),
             execution_queue,
             outbound_queue,
@@ -318,43 +321,11 @@ impl FabricInner {
 
     /// Allocate a new in-flight gate operation in the fabric
     pub(crate) fn new_op(&self, args: Vec<ResultId>, op_type: OperationType) -> ResultId {
-        // Acquire all locks
-        let locked_results = self.results.read().expect("results poisoned");
-        let mut locked_ops = self.operations.write().expect("ops poisoned");
-        let mut locked_deps = self.dependencies.write().expect("deps poisoned");
-
         // Get an ID for the result
         let id = self.new_id();
-
-        // Count the args that are not yet ready
-        let inputs = args
-            .iter()
-            .filter_map(|id| locked_results.get(id))
-            .map(|op_res| op_res.value.clone())
-            .collect_vec();
-        let n_inflight = args.len() - inputs.len();
-
-        // Create an operation and handle it
-        let op = Operation {
-            id,
-            inflight_args: AtomicUsize::new(n_inflight),
-            args,
-            op_type,
-        };
-
-        // If all arguments are already resolved, forward to the executor for immediate execution
-        if n_inflight == 0 {
-            self.execution_queue
-                .send(ExecutorMessage::Op(op))
-                .expect("error sending op to executor");
-        } else {
-            // Update the dependency map
-            for arg in op.args.iter() {
-                locked_deps.entry(*arg).or_insert_with(Vec::new).push(id);
-            }
-
-            locked_ops.insert(id, op);
-        }
+        self.execution_queue
+            .send(ExecutorMessage::Op { id, args, op_type })
+            .expect("executor channel closed");
 
         id
     }

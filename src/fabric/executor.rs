@@ -1,7 +1,7 @@
 //! The executor receives IDs of operations that are ready for execution, executes
 //! them, and places the result back into the fabric for further executions
 
-use std::sync::atomic::Ordering;
+use std::collections::HashMap;
 
 use itertools::Itertools;
 use tokio::sync::broadcast::Receiver as BroadcastReceiver;
@@ -25,6 +25,10 @@ pub struct Executor {
     /// A sender to the result queue so that hte executor may re-enqueue results for
     /// recursive evaluation
     result_sender: TokioSender<ExecutorMessage>,
+    /// The operation buffer, stores in-flight operations
+    operations: HashMap<ResultId, Operation>,
+    /// The dependency map; maps in-flight results to operations that are waiting for them
+    dependencies: HashMap<ResultId, Vec<ResultId>>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
     /// The channel on which the fabric may send a shutdown signal
@@ -41,7 +45,14 @@ pub enum ExecutorMessage {
     /// A result of an operation
     Result(OpResult),
     /// An operation that is ready for execution
-    Op(Operation),
+    Op {
+        /// The id allocated to this operation's result
+        id: ResultId,
+        /// The args of the operations
+        args: Vec<ResultId>,
+        /// The operation type
+        op_type: OperationType,
+    },
 }
 
 impl Executor {
@@ -55,6 +66,8 @@ impl Executor {
         Self {
             result_queue,
             result_sender,
+            operations: HashMap::new(),
+            dependencies: HashMap::new(),
             fabric,
             shutdown,
         }
@@ -68,7 +81,7 @@ impl Executor {
                 x = self.result_queue.recv() => {
                     match x.expect(ERR_DEQUEUE) {
                         ExecutorMessage::Result(res) => self.handle_new_result(res),
-                        ExecutorMessage::Op(op) => self.handle_new_operation(op),
+                        ExecutorMessage::Op { id, args, op_type } => self.handle_new_operation(id, args, op_type),
                     }
                 }
 
@@ -87,62 +100,79 @@ impl Executor {
 
         // Lock the fabric elements needed
         let mut locked_results = self.fabric.results.write().expect("results lock poisoned");
+
         let prev = locked_results.insert(result.id, result);
         assert!(prev.is_none(), "duplicate result id: {id:?}");
 
-        let mut locked_operations = self.fabric.operations.write().expect("ops lock poisoned");
-        let mut locked_deps = self
-            .fabric
-            .dependencies
-            .write()
-            .expect("deps lock poisoned");
-        let mut locked_wakers = self.fabric.wakers.write().expect("wakers lock poisoned");
+        // Execute any ready dependencies
+        if let Some(deps) = self.dependencies.get(&id) {
+            for op_id in deps {
+                {
+                    let operation = self.operations.get_mut(op_id).unwrap();
+                    operation.inflight_args -= 1;
 
-        // Get the operation's dependencies
-        for operation_id in locked_deps.remove(&id).unwrap_or_default() {
-            // Decrement the operation's in-flight args count, take ownership of the operation
-            // so that we may consume the `FnOnce` callback if the args are ready
-            let operation = locked_operations.remove(&operation_id).unwrap();
-            let prev_num_args = operation.inflight_args.fetch_sub(1, Ordering::Relaxed);
+                    if operation.inflight_args > 0 {
+                        continue;
+                    }
+                } // Explicitly drop the mutable reference to `self`
 
-            if prev_num_args == 1 {
+                // Remove the operation from the in-flight list
+                let operation = self.operations.remove(op_id).unwrap();
+
                 // Get the inputs and execute the method to produce the output
                 let inputs = operation
                     .args
                     .iter()
                     .map(|id| locked_results.get(id).unwrap().value.clone())
                     .collect::<Vec<_>>();
-                self.execute_operation(operation_id, operation.op_type, inputs);
-            } else {
-                locked_operations.insert(operation_id, operation);
+                self.execute_operation(*op_id, operation.op_type, inputs);
             }
         }
-
         // Wake all tasks awaiting this result
+        let mut locked_wakers = self.fabric.wakers.write().expect("wakers lock poisoned");
         for waker in locked_wakers.remove(&id).unwrap_or_default().into_iter() {
             waker.wake();
         }
     }
 
     /// Handle a new operation
-    fn handle_new_operation(&self, operation: Operation) {
+    fn handle_new_operation(
+        &mut self,
+        id: ResultId,
+        args: Vec<ResultId>,
+        operation: OperationType,
+    ) {
         // Acquire all necessary locks
-        let locked_results = self.fabric.results.write().expect("results lock poisoned");
+        let locked_results = self.fabric.results.read().expect("results lock poisoned");
 
-        // Check that all arguments are ready
-        let inputs = operation
-            .args
+        // Check if all arguments are ready
+        let ready = args
             .iter()
-            .filter_map(|id| locked_results.get(id).cloned())
-            .map(|res| res.value)
+            .filter_map(|id| locked_results.get(id))
+            .map(|res| res.value.clone())
             .collect_vec();
-        if inputs.len() != operation.args.len() {
-            log::error!("operation {:?} has missing arguments", operation.id);
+        let inflight_args = args.len() - ready.len();
+
+        // If the operation is ready for execution, do so
+        if inflight_args == 0 {
+            self.execute_operation(id, operation, ready);
             return;
         }
 
-        // Execute the operation
-        self.execute_operation(operation.id, operation.op_type, inputs);
+        // Otherwise, add the operation to the in-flight operations list and the dependency map
+        for args in args.iter() {
+            self.dependencies.entry(*args).or_default().push(id);
+        }
+
+        self.operations.insert(
+            id,
+            Operation {
+                id,
+                inflight_args,
+                args,
+                op_type: operation,
+            },
+        );
     }
 
     /// Executes an operation whose arguments are ready
