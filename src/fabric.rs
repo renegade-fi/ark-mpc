@@ -44,6 +44,7 @@ use crate::{
         stark_curve::{StarkPoint, StarkPointResult},
     },
     beaver::SharedValueSource,
+    buffer::GrowableBuffer,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
     Shared, PARTY0,
 };
@@ -66,8 +67,12 @@ const RESULT_IDENTITY_SHARED: ResultId = 5;
 /// The number of constant results allocated in the fabric, i.e. those defined above
 const N_CONSTANT_RESULTS: usize = 6;
 
+/// The default size hint to give the fabric for buffer pre-allocation
+const DEFAULT_SIZE_HINT: usize = 10_000;
+
 /// An operation within the network, describes the arguments and function to evaluate
 /// once the arguments are ready
+#[derive(Clone)]
 pub struct Operation {
     /// Identifier of the result that this operation emits
     id: ResultId,
@@ -97,6 +102,14 @@ pub enum OperationType {
         /// The function to apply to the inputs to derive a Network payload
         function: Box<dyn FnOnce(Vec<ResultValue>) -> NetworkPayload + Send + Sync>,
     },
+}
+
+/// A clone implementation, never concretely called but used as a Marker type to allow
+/// pre-allocating buffer space for `Operation`s
+impl Clone for OperationType {
+    fn clone(&self) -> Self {
+        panic!("cannot clone `OperationType`")
+    }
 }
 
 impl Debug for OperationType {
@@ -156,7 +169,7 @@ pub struct FabricInner {
     /// The next identifier to assign to an operation
     next_id: Arc<AtomicUsize>,
     /// The completed results of operations
-    results: Shared<HashMap<ResultId, OpResult>>,
+    results: Shared<GrowableBuffer<OpResult>>,
     /// A map of operations to wakers of tasks that are waiting on the operation to complete
     wakers: Shared<HashMap<ResultId, Vec<Waker>>>,
     /// A sender to the executor
@@ -176,6 +189,7 @@ impl Debug for FabricInner {
 impl FabricInner {
     /// Constructor
     pub fn new<S: 'static + SharedValueSource>(
+        size_hint: usize,
         party_id: u64,
         execution_queue: CrossbeamSender<ExecutorMessage>,
         outbound_queue: TokioSender<NetworkOutbound>,
@@ -187,19 +201,16 @@ impl FabricInner {
         let one = ResultValue::Scalar(Scalar::one());
         let identity = ResultValue::Point(StarkPoint::identity());
 
-        let results: HashMap<ResultId, OpResult> = vec![
-            (RESULT_ZERO, OpResult { id: 0, value: zero }),
-            (RESULT_ONE, OpResult { id: 1, value: one }),
-            (
-                RESULT_IDENTITY,
-                OpResult {
-                    id: 2,
-                    value: identity,
-                },
-            ),
-        ]
-        .into_iter()
-        .collect();
+        let mut results = GrowableBuffer::new(size_hint);
+        results.insert(RESULT_ZERO, OpResult { id: 0, value: zero });
+        results.insert(RESULT_ONE, OpResult { id: 1, value: one });
+        results.insert(
+            RESULT_IDENTITY,
+            OpResult {
+                id: 2,
+                value: identity,
+            },
+        );
 
         let next_id = Arc::new(AtomicUsize::new(N_CONSTANT_RESULTS));
 
@@ -345,6 +356,16 @@ impl MpcFabric {
         network: N,
         beaver_source: S,
     ) -> Self {
+        Self::new_with_size_hint(DEFAULT_SIZE_HINT, network, beaver_source)
+    }
+
+    /// Constructor that takes an additional size hint, indicating how much buffer space
+    /// the fabric should allocate for results. The size is given in number of gates
+    pub fn new_with_size_hint<N: 'static + MpcNetwork, S: 'static + SharedValueSource>(
+        size_hint: usize,
+        network: N,
+        beaver_source: S,
+    ) -> Self {
         // Build communication primitives
         let (result_sender, result_receiver) = crossbeam::channel::unbounded();
         let (outbound_sender, outbound_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -352,6 +373,7 @@ impl MpcFabric {
 
         // Build a fabric
         let fabric = FabricInner::new(
+            size_hint,
             network.party_id(),
             result_sender.clone(),
             outbound_sender,
@@ -367,7 +389,7 @@ impl MpcFabric {
         );
         tokio::task::spawn_blocking(move || block_on(network_sender.run()));
 
-        let executor = Executor::new(result_receiver, result_sender, fabric.clone());
+        let executor = Executor::new(size_hint, result_receiver, result_sender, fabric.clone());
         tokio::task::spawn_blocking(move || executor.run());
 
         // Create the fabric and fill in the MAC key after
@@ -638,10 +660,7 @@ impl MpcFabric {
         &self,
         value: ResultHandle<T>,
     ) -> ResultHandle<T> {
-        self.new_network_op(vec![value.id], |args| {
-            let [value]: [T; 1] = cast_args(args);
-            value.into()
-        })
+        self.new_network_op(vec![value.id], |mut args| args.remove(0).into())
     }
 
     /// Send a `Scalar` that has not been previously allocated in the mpc fabric

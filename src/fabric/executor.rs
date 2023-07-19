@@ -1,13 +1,11 @@
 //! The executor receives IDs of operations that are ready for execution, executes
 //! them, and places the result back into the fabric for further executions
 
-use rustc_hash::FxHashMap;
-use std::collections::HashMap;
-
 use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
 use itertools::Itertools;
 use tracing::log;
 
+use crate::buffer::GrowableBuffer;
 use crate::network::NetworkOutbound;
 
 use super::{result::OpResult, FabricInner};
@@ -23,9 +21,9 @@ pub struct Executor {
     /// recursive evaluation
     result_sender: CrossbeamSender<ExecutorMessage>,
     /// The operation buffer, stores in-flight operations
-    operations: FxHashMap<ResultId, Operation>,
+    operations: GrowableBuffer<Operation>,
     /// The dependency map; maps in-flight results to operations that are waiting for them
-    dependencies: FxHashMap<ResultId, Vec<ResultId>>,
+    dependencies: GrowableBuffer<Vec<ResultId>>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
 }
@@ -55,6 +53,7 @@ pub enum ExecutorMessage {
 impl Executor {
     /// Constructor
     pub fn new(
+        circuit_size_hint: usize,
         result_receiver: CrossbeamReceiver<ExecutorMessage>,
         result_sender: CrossbeamSender<ExecutorMessage>,
         fabric: FabricInner,
@@ -62,8 +61,8 @@ impl Executor {
         Self {
             result_receiver,
             result_sender,
-            operations: FxHashMap::default(),
-            dependencies: FxHashMap::default(),
+            operations: GrowableBuffer::new(circuit_size_hint),
+            dependencies: GrowableBuffer::new(circuit_size_hint),
             fabric,
         }
     }
@@ -95,27 +94,27 @@ impl Executor {
         assert!(prev.is_none(), "duplicate result id: {id:?}");
 
         // Execute any ready dependencies
-        if let Some(deps) = self.dependencies.get(&id) {
-            for op_id in deps {
+        if let Some(deps) = self.dependencies.get(id) {
+            for op_id in deps.iter() {
                 {
-                    let operation = self.operations.get_mut(op_id).unwrap();
-                    operation.inflight_args -= 1;
+                    let mut operation = self.operations.get_mut(*op_id).unwrap();
 
+                    operation.inflight_args -= 1;
                     if operation.inflight_args > 0 {
                         continue;
                     }
-                } // Explicitly drop the mutable reference to `self`
+                } // explicitly drop the mutable `self` reference
 
-                // Remove the operation from the in-flight list
-                let operation = self.operations.remove(op_id).unwrap();
+                // Take ownership of the operation
+                let op = self.operations.take(*op_id).unwrap();
 
                 // Get the inputs and execute the method to produce the output
-                let inputs = operation
+                let inputs = op
                     .args
                     .iter()
-                    .map(|id| locked_results.get(id).unwrap().value.clone())
+                    .map(|id| locked_results.get(*id).unwrap().value.clone())
                     .collect::<Vec<_>>();
-                self.execute_operation(*op_id, operation.op_type, inputs);
+                self.execute_operation(*op_id, op.op_type, inputs);
             }
         }
         // Wake all tasks awaiting this result
@@ -138,7 +137,7 @@ impl Executor {
         // Check if all arguments are ready
         let ready = args
             .iter()
-            .filter_map(|id| locked_results.get(id))
+            .filter_map(|id| locked_results.get(*id))
             .map(|res| res.value.clone())
             .collect_vec();
         let inflight_args = args.len() - ready.len();
@@ -150,8 +149,13 @@ impl Executor {
         }
 
         // Otherwise, add the operation to the in-flight operations list and the dependency map
-        for args in args.iter() {
-            self.dependencies.entry(*args).or_default().push(id);
+        for arg in args.iter() {
+            let entry = self.dependencies.entry_mut(*arg);
+            if entry.is_none() {
+                *entry = Some(Vec::new());
+            }
+
+            entry.as_mut().unwrap().push(id);
         }
 
         self.operations.insert(

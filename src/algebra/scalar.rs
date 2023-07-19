@@ -181,7 +181,8 @@ impl Add<&ScalarResult> for &ScalarResult {
 
     fn add(self, rhs: &ScalarResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
+            let lhs: Scalar = args[0].to_owned().into();
+            let rhs: Scalar = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 + rhs.0))
         })
     }

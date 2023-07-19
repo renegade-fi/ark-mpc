@@ -185,7 +185,7 @@ impl<T: From<ResultValue>> Future for ResultHandle<T> {
         let locked_results = self.fabric.inner.results.read().expect("results poisoned");
         let mut locked_wakers = self.fabric.inner.wakers.write().expect("wakers poisoned");
 
-        match locked_results.get(&self.id) {
+        match locked_results.get(self.id) {
             Some(res) => Poll::Ready(res.value.clone().into()),
             None => {
                 locked_wakers

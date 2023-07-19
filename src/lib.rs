@@ -19,6 +19,7 @@ use rand::thread_rng;
 
 pub mod algebra;
 pub mod beaver;
+pub(crate) mod buffer;
 pub mod commitment;
 pub mod error;
 mod fabric;
