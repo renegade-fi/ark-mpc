@@ -107,6 +107,11 @@ impl StarkPoint {
         self == &StarkPoint::identity()
     }
 
+    /// Convert the point to affine
+    pub fn to_affine(&self) -> Affine<StarknetCurveConfig> {
+        self.0.into_affine()
+    }
+
     /// The group generator
     pub fn generator() -> StarkPoint {
         StarkPoint(StarkPointInner::generator())

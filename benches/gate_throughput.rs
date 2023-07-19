@@ -42,7 +42,7 @@ pub fn config() -> Criterion {
 
 /// Create a mock fabric for testing
 pub fn mock_fabric() -> MpcFabric {
-    let network = MockNetwork::new();
+    let network = MockNetwork::default();
     let beaver_source = DummySharedScalarSource::new();
     MpcFabric::new(network, beaver_source)
 }

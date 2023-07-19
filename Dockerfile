@@ -11,6 +11,7 @@ RUN echo 'fn main() { println!("dummy main!") }' >> integration/dummy-main.rs
 
 COPY Cargo.toml .
 COPY Cargo.lock .
+COPY ./benches ./benches
 
 # Modify the Cargo.toml to point to our dummy sources
 RUN sed -i 's/lib.rs/dummy-lib.rs/g' Cargo.toml

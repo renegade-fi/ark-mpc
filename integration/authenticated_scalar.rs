@@ -250,6 +250,29 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_scalars_eq(expected_res, res_open)
 }
 
+/// Test the case in which we add and then multiply by a public value
+fn test_public_add_then_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a value, party 1's value is made public
+    let mut rng = thread_rng();
+    let val = Scalar::random(&mut rng);
+    let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
+
+    // Share the value with the counterparty in the plaintext and compute the expected result
+    let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
+    let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
+
+    let expected_result =
+        await_result((await_result(party0_value) + &party1_value) * &party1_value);
+
+    // Compute the result in the MPC circuit
+    let party0_value = share_authenticated_scalar(val, PARTY0, test_args);
+    let res = (&party0_value + &party1_value) * &party1_value;
+
+    // Open the result and check that it matches the expected result
+    let res_open = await_result_with_error(res.open_authenticated())?;
+    assert_scalars_eq(expected_result, res_open)
+}
+
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_open_authenticated",
     test_fn: test_open_authenticated,
@@ -303,4 +326,9 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_mul",
     test_fn: test_mul,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_public_add_then_mul",
+    test_fn: test_public_add_then_mul,
 });

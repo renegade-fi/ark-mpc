@@ -37,13 +37,13 @@ use crate::{
     algebra::{
         authenticated_scalar::AuthenticatedScalarResult,
         authenticated_stark_point::AuthenticatedStarkPointResult,
-        mpc_scalar::MpcScalarResult,
-        mpc_stark_point::MpcStarkPointResult,
+        mpc_scalar::{MpcScalar, MpcScalarResult},
+        mpc_stark_point::{MpcStarkPoint, MpcStarkPointResult},
         scalar::{Scalar, ScalarResult},
         stark_curve::{StarkPoint, StarkPointResult},
     },
     beaver::SharedValueSource,
-    network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId, QuicTwoPartyNet},
+    network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
     Shared, PARTY0,
 };
 
@@ -55,6 +55,15 @@ const RESULT_ZERO: ResultId = 0;
 const RESULT_ONE: ResultId = 1;
 /// The result id that is hardcoded to the curve identity point
 const RESULT_IDENTITY: ResultId = 2;
+/// The result id that is hardcoded to a shared zero value
+const RESULT_ZERO_SHARED: ResultId = 3;
+/// The result id that is hardcoded to a shared one value
+const RESULT_ONE_SHARED: ResultId = 4;
+/// The result id that is hardcoded to a shared curve identity value
+const RESULT_IDENTITY_SHARED: ResultId = 5;
+
+/// The number of constant results allocated in the fabric, i.e. those defined above
+const N_CONSTANT_RESULTS: usize = 6;
 
 /// An operation within the network, describes the arguments and function to evaluate
 /// once the arguments are ready
@@ -186,7 +195,7 @@ impl FabricInner {
         .into_iter()
         .collect();
 
-        let next_id = Arc::new(AtomicUsize::new(results.len()));
+        let next_id = Arc::new(AtomicUsize::new(N_CONSTANT_RESULTS));
 
         Self {
             party_id,
@@ -215,9 +224,19 @@ impl FabricInner {
         RESULT_ZERO
     }
 
+    /// Get the hardcoded shared zero value in the fabric
+    pub(crate) fn zero_shared(&self) -> ResultId {
+        RESULT_ZERO_SHARED
+    }
+
     /// Get the hardcoded one value in the fabric
     pub(crate) fn one(&self) -> ResultId {
         RESULT_ONE
+    }
+
+    /// Get the hardcoded shared one value in the fabric
+    pub(crate) fn one_shared(&self) -> ResultId {
+        RESULT_ONE_SHARED
     }
 
     /// Get the hardcoded curve identity value in the fabric
@@ -225,9 +244,23 @@ impl FabricInner {
         RESULT_IDENTITY
     }
 
+    /// Get the hardcoded shared curve identity in the fabric
+    pub(crate) fn curve_identity_shared(&self) -> ResultId {
+        RESULT_IDENTITY_SHARED
+    }
+
     // ------------------------
     // | Low Level Allocation |
     // ------------------------
+
+    /// Set a result directly, prefer to use allocation methods below for safety
+    pub(crate) fn set_result(&self, id: ResultId, value: ResultValue) -> ResultId {
+        // Acquire locks and update the result buffer
+        let mut locked_results = self.results.write().expect("results poisoned");
+        locked_results.insert(id, OpResult { id, value });
+
+        id
+    }
 
     /// Allocate a new plaintext value in the fabric
     pub(crate) fn allocate_value(&self, value: ResultValue) -> ResultId {
@@ -370,6 +403,33 @@ impl MpcFabric {
             mac_key: None,
         };
 
+        // Create shared constants for zero, one, and the curve identity
+        fabric.set_result(
+            RESULT_ZERO_SHARED,
+            ResultValue::MpcScalar(MpcScalar {
+                value: Scalar::zero(),
+                fabric: self_.clone(),
+            }),
+        );
+        fabric.set_result(
+            RESULT_ONE_SHARED,
+            ResultValue::MpcScalar(MpcScalar {
+                value: if self_.party_id() == PARTY0 {
+                    Scalar::zero()
+                } else {
+                    Scalar::one()
+                },
+                fabric: self_.clone(),
+            }),
+        );
+        fabric.set_result(
+            RESULT_IDENTITY_SHARED,
+            ResultValue::MpcStarkPoint(MpcStarkPoint {
+                value: StarkPoint::identity(),
+                fabric: self_.clone(),
+            }),
+        );
+
         // Sample a MAC key from the pre-shared values in the beaver source
         let mac_key_id = fabric.allocate_value(ResultValue::Scalar(
             fabric
@@ -414,14 +474,9 @@ impl MpcFabric {
         ResultHandle::new(self.inner.zero(), self.clone())
     }
 
-    /// Get the hardcoded one wire as a raw `ScalarResult`
-    pub fn one(&self) -> ScalarResult {
-        ResultHandle::new(self.inner.one(), self.clone())
-    }
-
-    /// Get the hardcoded curve identity wire as a raw `StarkPoint`
-    pub fn curve_identity(&self) -> ResultHandle<StarkPoint> {
-        ResultHandle::new(self.inner.curve_identity(), self.clone())
+    /// Get the shared zero value as an `MpcScalarResult`
+    fn zero_shared(&self) -> MpcScalarResult {
+        ResultHandle::new(self.inner.zero_shared(), self.clone())
     }
 
     /// Get the hardcoded zero wire as an `AuthenticatedScalarResult`
@@ -429,8 +484,8 @@ impl MpcFabric {
     /// Both parties hold the share 0 directly in this case
     pub fn zero_authenticated(&self) -> AuthenticatedScalarResult {
         let zero_value = self.zero();
-        let share_value = MpcScalarResult::new_shared(zero_value.clone());
-        let mac_value = MpcScalarResult::new_shared(zero_value.clone());
+        let share_value = self.zero_shared();
+        let mac_value = self.zero_shared();
 
         AuthenticatedScalarResult {
             value: share_value,
@@ -446,14 +501,24 @@ impl MpcFabric {
         (0..n).map(|_| val.clone()).collect_vec()
     }
 
+    /// Get the hardcoded one wire as a raw `ScalarResult`
+    pub fn one(&self) -> ScalarResult {
+        ResultHandle::new(self.inner.one(), self.clone())
+    }
+
+    /// Get the hardcoded shared one wire as an `MpcScalarResult`
+    fn one_shared(&self) -> MpcScalarResult {
+        ResultHandle::new(self.inner.one_shared(), self.clone())
+    }
+
     /// Get the hardcoded one wire as an `AuthenticatedScalarResult`
     ///
     /// Party 0 holds the value zero and party 1 holds the value one
     pub fn one_authenticated(&self) -> AuthenticatedScalarResult {
         if self.party_id() == PARTY0 {
             let zero_value = self.zero();
-            let share_value = MpcScalarResult::new_shared(zero_value.clone());
-            let mac_value = MpcScalarResult::new_shared(zero_value.clone());
+            let share_value = self.zero_shared();
+            let mac_value = self.zero_shared();
 
             AuthenticatedScalarResult {
                 value: share_value,
@@ -463,8 +528,7 @@ impl MpcFabric {
             }
         } else {
             let zero_value = self.zero();
-            let one_value = self.one();
-            let share_value = MpcScalarResult::new_shared(one_value);
+            let share_value = self.one_shared();
             let mac_value = self.borrow_mac_key().clone();
 
             AuthenticatedScalarResult {
@@ -482,13 +546,23 @@ impl MpcFabric {
         (0..n).map(|_| val.clone()).collect_vec()
     }
 
+    /// Get the hardcoded curve identity wire as a raw `StarkPoint`
+    pub fn curve_identity(&self) -> ResultHandle<StarkPoint> {
+        ResultHandle::new(self.inner.curve_identity(), self.clone())
+    }
+
+    /// Get the hardcoded shared curve identity wire as an `MpcStarkPointResult`
+    fn curve_identity_shared(&self) -> MpcStarkPointResult {
+        ResultHandle::new(self.inner.curve_identity_shared(), self.clone())
+    }
+
     /// Get the hardcoded curve identity wire as an `AuthenticatedStarkPointResult`
     ///
     /// Both parties hold the identity point directly in this case
     pub fn curve_identity_authenticated(&self) -> AuthenticatedStarkPointResult {
         let identity_val = self.curve_identity();
-        let share_value = MpcStarkPointResult::new_shared(identity_val.clone());
-        let mac_value = MpcStarkPointResult::new_shared(identity_val.clone());
+        let share_value = self.curve_identity_shared();
+        let mac_value = self.curve_identity_shared();
 
         AuthenticatedStarkPointResult {
             value: share_value,
@@ -568,6 +642,15 @@ impl MpcFabric {
     /// Allocate a public value in the fabric
     pub fn allocate_scalar<T: Into<Scalar>>(&self, value: T) -> ResultHandle<Scalar> {
         self.allocate_value(ResultValue::Scalar(value.into()))
+    }
+
+    /// Allocate a scalar as a secret share of an already shared value
+    pub fn allocate_preshared_scalar<T: Into<Scalar>>(
+        &self,
+        value: T,
+    ) -> AuthenticatedScalarResult {
+        let allocated = self.allocate_scalar(value);
+        AuthenticatedScalarResult::new_shared(allocated)
     }
 
     /// Allocate a public curve point in the fabric

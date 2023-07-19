@@ -87,7 +87,8 @@ impl Executor {
 
         // Lock the fabric elements needed
         let mut locked_results = self.fabric.results.write().expect("results lock poisoned");
-        locked_results.insert(result.id, result);
+        let prev = locked_results.insert(result.id, result);
+        assert!(prev.is_none(), "duplicate result id: {id:?}");
 
         let mut locked_operations = self.fabric.operations.write().expect("ops lock poisoned");
         let mut locked_deps = self

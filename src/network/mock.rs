@@ -7,13 +7,8 @@ use crate::{algebra::scalar::Scalar, error::MpcNetworkError, PARTY0};
 use super::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId};
 
 /// A dummy network implementation used for unit testing
+#[derive(Default)]
 pub struct MockNetwork;
-impl MockNetwork {
-    /// Constructor
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 #[async_trait]
 impl MpcNetwork for MockNetwork {
