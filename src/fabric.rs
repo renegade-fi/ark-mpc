@@ -19,6 +19,7 @@ pub use result::{cast_args, ResultHandle, ResultId, ResultValue};
 use futures::executor::block_on;
 use tracing::log;
 
+use crossbeam::channel::Sender as CrossbeamSender;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -29,7 +30,7 @@ use std::{
     task::Waker,
 };
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use itertools::Itertools;
 
@@ -159,7 +160,7 @@ pub struct FabricInner {
     /// A map of operations to wakers of tasks that are waiting on the operation to complete
     wakers: Shared<HashMap<ResultId, Vec<Waker>>>,
     /// A sender to the executor
-    execution_queue: TokioSender<ExecutorMessage>,
+    execution_queue: CrossbeamSender<ExecutorMessage>,
     /// The underlying queue to the network
     outbound_queue: TokioSender<NetworkOutbound>,
     /// The underlying shared randomness source
@@ -176,7 +177,7 @@ impl FabricInner {
     /// Constructor
     pub fn new<S: 'static + SharedValueSource>(
         party_id: u64,
-        execution_queue: TokioSender<ExecutorMessage>,
+        execution_queue: CrossbeamSender<ExecutorMessage>,
         outbound_queue: TokioSender<NetworkOutbound>,
         beaver_source: S,
     ) -> Self {
@@ -211,6 +212,13 @@ impl FabricInner {
             outbound_queue,
             beaver_source: Arc::new(Mutex::new(Box::new(beaver_source))),
         }
+    }
+
+    /// Shutdown the inner fabric, by sending a shutdown message to the executor
+    pub(crate) fn shutdown(&self) {
+        self.execution_queue
+            .send(ExecutorMessage::Shutdown)
+            .expect("executor closed");
     }
 
     /// -----------
@@ -338,8 +346,8 @@ impl MpcFabric {
         beaver_source: S,
     ) -> Self {
         // Build communication primitives
-        let (result_sender, result_receiver) = unbounded_channel();
-        let (outbound_sender, outbound_receiver) = unbounded_channel();
+        let (result_sender, result_receiver) = crossbeam::channel::unbounded();
+        let (outbound_sender, outbound_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1 /* capacity */);
 
         // Build a fabric
@@ -359,13 +367,8 @@ impl MpcFabric {
         );
         tokio::task::spawn_blocking(move || block_on(network_sender.run()));
 
-        let executor = Executor::new(
-            result_receiver,
-            result_sender,
-            fabric.clone(),
-            shutdown_sender.subscribe(),
-        );
-        tokio::task::spawn_blocking(move || block_on(executor.run()));
+        let executor = Executor::new(result_receiver, result_sender, fabric.clone());
+        tokio::task::spawn_blocking(move || executor.run());
 
         // Create the fabric and fill in the MAC key after
         let mut self_ = Self {
@@ -425,6 +428,7 @@ impl MpcFabric {
     /// Shutdown the fabric and the threads it has spawned
     pub fn shutdown(self) {
         log::debug!("shutting down fabric");
+        self.inner.shutdown();
         self.shutdown
             .send(())
             .expect("error sending shutdown signal");

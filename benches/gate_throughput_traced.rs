@@ -1,6 +1,7 @@
 //! A paired down version of the `gate_throughput` benchmarks that allows for tracing without
 //! the overhead of criterion polluting stack samples
 
+use clap::Parser;
 use cpuprofiler::PROFILER;
 use mpc_stark::{
     algebra::scalar::Scalar, beaver::DummySharedScalarSource, network::NoRecvNetwork, MpcFabric,
@@ -21,18 +22,41 @@ pub fn mock_fabric() -> MpcFabric {
     MpcFabric::new(network, beaver_source)
 }
 
+pub fn start_profiler(profiled: bool) {
+    if profiled {
+        PROFILER.lock().unwrap().start("./bench.profile").unwrap();
+    }
+}
+
+pub fn stop_profiler(profiled: bool) {
+    if profiled {
+        PROFILER.lock().unwrap().stop().unwrap();
+    }
+}
+
+// --------------------
+// | CLI + Benchmarks |
+// --------------------
+
+/// The command line interface for the test harness
+#[derive(Clone, Parser, Debug)]
+struct Args {
+    /// Whether to enable on-cpu stack sampled profiling
+    #[clap(long, takes_value = false, value_parser)]
+    profiled: bool,
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
+    // Parse args
+    let args = Args::parse();
+    start_profiler(args.profiled);
+
+    // Setup benchmark
     let fabric = mock_fabric();
     let mut rng = thread_rng();
     let base = Scalar::random(&mut rng);
     let base_res = fabric.allocate_scalar(base);
-
-    PROFILER
-        .lock()
-        .unwrap()
-        .start("./benchmark.profile".to_string())
-        .unwrap();
 
     let mut res = base_res;
     for _ in 0..NUM_GATES {
@@ -41,7 +65,6 @@ async fn main() {
 
     let _res = res.await;
 
-    PROFILER.lock().unwrap().stop().unwrap();
-
     fabric.shutdown();
+    stop_profiler(args.profiled);
 }

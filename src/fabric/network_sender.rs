@@ -1,8 +1,9 @@
 //! Defines an abstraction over the network that receives jobs scheduled onto the
 //! network and re-enqueues them in the result buffer for dependent instructions
 
+use crossbeam::channel::Sender as CrossbeamSender;
 use tokio::sync::broadcast::Receiver as BroadcastReceiver;
-use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
+use tokio::sync::mpsc::UnboundedReceiver as TokioReceiver;
 use tracing::log;
 
 use crate::{
@@ -32,7 +33,7 @@ pub(crate) struct NetworkSender<N: MpcNetwork> {
     /// The outbound queue of messages to send
     outbound: TokioReceiver<NetworkOutbound>,
     /// The queue of completed results
-    result_queue: TokioSender<ExecutorMessage>,
+    result_queue: CrossbeamSender<ExecutorMessage>,
     /// The underlying network connection
     network: N,
     /// The broadcast channel on which shutdown signals are sent
@@ -43,7 +44,7 @@ impl<N: MpcNetwork> NetworkSender<N> {
     /// Creates a new network sender
     pub fn new(
         outbound: TokioReceiver<NetworkOutbound>,
-        result_queue: TokioSender<ExecutorMessage>,
+        result_queue: CrossbeamSender<ExecutorMessage>,
         network: N,
         shutdown: BroadcastReceiver<()>,
     ) -> Self {

@@ -3,9 +3,8 @@
 
 use std::collections::HashMap;
 
+use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
 use itertools::Itertools;
-use tokio::sync::broadcast::Receiver as BroadcastReceiver;
-use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use tracing::log;
 
 use crate::network::NetworkOutbound;
@@ -13,26 +12,21 @@ use crate::network::NetworkOutbound;
 use super::{result::OpResult, FabricInner};
 use super::{Operation, OperationType, ResultId, ResultValue};
 
-/// Error dequeuing a result from the queue
-const ERR_DEQUEUE: &str = "error dequeuing result";
-
 /// The executor is responsible for executing operation that are ready for execution, either
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
 pub struct Executor {
     /// The receiver on the result queue, where operation results are first materialized
     /// so that their dependents may be evaluated
-    result_queue: TokioReceiver<ExecutorMessage>,
+    result_receiver: CrossbeamReceiver<ExecutorMessage>,
     /// A sender to the result queue so that hte executor may re-enqueue results for
     /// recursive evaluation
-    result_sender: TokioSender<ExecutorMessage>,
+    result_sender: CrossbeamSender<ExecutorMessage>,
     /// The operation buffer, stores in-flight operations
     operations: HashMap<ResultId, Operation>,
     /// The dependency map; maps in-flight results to operations that are waiting for them
     dependencies: HashMap<ResultId, Vec<ResultId>>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
-    /// The channel on which the fabric may send a shutdown signal
-    shutdown: BroadcastReceiver<()>,
 }
 
 /// The type that the `Executor` receives on its channel, this may either be:
@@ -53,40 +47,35 @@ pub enum ExecutorMessage {
         /// The operation type
         op_type: OperationType,
     },
+    /// Indicates that the executor should shut down
+    Shutdown,
 }
 
 impl Executor {
     /// Constructor
     pub fn new(
-        result_queue: TokioReceiver<ExecutorMessage>,
-        result_sender: TokioSender<ExecutorMessage>,
+        result_receiver: CrossbeamReceiver<ExecutorMessage>,
+        result_sender: CrossbeamSender<ExecutorMessage>,
         fabric: FabricInner,
-        shutdown: BroadcastReceiver<()>,
     ) -> Self {
         Self {
-            result_queue,
+            result_receiver,
             result_sender,
             operations: HashMap::new(),
             dependencies: HashMap::new(),
             fabric,
-            shutdown,
         }
     }
 
     /// Run the executor until a shutdown message is received
-    pub async fn run(mut self) {
+    pub fn run(mut self) {
         loop {
-            tokio::select! {
-                // Next result
-                x = self.result_queue.recv() => {
-                    match x.expect(ERR_DEQUEUE) {
-                        ExecutorMessage::Result(res) => self.handle_new_result(res),
-                        ExecutorMessage::Op { id, args, op_type } => self.handle_new_operation(id, args, op_type),
-                    }
+            match self.result_receiver.recv() {
+                Ok(ExecutorMessage::Result(res)) => self.handle_new_result(res),
+                Ok(ExecutorMessage::Op { id, args, op_type }) => {
+                    self.handle_new_operation(id, args, op_type)
                 }
-
-                // Shutdown signal
-                _ = self.shutdown.recv() => {
+                Ok(ExecutorMessage::Shutdown) | Err(_) => {
                     log::debug!("executor shutting down");
                     break;
                 }
