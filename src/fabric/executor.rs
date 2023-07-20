@@ -26,6 +26,12 @@ pub struct Executor {
     dependencies: GrowableBuffer<Vec<ResultId>>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
+    /// The total sampled queue length of the executor's work queue
+    #[cfg(feature = "benchmarks")]
+    summed_queue_length: u64,
+    /// The number of samples taken of the executor's work queue length
+    #[cfg(feature = "benchmarks")]
+    queue_length_sample_count: usize,
 }
 
 /// The type that the `Executor` receives on its channel, this may either be:
@@ -58,12 +64,28 @@ impl Executor {
         result_sender: CrossbeamSender<ExecutorMessage>,
         fabric: FabricInner,
     ) -> Self {
-        Self {
-            result_receiver,
-            result_sender,
-            operations: GrowableBuffer::new(circuit_size_hint),
-            dependencies: GrowableBuffer::new(circuit_size_hint),
-            fabric,
+        #[cfg(feature = "benchmarks")]
+        {
+            Self {
+                result_receiver,
+                result_sender,
+                operations: GrowableBuffer::new(circuit_size_hint),
+                dependencies: GrowableBuffer::new(circuit_size_hint),
+                fabric,
+                summed_queue_length: 0,
+                queue_length_sample_count: 0,
+            }
+        }
+
+        #[cfg(not(feature = "benchmarks"))]
+        {
+            Self {
+                result_receiver,
+                result_sender,
+                operations: GrowableBuffer::new(circuit_size_hint),
+                dependencies: GrowableBuffer::new(circuit_size_hint),
+                fabric,
+            }
         }
     }
 
@@ -77,10 +99,29 @@ impl Executor {
                 }
                 Ok(ExecutorMessage::Shutdown) | Err(_) => {
                     log::debug!("executor shutting down");
+
+                    // In benchmarks print the average queue length
+                    #[cfg(feature = "benchmarks")]
+                    {
+                        println!("average queue length: {}", self.avg_queue_length());
+                    }
+
                     break;
                 }
             }
+
+            #[cfg(feature = "benchmarks")]
+            {
+                self.summed_queue_length += self.result_receiver.len() as u64;
+                self.queue_length_sample_count += 1;
+            }
         }
+    }
+
+    /// Returns the average queue length over the execution of the executor
+    #[cfg(feature = "benchmarks")]
+    pub fn avg_queue_length(&self) -> f64 {
+        (self.summed_queue_length as f64) / (self.queue_length_sample_count as f64)
     }
 
     /// Handle a new result

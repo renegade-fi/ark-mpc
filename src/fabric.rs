@@ -132,10 +132,10 @@ impl Debug for OperationType {
 pub struct MpcFabric {
     /// The inner fabric
     #[cfg(not(feature = "benchmarks"))]
-    inner: FabricInner,
+    inner: Arc<FabricInner>,
     /// The inner fabric, accessible publicly for benchmark mocking
     #[cfg(feature = "benchmarks")]
-    pub inner: FabricInner,
+    pub inner: Arc<FabricInner>,
     /// The local party's share of the global MAC key
     ///
     /// The parties collectively hold an additive sharing of the global key
@@ -394,7 +394,7 @@ impl MpcFabric {
 
         // Create the fabric and fill in the MAC key after
         let mut self_ = Self {
-            inner: fabric.clone(),
+            inner: Arc::new(fabric.clone()),
             shutdown: shutdown_sender,
             mac_key: None,
         };
