@@ -30,7 +30,7 @@ impl<T: Clone> GrowableBuffer<T> {
             return None;
         }
 
-        self.buf.get(idx)?.as_ref()
+        self.buf[idx].as_ref()
     }
 
     /// Get an entry as a mutable reference

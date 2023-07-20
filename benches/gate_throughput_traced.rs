@@ -1,6 +1,8 @@
 //! A paired down version of the `gate_throughput` benchmarks that allows for tracing without
 //! the overhead of criterion polluting stack samples
 
+use std::time::Instant;
+
 use clap::Parser;
 use cpuprofiler::PROFILER;
 use gperftools::HEAP_PROFILER;
@@ -75,9 +77,12 @@ async fn main() {
     let args = Args::parse();
     start_cpu_profiler(args.cpu_profiled);
     start_heap_profiler(args.heap_profiled);
+    let start_time = Instant::now();
 
     // Setup benchmark
     let fabric = mock_fabric(NUM_GATES * 2);
+    let allocation_time = start_time.elapsed();
+
     let mut rng = thread_rng();
     let base = Scalar::random(&mut rng);
     let base_res = fabric.allocate_scalar(base);
@@ -86,10 +91,14 @@ async fn main() {
     for _ in 0..NUM_GATES {
         res = &res + &res;
     }
+    let circuit_creation_time = start_time.elapsed() - allocation_time;
 
-    println!("finished constructing circuit");
     let _res = res.await;
-    println!("finished awaiting result");
+    let res_time = start_time.elapsed() - allocation_time;
+
+    println!("memory allocation took {allocation_time:?}");
+    println!("circuit construction took {circuit_creation_time:?}");
+    println!("circuit evaluation took {res_time:?}");
 
     fabric.shutdown();
     stop_cpu_profiler(args.cpu_profiled);

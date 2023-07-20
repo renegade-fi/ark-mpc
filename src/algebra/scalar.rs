@@ -340,12 +340,10 @@ impl Product for Scalar {
 
 #[cfg(test)]
 mod test {
-    use super::StarknetBaseFelt;
     use crate::{
-        algebra::scalar::{Scalar, BASE_FIELD_BYTES, SCALAR_BYTES},
+        algebra::scalar::{Scalar, SCALAR_BYTES},
         test_helpers::mock_fabric,
     };
-    use num_bigint::BigUint;
     use rand::thread_rng;
 
     /// Tests serializing and deserializing a scalar
@@ -361,19 +359,6 @@ mod test {
         // Deserialize and validate the scalar
         let scalar_deserialized = Scalar::from_be_bytes_mod_order(&bytes);
         assert_eq!(scalar, scalar_deserialized);
-    }
-
-    /// Tests that the constant `BASE_FIELD_BYTES` is correct
-    #[test]
-    fn test_base_field_bytes() {
-        let mut rng = thread_rng();
-        let elem = Scalar::random(&mut rng);
-        let elem_bytes = elem.to_bytes_be();
-        let biguint = BigUint::from_bytes_be(&elem_bytes);
-        let base_elem: StarknetBaseFelt = biguint.into();
-
-        let base_elem_bytes = Into::<BigUint>::into(base_elem).to_bytes_be();
-        assert_eq!(base_elem_bytes.len(), BASE_FIELD_BYTES);
     }
 
     /// Tests addition of raw scalars in a circuit

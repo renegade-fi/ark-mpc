@@ -14,8 +14,9 @@ name = "mpc_stark"
 path = "src/lib.rs"
 
 [features]
-test_helpers = []
 benchmarks = []
+debug_info = ["benchmarks"]
+test_helpers = []
 
 [[test]]
 name = "integration"

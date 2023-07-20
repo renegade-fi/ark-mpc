@@ -1,7 +1,9 @@
 //! The executor receives IDs of operations that are ready for execution, executes
 //! them, and places the result back into the fabric for further executions
 
-use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
+use std::sync::Arc;
+
+use crossbeam::queue::SegQueue;
 use itertools::Itertools;
 use tracing::log;
 
@@ -14,12 +16,10 @@ use super::{Operation, OperationType, ResultId, ResultValue};
 /// The executor is responsible for executing operation that are ready for execution, either
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
 pub struct Executor {
-    /// The receiver on the result queue, where operation results are first materialized
-    /// so that their dependents may be evaluated
-    result_receiver: CrossbeamReceiver<ExecutorMessage>,
-    /// A sender to the result queue so that hte executor may re-enqueue results for
-    /// recursive evaluation
-    result_sender: CrossbeamSender<ExecutorMessage>,
+    /// The job queue for the executor
+    ///
+    /// TODO: Use an `ArrayQueue` here for slightly improved performance
+    job_queue: Arc<SegQueue<ExecutorMessage>>,
     /// The operation buffer, stores in-flight operations
     operations: GrowableBuffer<Operation>,
     /// The dependency map; maps in-flight results to operations that are waiting for them
@@ -60,15 +60,13 @@ impl Executor {
     /// Constructor
     pub fn new(
         circuit_size_hint: usize,
-        result_receiver: CrossbeamReceiver<ExecutorMessage>,
-        result_sender: CrossbeamSender<ExecutorMessage>,
+        job_queue: Arc<SegQueue<ExecutorMessage>>,
         fabric: FabricInner,
     ) -> Self {
         #[cfg(feature = "benchmarks")]
         {
             Self {
-                result_receiver,
-                result_sender,
+                job_queue,
                 operations: GrowableBuffer::new(circuit_size_hint),
                 dependencies: GrowableBuffer::new(circuit_size_hint),
                 fabric,
@@ -80,8 +78,7 @@ impl Executor {
         #[cfg(not(feature = "benchmarks"))]
         {
             Self {
-                result_receiver,
-                result_sender,
+                job_queue,
                 operations: GrowableBuffer::new(circuit_size_hint),
                 dependencies: GrowableBuffer::new(circuit_size_hint),
                 fabric,
@@ -92,27 +89,29 @@ impl Executor {
     /// Run the executor until a shutdown message is received
     pub fn run(mut self) {
         loop {
-            match self.result_receiver.recv() {
-                Ok(ExecutorMessage::Result(res)) => self.handle_new_result(res),
-                Ok(ExecutorMessage::Op { id, args, op_type }) => {
-                    self.handle_new_operation(id, args, op_type)
-                }
-                Ok(ExecutorMessage::Shutdown) | Err(_) => {
-                    log::debug!("executor shutting down");
-
-                    // In benchmarks print the average queue length
-                    #[cfg(feature = "benchmarks")]
-                    {
-                        println!("average queue length: {}", self.avg_queue_length());
+            if let Some(job) = self.job_queue.pop() {
+                match job {
+                    ExecutorMessage::Result(res) => self.handle_new_result(res),
+                    ExecutorMessage::Op { id, args, op_type } => {
+                        self.handle_new_operation(id, args, op_type)
                     }
+                    ExecutorMessage::Shutdown => {
+                        log::debug!("executor shutting down");
 
-                    break;
+                        // In benchmarks print the average queue length
+                        #[cfg(all(feature = "benchmarks", feature = "debug_info"))]
+                        {
+                            println!("average queue length: {}", self.avg_queue_length());
+                        }
+
+                        break;
+                    }
                 }
             }
 
             #[cfg(feature = "benchmarks")]
             {
-                self.summed_queue_length += self.result_receiver.len() as u64;
+                self.summed_queue_length += self.job_queue.len() as u64;
                 self.queue_length_sample_count += 1;
             }
         }
@@ -215,9 +214,9 @@ impl Executor {
         match operation {
             OperationType::Gate { function } => {
                 let output = (function)(inputs);
-                self.result_sender
-                    .send(ExecutorMessage::Result(OpResult { id, value: output }))
-                    .expect("error re-enqueuing result");
+                self.job_queue
+                    .push(ExecutorMessage::Result(OpResult { id, value: output }))
+                // .expect("error re-enqueuing result");
             }
 
             OperationType::Network { function } => {
@@ -235,12 +234,11 @@ impl Executor {
 
                 // On a `send`, the local party receives a copy of the value placed as the result of
                 // the network operation, so we must re-enqueue the result
-                self.result_sender
-                    .send(ExecutorMessage::Result(OpResult {
-                        id,
-                        value: payload.into(),
-                    }))
-                    .expect("error re-enqueuing result");
+                self.job_queue.push(ExecutorMessage::Result(OpResult {
+                    id,
+                    value: payload.into(),
+                }))
+                // .expect("error re-enqueuing result");
             }
         }
     }

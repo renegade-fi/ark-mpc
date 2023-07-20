@@ -19,7 +19,7 @@ pub use result::{ResultHandle, ResultId, ResultValue};
 use futures::executor::block_on;
 use tracing::log;
 
-use crossbeam::channel::Sender as CrossbeamSender;
+use crossbeam::queue::SegQueue;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -173,7 +173,7 @@ pub struct FabricInner {
     /// A map of operations to wakers of tasks that are waiting on the operation to complete
     wakers: Shared<HashMap<ResultId, Vec<Waker>>>,
     /// A sender to the executor
-    execution_queue: CrossbeamSender<ExecutorMessage>,
+    execution_queue: Arc<SegQueue<ExecutorMessage>>,
     /// The underlying queue to the network
     outbound_queue: TokioSender<NetworkOutbound>,
     /// The underlying shared randomness source
@@ -191,7 +191,7 @@ impl FabricInner {
     pub fn new<S: 'static + SharedValueSource>(
         size_hint: usize,
         party_id: u64,
-        execution_queue: CrossbeamSender<ExecutorMessage>,
+        execution_queue: Arc<SegQueue<ExecutorMessage>>,
         outbound_queue: TokioSender<NetworkOutbound>,
         beaver_source: S,
     ) -> Self {
@@ -227,9 +227,8 @@ impl FabricInner {
 
     /// Shutdown the inner fabric, by sending a shutdown message to the executor
     pub(crate) fn shutdown(&self) {
-        self.execution_queue
-            .send(ExecutorMessage::Shutdown)
-            .expect("executor closed");
+        self.execution_queue.push(ExecutorMessage::Shutdown)
+        // .expect("executor closed");
     }
 
     /// -----------
@@ -343,8 +342,8 @@ impl FabricInner {
         // Get an ID for the result
         let id = self.new_id();
         self.execution_queue
-            .send(ExecutorMessage::Op { id, args, op_type })
-            .expect("executor channel closed");
+            .push(ExecutorMessage::Op { id, args, op_type });
+        // .expect("executor channel closed");
 
         id
     }
@@ -367,7 +366,7 @@ impl MpcFabric {
         beaver_source: S,
     ) -> Self {
         // Build communication primitives
-        let (result_sender, result_receiver) = crossbeam::channel::unbounded();
+        let execution_queue = Arc::new(SegQueue::new());
         let (outbound_sender, outbound_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1 /* capacity */);
 
@@ -375,7 +374,7 @@ impl MpcFabric {
         let fabric = FabricInner::new(
             size_hint,
             network.party_id(),
-            result_sender.clone(),
+            execution_queue.clone(),
             outbound_sender,
             beaver_source,
         );
@@ -383,13 +382,13 @@ impl MpcFabric {
         // Start a network sender and operator executor
         let network_sender = NetworkSender::new(
             outbound_receiver,
-            result_sender.clone(),
+            execution_queue.clone(),
             network,
             shutdown_receiver,
         );
         tokio::task::spawn_blocking(move || block_on(network_sender.run()));
 
-        let executor = Executor::new(size_hint, result_receiver, result_sender, fabric.clone());
+        let executor = Executor::new(size_hint, execution_queue, fabric.clone());
         tokio::task::spawn_blocking(move || executor.run());
 
         // Create the fabric and fill in the MAC key after

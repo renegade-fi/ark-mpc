@@ -1,7 +1,9 @@
 //! Defines an abstraction over the network that receives jobs scheduled onto the
 //! network and re-enqueues them in the result buffer for dependent instructions
 
-use crossbeam::channel::Sender as CrossbeamSender;
+use std::sync::Arc;
+
+use crossbeam::queue::SegQueue;
 use tokio::sync::broadcast::Receiver as BroadcastReceiver;
 use tokio::sync::mpsc::UnboundedReceiver as TokioReceiver;
 use tracing::log;
@@ -33,7 +35,7 @@ pub(crate) struct NetworkSender<N: MpcNetwork> {
     /// The outbound queue of messages to send
     outbound: TokioReceiver<NetworkOutbound>,
     /// The queue of completed results
-    result_queue: CrossbeamSender<ExecutorMessage>,
+    result_queue: Arc<SegQueue<ExecutorMessage>>,
     /// The underlying network connection
     network: N,
     /// The broadcast channel on which shutdown signals are sent
@@ -44,7 +46,7 @@ impl<N: MpcNetwork> NetworkSender<N> {
     /// Creates a new network sender
     pub fn new(
         outbound: TokioReceiver<NetworkOutbound>,
-        result_queue: CrossbeamSender<ExecutorMessage>,
+        result_queue: Arc<SegQueue<ExecutorMessage>>,
         network: N,
         shutdown: BroadcastReceiver<()>,
     ) -> Self {
@@ -103,11 +105,11 @@ impl<N: MpcNetwork> NetworkSender<N> {
 
     /// Handle an inbound message
     async fn handle_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
-        self.result_queue
-            .send(ExecutorMessage::Result(OpResult {
-                id: message.op_id,
-                value: message.payload.into(),
-            }))
-            .map_err(|_| MpcNetworkError::SendError(ERR_SEND_FAILURE.to_string()))
+        self.result_queue.push(ExecutorMessage::Result(OpResult {
+            id: message.op_id,
+            value: message.payload.into(),
+        }));
+        // .map_err(|_| MpcNetworkError::SendError(ERR_SEND_FAILURE.to_string()))
+        Ok(())
     }
 }
