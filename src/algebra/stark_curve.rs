@@ -21,7 +21,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError
 use itertools::Itertools;
 use serde::{de::Error as DeError, Deserialize, Serialize};
 
-use crate::fabric::{cast_args, ResultHandle, ResultValue};
+use crate::fabric::{ResultHandle, ResultValue};
 
 use super::{
     authenticated_scalar::AuthenticatedScalarResult,
@@ -196,7 +196,8 @@ impl Add<&StarkPointResult> for &StarkPointResult {
 
     fn add(self, rhs: &StarkPointResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [StarkPoint; 2] = cast_args(args);
+            let lhs: StarkPoint = args[0].to_owned().into();
+            let rhs: StarkPoint = args[1].to_owned().into();
             ResultValue::Point(StarkPoint(lhs.0 + rhs.0))
         })
     }
@@ -209,7 +210,7 @@ impl Add<&StarkPoint> for &StarkPointResult {
     fn add(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            let lhs: StarkPoint = args[0].to_owned().into();
             ResultValue::Point(StarkPoint(lhs.0 + rhs.0))
         })
     }
@@ -241,7 +242,8 @@ impl Sub<&StarkPointResult> for &StarkPointResult {
 
     fn sub(self, rhs: &StarkPointResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [StarkPoint; 2] = cast_args(args);
+            let lhs: StarkPoint = args[0].to_owned().into();
+            let rhs: StarkPoint = args[1].to_owned().into();
             ResultValue::Point(StarkPoint(lhs.0 - rhs.0))
         })
     }
@@ -254,7 +256,7 @@ impl Sub<&StarkPoint> for &StarkPointResult {
     fn sub(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            let lhs: StarkPoint = args[0].to_owned().into();
             ResultValue::Point(StarkPoint(lhs.0 - rhs.0))
         })
     }
@@ -267,7 +269,7 @@ impl Sub<&StarkPointResult> for &StarkPoint {
     fn sub(self, rhs: &StarkPointResult) -> Self::Output {
         let self_owned = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let [rhs]: [StarkPoint; 1] = cast_args(args);
+            let rhs: StarkPoint = args[0].to_owned().into();
             ResultValue::Point(StarkPoint(self_owned.0 - rhs.0))
         })
     }
@@ -297,7 +299,7 @@ impl Neg for &StarkPointResult {
 
     fn neg(self) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id], |args| {
-            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            let lhs: StarkPoint = args[0].to_owned().into();
             ResultValue::Point(StarkPoint(-lhs.0))
         })
     }
@@ -322,7 +324,7 @@ impl Mul<&Scalar> for &StarkPointResult {
     fn mul(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [StarkPoint; 1] = cast_args(args);
+            let lhs: StarkPoint = args[0].to_owned().into();
             ResultValue::Point(StarkPoint(lhs.0 * rhs.0))
         })
     }
@@ -336,7 +338,7 @@ impl Mul<&ScalarResult> for &StarkPoint {
     fn mul(self, rhs: &ScalarResult) -> Self::Output {
         let self_owned = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let [rhs]: [Scalar; 1] = cast_args(args);
+            let rhs: Scalar = args[0].to_owned().into();
             ResultValue::Point(StarkPoint(self_owned.0 * rhs.0))
         })
     }

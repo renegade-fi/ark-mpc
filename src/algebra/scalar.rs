@@ -15,7 +15,7 @@ use num_bigint::BigUint;
 use rand::{CryptoRng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::fabric::{cast_args, ResultHandle, ResultValue};
+use crate::fabric::{ResultHandle, ResultValue};
 
 use super::macros::{impl_borrow_variants, impl_commutative};
 
@@ -168,7 +168,7 @@ impl Add<&Scalar> for &ScalarResult {
     fn add(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
+            let lhs: Scalar = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 + rhs.0))
         })
     }
@@ -182,7 +182,7 @@ impl Add<&ScalarResult> for &ScalarResult {
     fn add(self, rhs: &ScalarResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
             let lhs: Scalar = args[0].to_owned().into();
-            let rhs: Scalar = args[0].to_owned().into();
+            let rhs: Scalar = args[1].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 + rhs.0))
         })
     }
@@ -215,7 +215,7 @@ impl Sub<&Scalar> for &ScalarResult {
     fn sub(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
+            let lhs: Scalar = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 - rhs.0))
         })
     }
@@ -228,7 +228,8 @@ impl Sub<&ScalarResult> for &ScalarResult {
 
     fn sub(self, rhs: &ScalarResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
+            let lhs: Scalar = args[0].to_owned().into();
+            let rhs: Scalar = args[1].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 - rhs.0))
         })
     }
@@ -261,7 +262,7 @@ impl Mul<&Scalar> for &ScalarResult {
     fn mul(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
+            let lhs: Scalar = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 * rhs.0))
         })
     }
@@ -274,7 +275,8 @@ impl Mul<&ScalarResult> for &ScalarResult {
 
     fn mul(self, rhs: &ScalarResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [Scalar; 2] = cast_args(args);
+            let lhs: Scalar = args[0].to_owned().into();
+            let rhs: Scalar = args[1].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 * rhs.0))
         })
     }
@@ -295,7 +297,7 @@ impl Neg for &ScalarResult {
 
     fn neg(self) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id], |args| {
-            let [lhs]: [Scalar; 1] = cast_args(args);
+            let lhs: Scalar = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(-lhs.0))
         })
     }
@@ -339,7 +341,10 @@ impl Product for Scalar {
 #[cfg(test)]
 mod test {
     use super::StarknetBaseFelt;
-    use crate::algebra::scalar::{Scalar, BASE_FIELD_BYTES, SCALAR_BYTES};
+    use crate::{
+        algebra::scalar::{Scalar, BASE_FIELD_BYTES, SCALAR_BYTES},
+        test_helpers::mock_fabric,
+    };
     use num_bigint::BigUint;
     use rand::thread_rng;
 
@@ -369,5 +374,87 @@ mod test {
 
         let base_elem_bytes = Into::<BigUint>::into(base_elem).to_bytes_be();
         assert_eq!(base_elem_bytes.len(), BASE_FIELD_BYTES);
+    }
+
+    /// Tests addition of raw scalars in a circuit
+    #[tokio::test]
+    async fn test_scalar_add() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let expected_res = a + b;
+
+        // Allocate the scalars in a fabric and add them together
+        let fabric = mock_fabric();
+        let a_alloc = fabric.allocate_scalar(a);
+        let b_alloc = fabric.allocate_scalar(b);
+
+        let res = &a_alloc + &b_alloc;
+        let res_final = res.await;
+
+        assert_eq!(res_final, expected_res);
+        fabric.shutdown();
+    }
+
+    /// Tests subtraction of raw scalars in the circuit
+    #[tokio::test]
+    async fn test_scalar_sub() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let expected_res = a - b;
+
+        // Allocate the scalars in a fabric and subtract them
+        let fabric = mock_fabric();
+        let a_alloc = fabric.allocate_scalar(a);
+        let b_alloc = fabric.allocate_scalar(b);
+
+        let res = a_alloc - b_alloc;
+        let res_final = res.await;
+
+        assert_eq!(res_final, expected_res);
+        fabric.shutdown();
+    }
+
+    /// Tests negation of raw scalars in a circuit
+    #[tokio::test]
+    async fn test_scalar_neg() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+
+        let expected_res = -a;
+
+        // Allocate the scalars in a fabric and subtract them
+        let fabric = mock_fabric();
+        let a_alloc = fabric.allocate_scalar(a);
+
+        let res = -a_alloc;
+        let res_final = res.await;
+
+        assert_eq!(res_final, expected_res);
+        fabric.shutdown();
+    }
+
+    /// Tests multiplication of raw scalars in a circuit
+    #[tokio::test]
+    async fn test_scalar_mul() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let expected_res = a * b;
+
+        // Allocate the scalars in a fabric and multiply them together
+        let fabric = mock_fabric();
+        let a_alloc = fabric.allocate_scalar(a);
+        let b_alloc = fabric.allocate_scalar(b);
+
+        let res = a_alloc * b_alloc;
+        let res_final = res.await;
+
+        assert_eq!(res_final, expected_res);
+        fabric.shutdown();
     }
 }

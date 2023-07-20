@@ -9,7 +9,6 @@ use std::{
 };
 
 use futures::Future;
-use itertools::Itertools;
 
 use crate::{
     algebra::{
@@ -20,21 +19,6 @@ use crate::{
 };
 
 use super::MpcFabric;
-
-// -----------
-// | Helpers |
-// -----------
-
-/// A helper to cast the args in a vector to an array for destructuring
-pub fn cast_args<const N: usize, T: From<ResultValue>>(args: Vec<ResultValue>) -> [T; N] {
-    assert_eq!(args.len(), N, "wrong number of args");
-    args.into_iter()
-        .map(|arg| arg.into())
-        .collect_vec()
-        .try_into()
-        .map_err(|_| "wrong number of args")
-        .unwrap()
-}
 
 // ---------------------
 // | Result Value Type |

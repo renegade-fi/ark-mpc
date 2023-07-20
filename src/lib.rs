@@ -63,3 +63,16 @@ pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
 /// A type alias for a shared, mutable reference to an underlying beaver source
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource> = Rc<RefCell<S>>;
+
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use crate::{beaver::DummySharedScalarSource, network::NoRecvNetwork, MpcFabric};
+
+    /// Create a mock fabric
+    pub fn mock_fabric() -> MpcFabric {
+        let network = NoRecvNetwork::default();
+        let beaver_source = DummySharedScalarSource::new();
+
+        MpcFabric::new(network, beaver_source)
+    }
+}

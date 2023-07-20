@@ -4,7 +4,7 @@ mod cert_verifier;
 mod config;
 mod mock;
 
-#[cfg(feature = "test_helpers")]
+#[cfg(any(feature = "test_helpers", test))]
 pub use mock::{MockNetwork, NoRecvNetwork};
 
 use async_trait::async_trait;

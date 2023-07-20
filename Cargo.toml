@@ -73,6 +73,7 @@ criterion = { version = "0.5", features = ["async", "async_tokio"] }
 cpuprofiler = "0.0.4"
 dns-lookup = "1.0"
 env_logger = "0.10"
+gperftools = { version = "0.2", features = ["heap"] }
 inventory = "0.3"
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "655af56" }
 starknet-curve = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "655af56" }

@@ -4,7 +4,7 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::{
-    fabric::{cast_args, MpcFabric, ResultHandle, ResultValue},
+    fabric::{MpcFabric, ResultHandle, ResultValue},
     network::NetworkPayload,
     PARTY0,
 };
@@ -33,7 +33,7 @@ impl MpcStarkPointResult {
         let fabric_clone = value.fabric.clone();
         value.fabric.new_gate_op(vec![value.id], move |args| {
             // Cast the args
-            let [value]: [StarkPoint; 1] = cast_args(args);
+            let value: StarkPoint = args[0].to_owned().into();
             ResultValue::MpcStarkPoint(MpcStarkPoint {
                 value,
                 fabric: fabric_clone,
@@ -47,7 +47,7 @@ impl MpcStarkPointResult {
         let (share0, share1) = if self.fabric.party_id() == PARTY0 {
             let party0_value: ResultHandle<StarkPoint> =
                 self.fabric.new_network_op(vec![self.id], |args| {
-                    let [mpc_value]: [MpcStarkPoint; 1] = cast_args(args);
+                    let mpc_value: MpcStarkPoint = args[0].to_owned().into();
                     NetworkPayload::Point(mpc_value.value)
                 });
             let party1_value = self.fabric.receive_value();
@@ -57,7 +57,7 @@ impl MpcStarkPointResult {
             let party0_value = self.fabric.receive_value();
             let party1_value: ResultHandle<StarkPoint> =
                 self.fabric.new_network_op(vec![self.id], |args| {
-                    let [mpc_value]: [MpcStarkPoint; 1] = cast_args(args);
+                    let mpc_value: MpcStarkPoint = args[0].to_owned().into();
                     NetworkPayload::Point(mpc_value.value)
                 });
 
@@ -81,7 +81,7 @@ impl Add<&StarkPoint> for &MpcStarkPointResult {
     fn add(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [MpcStarkPoint; 1] = cast_args(args);
+            let lhs: MpcStarkPoint = args[0].to_owned().into();
 
             if lhs.fabric.party_id() == PARTY0 {
                 ResultValue::MpcStarkPoint(MpcStarkPoint {
@@ -125,7 +125,8 @@ impl Add<&MpcStarkPointResult> for &MpcStarkPointResult {
 
     fn add(self, rhs: &MpcStarkPointResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [MpcStarkPoint; 2] = cast_args(args);
+            let lhs: MpcStarkPoint = args[0].to_owned().into();
+            let rhs: MpcStarkPoint = args[1].to_owned().into();
 
             ResultValue::MpcStarkPoint(MpcStarkPoint {
                 value: lhs.value + rhs.value,
@@ -145,7 +146,7 @@ impl Sub<&StarkPoint> for &MpcStarkPointResult {
     fn sub(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [MpcStarkPoint; 1] = cast_args(args);
+            let lhs: MpcStarkPoint = args[0].to_owned().into();
 
             if lhs.fabric.party_id() == PARTY0 {
                 ResultValue::MpcStarkPoint(MpcStarkPoint {
@@ -186,7 +187,8 @@ impl Sub<&MpcStarkPointResult> for &MpcStarkPointResult {
 
     fn sub(self, rhs: &MpcStarkPointResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let [lhs, rhs]: [MpcStarkPoint; 2] = cast_args(args);
+            let lhs: MpcStarkPoint = args[0].to_owned().into();
+            let rhs: MpcStarkPoint = args[1].to_owned().into();
 
             ResultValue::MpcStarkPoint(MpcStarkPoint {
                 value: lhs.value - rhs.value,
@@ -222,7 +224,7 @@ impl Mul<&Scalar> for &MpcStarkPointResult {
     fn mul(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let [lhs]: [MpcStarkPoint; 1] = cast_args(args);
+            let lhs: MpcStarkPoint = args[0].to_owned().into();
 
             ResultValue::MpcStarkPoint(MpcStarkPoint {
                 value: lhs.value * rhs,

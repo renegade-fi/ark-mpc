@@ -14,7 +14,7 @@ pub use executor::{Executor, ExecutorMessage};
 #[cfg(not(feature = "benchmarks"))]
 use executor::{Executor, ExecutorMessage};
 use rand::thread_rng;
-pub use result::{cast_args, ResultHandle, ResultId, ResultValue};
+pub use result::{ResultHandle, ResultId, ResultValue};
 
 use futures::executor::block_on;
 use tracing::log;

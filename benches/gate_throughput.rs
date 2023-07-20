@@ -3,7 +3,7 @@ use std::{path::Path, sync::Mutex};
 use cpuprofiler::{Profiler as CpuProfiler, PROFILER};
 use criterion::{
     criterion_group, criterion_main, profiler::Profiler as CriterionProfiler, BenchmarkId,
-    Criterion,
+    Criterion, Throughput,
 };
 use mpc_stark::{
     algebra::scalar::Scalar, beaver::DummySharedScalarSource, network::NoRecvNetwork, MpcFabric,
@@ -41,10 +41,10 @@ pub fn config() -> Criterion {
 }
 
 /// Create a mock fabric for testing
-pub fn mock_fabric() -> MpcFabric {
+pub fn mock_fabric(size_hint: usize) -> MpcFabric {
     let network = NoRecvNetwork::default();
     let beaver_source = DummySharedScalarSource::new();
-    MpcFabric::new(network, beaver_source)
+    MpcFabric::new_with_size_hint(size_hint, network, beaver_source)
 }
 
 // --------------
@@ -59,7 +59,7 @@ pub fn scalar_addition(c: &mut Criterion) {
     let mut group = c.benchmark_group("raw_scalar_addition");
 
     for circuit_size in [100u64, 1000].iter() {
-        group.throughput(criterion::Throughput::Elements(*circuit_size));
+        group.throughput(Throughput::Elements(*circuit_size));
         group.bench_function(BenchmarkId::from_parameter(circuit_size), |b| {
             b.iter(|| {
                 for _ in 0..*circuit_size {
@@ -80,21 +80,28 @@ pub fn circuit_scalar_addition(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("circuit_scalar_addition");
     for circuit_size in [100, 1000].into_iter() {
+        group.throughput(Throughput::Elements(circuit_size as u64));
         group.bench_function(BenchmarkId::from_parameter(circuit_size), |b| {
             let mut b = b.to_async(&runtime);
-            b.iter(|| async {
-                let mut rng = OsRng {};
-                let mock_fabric = mock_fabric();
-                let mock_scalar = mock_fabric.allocate_scalar(Scalar::random(&mut rng));
+            b.iter_batched(
+                || {
+                    let mut rng = OsRng {};
+                    let mock_fabric = mock_fabric(circuit_size * 2);
+                    let mock_scalar = mock_fabric.allocate_scalar(Scalar::random(&mut rng));
 
-                let mut res = mock_scalar;
-                for _ in 0..circuit_size {
-                    res = &res + &res;
-                }
+                    (mock_fabric, mock_scalar)
+                },
+                |(mock_fabric, mock_scalar)| async move {
+                    let mut res = mock_scalar;
+                    for _ in 0..circuit_size {
+                        res = &res + &res;
+                    }
 
-                res.await;
-                mock_fabric.shutdown();
-            })
+                    res.await;
+                    mock_fabric.shutdown();
+                },
+                criterion::BatchSize::SmallInput,
+            );
         });
     }
 }

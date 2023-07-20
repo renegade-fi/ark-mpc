@@ -4,7 +4,7 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::{
-    fabric::{cast_args, MpcFabric, ResultHandle, ResultValue},
+    fabric::{MpcFabric, ResultHandle, ResultValue},
     network::NetworkPayload,
     PARTY0,
 };
@@ -33,7 +33,7 @@ impl MpcScalarResult {
         let fabric_clone = value.fabric.clone();
         value.fabric.new_gate_op(vec![value.id], move |args| {
             // Cast the args
-            let [value]: [Scalar; 1] = cast_args(args);
+            let value: Scalar = args[0].to_owned().into();
             ResultValue::MpcScalar(MpcScalar {
                 value,
                 fabric: fabric_clone,
@@ -47,7 +47,7 @@ impl MpcScalarResult {
         let (val0, val1) = if self.fabric.party_id() == PARTY0 {
             let party0_value: ResultHandle<Scalar> =
                 self.fabric.new_network_op(vec![self.id], |args| {
-                    let [mpc_value]: [MpcScalar; 1] = cast_args(args);
+                    let mpc_value: MpcScalar = args[0].to_owned().into();
                     NetworkPayload::Scalar(mpc_value.value)
                 });
             let party1_value: ResultHandle<Scalar> = self.fabric.receive_value();
@@ -57,7 +57,7 @@ impl MpcScalarResult {
             let party0_value: ResultHandle<Scalar> = self.fabric.receive_value();
             let party1_value: ResultHandle<Scalar> =
                 self.fabric.new_network_op(vec![self.id], |args| {
-                    let [mpc_value]: [MpcScalar; 1] = cast_args(args);
+                    let mpc_value: MpcScalar = args[0].to_owned().into();
                     NetworkPayload::Scalar(mpc_value.value)
                 });
 
@@ -91,8 +91,7 @@ impl Add<&Scalar> for &MpcScalarResult {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             // Cast the args
-            let [lhs]: [MpcScalar; 1] = cast_args(args);
-
+            let lhs: MpcScalar = args[0].to_owned().into();
             if lhs.fabric.party_id() == PARTY0 {
                 ResultValue::MpcScalar(MpcScalar {
                     value: lhs.value + rhs,
@@ -138,7 +137,9 @@ impl Add<&MpcScalarResult> for &MpcScalarResult {
     fn add(self, rhs: &MpcScalarResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
             // Cast the args
-            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
+            let lhs: MpcScalar = args[0].to_owned().into();
+            let rhs: MpcScalar = args[1].to_owned().into();
+
             ResultValue::MpcScalar(MpcScalar {
                 value: lhs.value + rhs.value,
                 fabric: lhs.fabric,
@@ -158,7 +159,7 @@ impl Sub<&Scalar> for &MpcScalarResult {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             // Cast the args
-            let [lhs]: [MpcScalar; 1] = cast_args(args);
+            let lhs: MpcScalar = args[0].to_owned().into();
 
             if lhs.fabric.party_id() == PARTY0 {
                 ResultValue::MpcScalar(MpcScalar {
@@ -203,7 +204,8 @@ impl Sub<&MpcScalarResult> for &MpcScalarResult {
     fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
             // Cast the args
-            let [lhs, rhs]: [MpcScalar; 2] = cast_args(args);
+            let lhs: MpcScalar = args[0].to_owned().into();
+            let rhs: MpcScalar = args[1].to_owned().into();
             ResultValue::MpcScalar(MpcScalar {
                 value: lhs.value - rhs.value,
                 fabric: lhs.fabric,
@@ -221,7 +223,7 @@ impl Neg for &MpcScalarResult {
     fn neg(self) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id], |args| {
             // Cast the args
-            let [lhs]: [MpcScalar; 1] = cast_args(args);
+            let lhs: MpcScalar = args[0].to_owned().into();
             ResultValue::MpcScalar(MpcScalar {
                 value: -lhs.value,
                 fabric: lhs.fabric,
@@ -240,7 +242,7 @@ impl Mul<&Scalar> for &MpcScalarResult {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
             // Cast the args
-            let [lhs]: [MpcScalar; 1] = cast_args(args);
+            let lhs: MpcScalar = args[0].to_owned().into();
             ResultValue::MpcScalar(MpcScalar {
                 value: lhs.value * rhs,
                 fabric: lhs.fabric,
