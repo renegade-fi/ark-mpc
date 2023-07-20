@@ -15,7 +15,7 @@ use ark_ec::{
     short_weierstrass::{Affine, Projective, SWCurveConfig},
     CurveConfig, CurveGroup, Group, VariableBaseMSM,
 };
-use ark_ff::{MontFp, PrimeField, Zero};
+use ark_ff::{BigInteger, MontFp, PrimeField, Zero};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use itertools::Itertools;
@@ -125,11 +125,20 @@ impl StarkPoint {
     /// Serialize this point to a byte buffer in a way that is consistent
     /// with the Cairo serialization of EC points, such that it can be absorbed
     /// into a Fiat-Shamir transcript
+    // TODO: Insert link to Cairo implementation
     pub fn to_transcript_bytes(&self) -> Vec<u8> {
         let mut out: Vec<u8> = Vec::with_capacity(size_of::<StarkPoint>());
-        self.0
-            .serialize_uncompressed(&mut out)
-            .expect("Failed to serialize point");
+        if self.is_identity() {
+            // Custom identity point serialization that matches the
+            // Cairo implementation
+            out.extend(std::iter::repeat(0).take(64));
+        } else {
+            let aff = Affine::from(self.0);
+            let x_bytes = aff.x.into_bigint().to_bytes_le();
+            let y_bytes = aff.y.into_bigint().to_bytes_le();
+            out.extend(x_bytes);
+            out.extend(y_bytes);
+        }
 
         out
     }

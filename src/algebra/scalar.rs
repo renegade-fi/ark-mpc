@@ -14,10 +14,14 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{CryptoRng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
+use tiny_keccak::{Hasher, Keccak};
 
 use crate::fabric::{cast_args, ResultHandle, ResultValue};
 
-use super::macros::{impl_borrow_variants, impl_commutative};
+use super::{
+    macros::{impl_borrow_variants, impl_commutative},
+    stark_curve::STARK_POINT_BYTES,
+};
 
 /// The number of bytes needed to represent an element of the base field
 pub const BASE_FIELD_BYTES: usize = 32;
@@ -116,6 +120,29 @@ impl Scalar {
         let le_bytes = val.to_bytes_le();
         let inner = ScalarInner::from_le_bytes_mod_order(&le_bytes);
         Scalar(inner)
+    }
+
+    /// Convert a uniform byte buffer to a `Scalar` in a manner that is
+    /// consistent with the Cairo implementation. This achieves a uniform
+    /// sampling across the scalar field.
+    // TODO: Insert link to Cairo implementation
+    pub fn from_uniform_bytes(low_u256: [u8; STARK_POINT_BYTES]) -> Scalar {
+        // Need to chain another hash to get extra hash bytes
+        let mut high_u256 = [0u8; STARK_POINT_BYTES];
+        let mut hasher = Keccak::v256();
+        hasher.update(&low_u256);
+        hasher.finalize(&mut high_u256);
+
+        // Reverse the bytes so they match the Cairo implementation,
+        // where they're interpreted as big-endian u256s
+        let bytes_be: Vec<u8> = [low_u256, high_u256]
+            .concat()
+            .iter()
+            .rev()
+            .copied()
+            .collect();
+
+        Scalar::from_be_bytes_mod_order(bytes_be.as_slice())
     }
 }
 

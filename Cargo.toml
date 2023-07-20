@@ -36,6 +36,7 @@ digest = "0.10"
 num-bigint = "0.4"
 rand = "0.8"
 sha3 = { version = "0.10" }
+tiny-keccak = { version = "2.0.2", features=["keccak"] }
 
 # == Networking + Messaging == # 
 rcgen = "0.9"
