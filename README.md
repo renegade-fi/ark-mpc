@@ -1,16 +1,51 @@
-# MPC-Ristretto
-This library provides an abstraction over the `curve25519-dalek` arithmetic implementations ([repo](https://github.com/dalek-cryptography/curve25519-dalek))
-that allows for secret-sharing based MPC computations over the algebra. As well, this library includes SPDZ style share authentication for maliciously secure computation.
-## Organization
-The core of the library lives in `src/`, and the integration tests live in `integration/`. The source folder is organized as follows:
+# MPC-Stark
+<div>
+  <img
+    src="https://github.com/renegade-fi/mpc-stark/actions/workflows/test.yml/badge.svg"
+  />
+  <img
+    src="https://github.com/renegade-fi/mpc-stark/actions/workflows/clippy.yml/badge.svg"
+  />
+  <img
+    src="https://github.com/renegade-fi/mpc-stark/actions/workflows/rustfmt.yml/badge.svg"
+  />
+  <img
+    src="https://img.shields.io/crates/v/mpc-stark"
+  />
+</div>
 
-- `network.rs` and `network/` define a P2P transport on top of QUIC (using [quinn](https://github.com/quinn-rs/quinn)) in which two peers open up a bi-directional stream to communicate about `Scalar` and `RistrettoPoint` types. 
-- `mpc_scalar.rs` and `mpc_stark.rs` define an unauthenticated (semi-honest secure) wrapper around the Dalek `Scalar` and `RistrettoPoint` respectively. These implementations override arithmetic operations such that the result of these operations is a valid secret sharing of the underlying result. This includes use of the [Beaver Trick](https://link.springer.com/content/pdf/10.1007/3-540-46766-1_34.pdf) for multiplication.
-- `authenticated_scalar.rs` and `authenticated_ristretto.rs` define authentication wrappers around `MpcScalar` and `MpcRistrettoPoint` that maintain SPDZ style MACs throughout the computation. These wrappers can be opened in an authenticated commit/reveal interaction that ensures their results have not been tampered with.
-- `commitment.rs` defines commitment implementations for both `Scalar` values (Pedersen) and `RistrettoPoint` values (`SHA3_512` hash commitment).
-- `macros.rs` defines a series of macros used to aid in arithmetic implementation for borrowed values, wrapped values, etc.
-- `beaver.rs` defines an interface the library expects to receive Beaver triplets through. Because the preprocessing functionality is largely an infrastructural burden, only dummy implementations are given. The consumer of this library should implement an appropriate pre-processing functionality.
-- `fabric.rs` defines an "MPC Fabric" that effectively acts as a dependency injection layer on top of the network. That is, the `MpcFabric` holds network references, beaver source implementations, and MAC keys; allowing the consumer of the library to allocate secret shared values without passing around these dependencies.
+## Example
+`mpc-stark` provides a malicious secure [SPDZ](https://eprint.iacr.org/2011/535.pdf) style framework for two party secure computation. The circuit is constructed on the fly, by overloading arithmetic operators of MPC types, see the example below in which each of the parties shares a value and together they compute the product:
+```rust
+use mpc_stark::{
+    algebra::scalar::Scalar, beaver::SharedValueSource, network::QuicTwoPartyNet, MpcFabric,
+    PARTY0, PARTY1,
+};
+use rand::thread_rng;
+
+#[tokio::main]
+async fn main() {
+    // Beaver source should be defined outside of the crate and rely on separate infrastructure
+    let beaver = BeaverSource::new();
+
+    let local_addr = "127.0.0.1:8000".parse().unwrap();
+    let peer_addr = "127.0.0.1:9000".parse().unwrap();
+    let network = QuicTwoPartyNet::new(PARTY0, local_addr, peer_addr);
+
+    // MPC circuit
+    let mut rng = thread_rng();
+    let my_val = Scalar::random(&mut rng);
+    let fabric = MpcFabric::new(network, beaver);
+
+    let a = fabric.share_scalar(my_val, PARTY0 /* sender */); // party0 value
+    let b = fabric.share_scalar(my_val, PARTY1 /* sender */); // party1 value
+    let c = a * b;
+
+    let res = c.open_authenticated().await.expect("authentication error");
+    println!("a * b = {res}");
+}
+
+```
 
 ## Tests
 Unit tests for isolated parts of the library are available via

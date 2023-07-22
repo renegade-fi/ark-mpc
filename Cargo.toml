@@ -1,6 +1,7 @@
 [package]
 name = "mpc-stark"
 version = "0.1.0"
+description = "Malicious-secure SPDZ style two party secure computation"
 keywords = ["mpc", "crypto", "cryptography"]
 homepage = "https://renegade.fi"
 authors = ["Joey Kraut <joey@renegade.fi>"]
