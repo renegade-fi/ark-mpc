@@ -216,7 +216,6 @@ impl Executor {
                 let output = (function)(inputs);
                 self.job_queue
                     .push(ExecutorMessage::Result(OpResult { id, value: output }))
-                // .expect("error re-enqueuing result");
             }
 
             OperationType::Network { function } => {
@@ -238,7 +237,6 @@ impl Executor {
                     id,
                     value: payload.into(),
                 }))
-                // .expect("error re-enqueuing result");
             }
         }
     }

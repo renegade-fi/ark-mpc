@@ -16,15 +16,6 @@ use crate::{
 use super::executor::ExecutorMessage;
 use super::result::OpResult;
 
-// -------------
-// | Constants |
-// -------------
-
-/// The amount of time to wait in between
-
-/// The error message emitted when sending a value to the result queue fails
-const ERR_SEND_FAILURE: &str = "error sending value";
-
 // -------------------------
 // | Sender Implementation |
 // -------------------------
@@ -73,12 +64,7 @@ impl<N: MpcNetwork> NetworkSender<N> {
                 // Next inbound set of scalars
                 res = self.network.receive_message() => {
                     match res {
-                        Ok(msg) => {
-                            if let Err(e) = self.handle_message(msg).await {
-                                log::error!("error handling message: {e}");
-                                return;
-                            }
-                        },
+                        Ok(msg) => self.handle_message(msg).await,
 
                         Err(e) => {
                             log::error!("error receiving message: {e}");
@@ -104,12 +90,10 @@ impl<N: MpcNetwork> NetworkSender<N> {
     }
 
     /// Handle an inbound message
-    async fn handle_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
+    async fn handle_message(&mut self, message: NetworkOutbound) {
         self.result_queue.push(ExecutorMessage::Result(OpResult {
             id: message.op_id,
             value: message.payload.into(),
         }));
-        // .map_err(|_| MpcNetworkError::SendError(ERR_SEND_FAILURE.to_string()))
-        Ok(())
     }
 }

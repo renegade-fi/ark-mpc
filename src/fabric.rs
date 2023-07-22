@@ -228,7 +228,6 @@ impl FabricInner {
     /// Shutdown the inner fabric, by sending a shutdown message to the executor
     pub(crate) fn shutdown(&self) {
         self.execution_queue.push(ExecutorMessage::Shutdown)
-        // .expect("executor closed");
     }
 
     /// -----------
@@ -343,7 +342,6 @@ impl FabricInner {
         let id = self.new_id();
         self.execution_queue
             .push(ExecutorMessage::Op { id, args, op_type });
-        // .expect("executor channel closed");
 
         id
     }

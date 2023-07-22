@@ -5,6 +5,7 @@
 // ----------------------------
 
 use std::{
+    fmt::{Display, Formatter, Result as FmtResult},
     iter::{Product, Sum},
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -116,6 +117,12 @@ impl Scalar {
         let le_bytes = val.to_bytes_le();
         let inner = ScalarInner::from_le_bytes_mod_order(&le_bytes);
         Scalar(inner)
+    }
+}
+
+impl Display for Scalar {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{}", self.to_biguint())
     }
 }
 
