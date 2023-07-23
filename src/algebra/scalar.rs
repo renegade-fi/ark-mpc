@@ -53,6 +53,9 @@ pub struct Scalar(pub(crate) ScalarInner);
 // -------------------
 
 impl Scalar {
+    /// The Arkworks prime field type that underlies the `Scalar`
+    pub type Field = ScalarInner;
+
     /// The scalar field's additive identity
     pub fn zero() -> Scalar {
         Scalar(ScalarInner::from(0))
@@ -61,6 +64,11 @@ impl Scalar {
     /// The scalar field's multiplicative identity
     pub fn one() -> Scalar {
         Scalar(ScalarInner::from(1))
+    }
+
+    /// Get the inner value of the scalar
+    pub fn inner(&self) -> ScalarInner {
+        self.0
     }
 
     /// Generate a random scalar

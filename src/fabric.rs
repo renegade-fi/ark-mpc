@@ -609,6 +609,19 @@ impl MpcFabric {
         AuthenticatedScalarResult::new_shared(scalar)
     }
 
+    /// Share a batch of `Scalar` values with the counterparty
+    ///
+    /// TODO: Use a batched request to the network layer
+    pub fn batch_share_scalar<T: Into<Scalar>>(
+        &self,
+        vals: Vec<T>,
+        sender: PartyId,
+    ) -> Vec<AuthenticatedScalarResult> {
+        vals.into_iter()
+            .map(|val| self.share_scalar(val, sender))
+            .collect_vec()
+    }
+
     /// Share a `StarkPoint` value with the counterparty
     pub fn share_point(&self, val: StarkPoint, sender: PartyId) -> AuthenticatedStarkPointResult {
         let point: StarkPointResult = if self.party_id() == sender {
@@ -690,6 +703,31 @@ impl MpcFabric {
             self.send_value(value);
             handle
         }
+    }
+
+    /// Share a public value with the counterparty
+    pub fn share_plaintext<T>(&self, value: T, sender: PartyId) -> ResultHandle<T>
+    where
+        T: 'static + From<ResultValue> + Into<NetworkPayload> + Send + Sync,
+    {
+        if self.party_id() == sender {
+            self.new_network_op(vec![], move |_args| value.into())
+        } else {
+            self.receive_value()
+        }
+    }
+
+    /// Share a batch of public values with the counterparty
+    ///
+    /// TODO: Optimize this to use batch network operations
+    pub fn batch_share_plaintext<T>(&self, values: Vec<T>, sender: PartyId) -> Vec<ResultHandle<T>>
+    where
+        T: 'static + From<ResultValue> + Into<NetworkPayload> + Send + Sync,
+    {
+        values
+            .into_iter()
+            .map(|value| self.share_plaintext(value, sender))
+            .collect_vec()
     }
 
     // -------------------
