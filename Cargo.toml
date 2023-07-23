@@ -26,6 +26,7 @@ harness = false
 required-features = ["test_helpers"]
 
 [profile.bench]
+opt-level = 0
 debug = true
 
 [[bench]]
@@ -37,6 +38,11 @@ required-features = ["benchmarks", "test_helpers"]
 name = "gate_throughput_traced"
 harness = false
 required-features = ["benchmarks", "test_helpers"]
+
+[[bench]]
+name = "growable_buffer"
+harness = false
+required-features = ["benchmarks"]
 
 [dependencies]
 # == Concurrency == #

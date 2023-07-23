@@ -4,7 +4,7 @@
 //! automatically grows as access to the buffer goes out of bounds
 
 /// A thin wrapper around a vector that auto-allocates as the buffer grows
-pub(crate) struct GrowableBuffer<T: Clone> {
+pub struct GrowableBuffer<T: Clone> {
     /// The underlying buffer
     buf: Vec<Option<T>>,
 }
