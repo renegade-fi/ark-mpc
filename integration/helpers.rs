@@ -12,9 +12,8 @@ use mpc_stark::{
     },
     beaver::SharedValueSource,
     network::{NetworkPayload, PartyId},
-    random_point, {MpcFabric, ResultHandle, ResultValue},
+    {MpcFabric, ResultHandle, ResultValue},
 };
-use rand::thread_rng;
 use tokio::runtime::Handle;
 
 // -----------
@@ -31,6 +30,19 @@ pub(crate) fn assert_scalars_eq(a: Scalar, b: Scalar) -> Result<(), String> {
     } else {
         Err(format!("{a:?} != {b:?}"))
     }
+}
+
+/// Assert a batch of scalars equal one another
+pub(crate) fn assert_scalar_batches_eq(a: Vec<Scalar>, b: Vec<Scalar>) -> Result<(), String> {
+    if a.len() != b.len() {
+        return Err(format!("Lengths differ: {a:?} != {b:?}"));
+    }
+
+    for (a, b) in a.into_iter().zip(b.into_iter()) {
+        assert_scalars_eq(a, b)?;
+    }
+
+    Ok(())
 }
 
 /// Compares two points, returning a result that can be propagated up an integration test
@@ -50,19 +62,6 @@ pub(crate) fn assert_err<T, E>(res: Result<T, E>) -> Result<(), String> {
     } else {
         Err("Expected error, got Ok".to_string())
     }
-}
-
-/// Construct two secret shares of a given scalar value
-pub(crate) fn create_scalar_secret_shares(a: Scalar) -> (Scalar, Scalar) {
-    let mut rng = thread_rng();
-    let random = Scalar::random(&mut rng);
-    (a - random, random)
-}
-
-/// Construct two secret shares of a given point value
-pub(crate) fn create_point_secret_shares(a: StarkPoint) -> (StarkPoint, StarkPoint) {
-    let random = random_point();
-    (a - random, random)
 }
 
 /// Await a result in the computation graph by blocking the current task
@@ -91,17 +90,21 @@ pub(crate) fn share_scalar(
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> MpcScalarResult {
-    let scalar = if test_args.party_id == sender {
-        let (my_share, their_share) = create_scalar_secret_shares(value);
-        test_args.fabric.allocate_shared_value(
-            ResultValue::Scalar(my_share),
-            ResultValue::Scalar(their_share),
-        )
-    } else {
-        test_args.fabric.receive_value()
-    };
+    let authenticated_value = test_args.fabric.share_scalar(value, sender);
+    authenticated_value.mpc_share()
+}
 
-    MpcScalarResult::new_shared(scalar)
+pub(crate) fn share_scalar_batch(
+    values: Vec<Scalar>,
+    sender: PartyId,
+    test_args: &IntegrationTestArgs,
+) -> Vec<MpcScalarResult> {
+    test_args
+        .fabric
+        .batch_share_scalar(values, sender)
+        .iter()
+        .map(|v| v.mpc_share())
+        .collect_vec()
 }
 
 /// Send or receive a secret shared point from the given party
@@ -110,17 +113,9 @@ pub(crate) fn share_point(
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> MpcStarkPointResult {
-    let point = if test_args.party_id == sender {
-        let (my_share, their_share) = create_point_secret_shares(value);
-        test_args.fabric.allocate_shared_value(
-            ResultValue::Point(my_share),
-            ResultValue::Point(their_share),
-        )
-    } else {
-        test_args.fabric.receive_value()
-    };
-
-    MpcStarkPointResult::new_shared(point)
+    // Share the point then cast to an `MpcStarkPoint`
+    let authenticated_point = share_authenticated_point(value, sender, test_args);
+    authenticated_point.mpc_share()
 }
 
 /// Send or receive a secret shared scalar from the given party and allocate it as an authenticated value
@@ -129,17 +124,7 @@ pub(crate) fn share_authenticated_scalar(
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> AuthenticatedScalarResult {
-    let scalar = if test_args.party_id == sender {
-        let (my_share, their_share) = create_scalar_secret_shares(value);
-        test_args.fabric.allocate_shared_value(
-            ResultValue::Scalar(my_share),
-            ResultValue::Scalar(their_share),
-        )
-    } else {
-        test_args.fabric.receive_value()
-    };
-
-    AuthenticatedScalarResult::new_shared(scalar)
+    test_args.fabric.share_scalar(value, sender)
 }
 
 /// Send or receive a secret shared point from the given party and allocate it as an authenticated value
@@ -148,17 +133,7 @@ pub(crate) fn share_authenticated_point(
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> AuthenticatedStarkPointResult {
-    let point = if test_args.party_id == sender {
-        let (my_share, their_share) = create_point_secret_shares(value);
-        test_args.fabric.allocate_shared_value(
-            ResultValue::Point(my_share),
-            ResultValue::Point(their_share),
-        )
-    } else {
-        test_args.fabric.receive_value()
-    };
-
-    AuthenticatedStarkPointResult::new_shared(point)
+    test_args.fabric.share_point(value, sender)
 }
 
 /// Share a value with the counterparty by sender ID, the sender sends and the receiver receives

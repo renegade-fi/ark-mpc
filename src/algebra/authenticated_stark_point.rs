@@ -66,8 +66,7 @@ impl AuthenticatedStarkPointResult {
         let mac = fabric_clone.borrow_mac_key() * &mpc_value;
 
         // Allocate a zero point for the public modifier
-        let public_modifier =
-            fabric_clone.allocate_value(ResultValue::Point(StarkPoint::identity()));
+        let public_modifier = fabric_clone.allocate_point(StarkPoint::identity());
 
         Self {
             value: mpc_value,
@@ -75,6 +74,12 @@ impl AuthenticatedStarkPointResult {
             public_modifier,
             fabric: fabric_clone,
         }
+    }
+
+    /// Get the underlying share as an `MpcStarkPoint`
+    #[cfg(feature = "test_helpers")]
+    pub fn mpc_share(&self) -> MpcStarkPointResult {
+        self.value.clone()
     }
 
     /// Open the value without checking the MAC
@@ -122,9 +127,7 @@ impl AuthenticatedStarkPointResult {
         // Once the parties have exchanged their commitments, they can open the underlying MAC check value
         // as they are bound by the commitment
         let peer_mac_check = self.fabric.exchange_value(my_comm.value.clone());
-        let blinder_result: ScalarResult = self
-            .fabric
-            .allocate_value(ResultValue::Scalar(my_comm.blinder));
+        let blinder_result: ScalarResult = self.fabric.allocate_scalar(my_comm.blinder);
         let peer_blinder = self.fabric.exchange_value(blinder_result);
 
         // Check the peer's commitment and the sum of the MAC checks

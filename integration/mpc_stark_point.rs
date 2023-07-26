@@ -3,9 +3,9 @@
 use mpc_stark::{
     algebra::{
         scalar::{Scalar, ScalarResult},
-        stark_curve::{StarkPoint, StarkPointResult},
+        stark_curve::StarkPointResult,
     },
-    random_point, ResultHandle, ResultValue, PARTY0, PARTY1,
+    random_point, PARTY0, PARTY1,
 };
 use rand::thread_rng;
 
@@ -17,8 +17,7 @@ use crate::{
 /// Test addition of `MpcStarkPoint` types
 fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
-    let my_value: ResultHandle<StarkPoint> =
-        test_args.fabric.allocate_value(ResultValue::Point(val));
+    let my_value = test_args.fabric.allocate_point(val);
 
     // Share the value with the counterparty
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -42,8 +41,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Party 0 chooses an MPC point and party 1 chooses a plaintext point
 fn test_add_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
-    let my_value: ResultHandle<StarkPoint> =
-        test_args.fabric.allocate_value(ResultValue::Point(val));
+    let my_value = test_args.fabric.allocate_point(val);
 
     // Share the value with the counterparty
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -66,8 +64,7 @@ fn test_add_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String
 /// Test subtraction of `MpcStarkPoint` types
 fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
-    let my_value: ResultHandle<StarkPoint> =
-        test_args.fabric.allocate_value(ResultValue::Point(val));
+    let my_value = test_args.fabric.allocate_point(val);
 
     // Share the value with the counterparty
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -91,8 +88,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Party 0 chooses an MPC point and party 1 chooses a plaintext point
 fn test_sub_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
-    let my_value: ResultHandle<StarkPoint> =
-        test_args.fabric.allocate_value(ResultValue::Point(val));
+    let my_value = test_args.fabric.allocate_point(val);
 
     // Share the value with the counterparty
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -115,8 +111,7 @@ fn test_sub_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String
 /// Test negation of `MpcStarkPoint` types
 fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
-    let my_value: ResultHandle<StarkPoint> =
-        test_args.fabric.allocate_value(ResultValue::Point(val));
+    let my_value = test_args.fabric.allocate_point(val);
 
     // Share the value with the counterparty
     let party0_value = share_plaintext_value(my_value, PARTY0, &test_args.fabric);
@@ -143,12 +138,12 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Share the values with the counterparty
     let plaintext_point: StarkPointResult = share_plaintext_value(
-        test_args.fabric.allocate_value(ResultValue::Point(point)),
+        test_args.fabric.allocate_point(point),
         PARTY0,
         &test_args.fabric,
     );
     let plaintext_scalar: ScalarResult = share_plaintext_value(
-        test_args.fabric.allocate_value(ResultValue::Scalar(scalar)),
+        test_args.fabric.allocate_scalar(scalar),
         PARTY1,
         &test_args.fabric,
     );
@@ -175,13 +170,13 @@ fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), Strin
     let scalar = Scalar::random(&mut rng);
 
     // Share the values with the counterparty
-    let plaintext_point: StarkPointResult = share_plaintext_value(
-        test_args.fabric.allocate_value(ResultValue::Point(point)),
+    let plaintext_point = share_plaintext_value(
+        test_args.fabric.allocate_point(point),
         PARTY0,
         &test_args.fabric,
     );
     let plaintext_scalar: ScalarResult = share_plaintext_value(
-        test_args.fabric.allocate_value(ResultValue::Scalar(scalar)),
+        test_args.fabric.allocate_scalar(scalar),
         PARTY1,
         &test_args.fabric,
     );

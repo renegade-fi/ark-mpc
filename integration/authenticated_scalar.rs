@@ -96,7 +96,7 @@ fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> 
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
-    let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
+    let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
     // Share the value with the counterparty in the plaintext and compute the expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -142,7 +142,7 @@ fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
-    let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
+    let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
     // Share the value with the counterparty in the plaintext and compute the expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -209,7 +209,7 @@ fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
-    let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
+    let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
     // Share the value with the counterparty in the plaintext and compute the expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -255,7 +255,7 @@ fn test_public_add_then_mul(test_args: &IntegrationTestArgs) -> Result<(), Strin
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
-    let my_value = test_args.fabric.allocate_value(ResultValue::Scalar(val));
+    let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
     // Share the value with the counterparty in the plaintext and compute the expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);

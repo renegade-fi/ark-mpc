@@ -79,6 +79,12 @@ impl AuthenticatedScalarResult {
         }
     }
 
+    /// Get the raw share as an `MpcScalarResult`
+    #[cfg(feature = "test_helpers")]
+    pub fn mpc_share(&self) -> MpcScalarResult {
+        self.value.clone()
+    }
+
     /// Get the raw share as a `ScalarResult`
     pub fn share(&self) -> ScalarResult {
         self.value.to_scalar()
@@ -142,9 +148,7 @@ impl AuthenticatedScalarResult {
         // the underlying values and their commitments so all that is left is the blinder
         let peer_mac_check = self.fabric.exchange_value(my_comm.value.clone());
 
-        let blinder_result: ScalarResult = self
-            .fabric
-            .allocate_value(ResultValue::Scalar(my_comm.blinder));
+        let blinder_result: ScalarResult = self.fabric.allocate_scalar(my_comm.blinder);
         let peer_blinder = self.fabric.exchange_value(blinder_result);
 
         // Check the commitment and the MAC result

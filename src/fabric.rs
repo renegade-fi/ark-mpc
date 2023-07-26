@@ -624,14 +624,8 @@ impl MpcFabric {
     // | Wire Allocation |
     // -------------------
 
-    /// Allocate a new plaintext value in the fabric
-    pub fn allocate_value<T: From<ResultValue>>(&self, value: ResultValue) -> ResultHandle<T> {
-        let id = self.inner.allocate_value(value);
-        ResultHandle::new(id, self.clone())
-    }
-
     /// Allocate a shared value in the fabric
-    pub fn allocate_shared_value<T: From<ResultValue>>(
+    fn allocate_shared_value<T: From<ResultValue>>(
         &self,
         my_share: ResultValue,
         their_share: ResultValue,
@@ -702,7 +696,16 @@ impl MpcFabric {
 
     /// Allocate a public value in the fabric
     pub fn allocate_scalar<T: Into<Scalar>>(&self, value: T) -> ResultHandle<Scalar> {
-        self.allocate_value(ResultValue::Scalar(value.into()))
+        let id = self.inner.allocate_value(ResultValue::Scalar(value.into()));
+        ResultHandle::new(id, self.clone())
+    }
+
+    /// Allocate a batch of scalars in the fabric
+    pub fn allocate_scalars<T: Into<Scalar>>(&self, values: Vec<T>) -> Vec<ResultHandle<Scalar>> {
+        values
+            .into_iter()
+            .map(|value| self.allocate_scalar(value))
+            .collect_vec()
     }
 
     /// Allocate a scalar as a secret share of an already shared value
@@ -729,7 +732,8 @@ impl MpcFabric {
 
     /// Allocate a public curve point in the fabric
     pub fn allocate_point(&self, value: StarkPoint) -> ResultHandle<StarkPoint> {
-        self.allocate_value(ResultValue::Point(value))
+        let id = self.inner.allocate_value(ResultValue::Point(value));
+        ResultHandle::new(id, self.clone())
     }
 
     /// Send a value to the peer, placing the identity in the local result buffer at the send ID
@@ -822,7 +826,7 @@ impl MpcFabric {
     ///
     /// The array must be sized so that the fabric knows how many results to allocate buffer space for
     /// ahead of execution
-    pub fn new_batch_gate_op<F, T, const N: usize>(
+    pub fn new_batch_gate_op<F, T>(
         &self,
         args: Vec<ResultId>,
         output_arity: usize,
@@ -833,11 +837,9 @@ impl MpcFabric {
         T: From<ResultValue>,
     {
         let function = Box::new(function);
-        let ids = self.inner.new_op(
-            args,
-            output_arity,
-            OperationType::GateBatch { function },
-        );
+        let ids = self
+            .inner
+            .new_op(args, output_arity, OperationType::GateBatch { function });
         ids.into_iter()
             .map(|id| ResultHandle::new(id, self.clone()))
             .collect_vec()
@@ -873,14 +875,41 @@ impl MpcFabric {
             .expect("beaver source poisoned")
             .next_triplet();
 
-        let a_val = self.allocate_value(ResultValue::Scalar(a));
-        let b_val = self.allocate_value(ResultValue::Scalar(b));
-        let c_val = self.allocate_value(ResultValue::Scalar(c));
+        let a_val = self.allocate_scalar(a);
+        let b_val = self.allocate_scalar(b);
+        let c_val = self.allocate_scalar(c);
 
         (
             MpcScalarResult::new_shared(a_val),
             MpcScalarResult::new_shared(b_val),
             MpcScalarResult::new_shared(c_val),
+        )
+    }
+
+    /// Sample a batch of beaver triples
+    pub fn next_beaver_triple_batch(
+        &self,
+        n: usize,
+    ) -> (
+        Vec<MpcScalarResult>,
+        Vec<MpcScalarResult>,
+        Vec<MpcScalarResult>,
+    ) {
+        let (a_vals, b_vals, c_vals) = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_triplet_batch(n);
+
+        let a_vals = self.allocate_scalars(a_vals);
+        let b_vals = self.allocate_scalars(b_vals);
+        let c_vals = self.allocate_scalars(c_vals);
+
+        (
+            MpcScalarResult::new_shared_batch(a_vals),
+            MpcScalarResult::new_shared_batch(b_vals),
+            MpcScalarResult::new_shared_batch(c_vals),
         )
     }
 
@@ -902,9 +931,9 @@ impl MpcFabric {
             .expect("beaver source poisoned")
             .next_triplet();
 
-        let a_val = self.allocate_value(ResultValue::Scalar(a));
-        let b_val = self.allocate_value(ResultValue::Scalar(b));
-        let c_val = self.allocate_value(ResultValue::Scalar(c));
+        let a_val = self.allocate_scalar(a);
+        let b_val = self.allocate_scalar(b);
+        let c_val = self.allocate_scalar(c);
 
         (
             AuthenticatedScalarResult::new_shared(a_val),
@@ -925,7 +954,7 @@ impl MpcFabric {
         // Wrap the values in a result handle
         values_raw
             .into_iter()
-            .map(|value| self.allocate_value(ResultValue::Scalar(value)))
+            .map(|value| self.allocate_scalar(value))
             .collect_vec()
     }
 
@@ -942,7 +971,7 @@ impl MpcFabric {
         values_raw
             .into_iter()
             .map(|value| {
-                let value = self.allocate_value(ResultValue::Scalar(value));
+                let value = self.allocate_scalar(value);
                 AuthenticatedScalarResult::new_shared(value)
             })
             .collect_vec()

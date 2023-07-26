@@ -157,6 +157,8 @@ impl<'de> Deserialize<'de> for Scalar {
 
 /// A type alias for a result that resolves to a `Scalar`
 pub type ScalarResult = ResultHandle<Scalar>;
+/// A type alias for a result that resolves to a batch of `Scalar`s
+pub type BatchScalarResult = ResultHandle<Vec<Scalar>>;
 impl ScalarResult {
     /// Compute the multiplicative inverse of the scalar in its field
     pub fn inverse(&self) -> ScalarResult {
@@ -203,6 +205,27 @@ impl Add<&ScalarResult> for &ScalarResult {
     }
 }
 impl_borrow_variants!(ScalarResult, Add, add, +, ScalarResult);
+
+impl ScalarResult {
+    /// Add two batches of `ScalarResult`s
+    pub fn batch_add(a: &[ScalarResult], b: &[ScalarResult]) -> Vec<ScalarResult> {
+        assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
+
+        let n = a.len();
+        let fabric = &a[0].fabric;
+        let ids = a.iter().chain(b.iter()).map(|v| v.id).collect_vec();
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let mut res = Vec::with_capacity(n);
+            for i in 0..n {
+                let lhs: Scalar = args[i].to_owned().into();
+                let rhs: Scalar = args[i + n].to_owned().into();
+                res.push(ResultValue::Scalar(Scalar(lhs.0 + rhs.0)));
+            }
+
+            res
+        })
+    }
+}
 
 // === AddAssign === //
 
@@ -251,6 +274,27 @@ impl Sub<&ScalarResult> for &ScalarResult {
 }
 impl_borrow_variants!(ScalarResult, Sub, sub, -, ScalarResult);
 
+impl ScalarResult {
+    /// Subtract two batches of `ScalarResult`s
+    pub fn batch_sub(a: &[ScalarResult], b: &[ScalarResult]) -> Vec<ScalarResult> {
+        assert_eq!(a.len(), b.len(), "Batch sub requires equal length inputs");
+
+        let n = a.len();
+        let fabric = &a[0].fabric;
+        let ids = a.iter().chain(b.iter()).map(|v| v.id).collect_vec();
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let mut res = Vec::with_capacity(n);
+            for i in 0..n {
+                let lhs: Scalar = args[i].to_owned().into();
+                let rhs: Scalar = args[i + n].to_owned().into();
+                res.push(ResultValue::Scalar(Scalar(lhs.0 - rhs.0)));
+            }
+
+            res
+        })
+    }
+}
+
 // === SubAssign === //
 
 impl SubAssign for Scalar {
@@ -298,6 +342,27 @@ impl Mul<&ScalarResult> for &ScalarResult {
 }
 impl_borrow_variants!(ScalarResult, Mul, mul, *, ScalarResult);
 
+impl ScalarResult {
+    /// Multiply two batches of `ScalarResult`s
+    pub fn batch_mul(a: &[ScalarResult], b: &[ScalarResult]) -> Vec<ScalarResult> {
+        assert_eq!(a.len(), b.len(), "Batch mul requires equal length inputs");
+
+        let n = a.len();
+        let fabric = &a[0].fabric;
+        let ids = a.iter().chain(b.iter()).map(|v| v.id).collect_vec();
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let mut res = Vec::with_capacity(n);
+            for i in 0..n {
+                let lhs: Scalar = args[i].to_owned().into();
+                let rhs: Scalar = args[i + n].to_owned().into();
+                res.push(ResultValue::Scalar(Scalar(lhs.0 * rhs.0)));
+            }
+
+            res
+        })
+    }
+}
+
 impl Neg for &Scalar {
     type Output = Scalar;
 
@@ -318,6 +383,22 @@ impl Neg for &ScalarResult {
     }
 }
 impl_borrow_variants!(ScalarResult, Neg, neg, -);
+
+impl ScalarResult {
+    /// Negate a batch of `ScalarResult`s
+    pub fn batch_neg(a: &[ScalarResult]) -> Vec<ScalarResult> {
+        let n = a.len();
+        let fabric = &a[0].fabric;
+        let ids = a.iter().map(|v| v.id).collect_vec();
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            args.into_iter()
+                .map(Scalar::from)
+                .map(|x| -x)
+                .map(ResultValue::Scalar)
+                .collect_vec()
+        })
+    }
+}
 
 // === MulAssign === //
 

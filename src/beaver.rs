@@ -38,8 +38,22 @@ pub trait SharedValueSource: Send + Sync {
     /// Fetch the next beaver triplet
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar);
     /// Fetch a batch of beaver triplets
-    fn next_triplet_batch(&mut self, num_triplets: usize) -> Vec<(Scalar, Scalar, Scalar)> {
-        (0..num_triplets).map(|_| self.next_triplet()).collect_vec()
+    fn next_triplet_batch(
+        &mut self,
+        num_triplets: usize,
+    ) -> (Vec<Scalar>, Vec<Scalar>, Vec<Scalar>) {
+        let mut a_vals = Vec::with_capacity(num_triplets);
+        let mut b_vals = Vec::with_capacity(num_triplets);
+        let mut c_vals = Vec::with_capacity(num_triplets);
+
+        for _ in 0..num_triplets {
+            let (a, b, c) = self.next_triplet();
+            a_vals.push(a);
+            b_vals.push(b);
+            c_vals.push(c);
+        }
+
+        (a_vals, b_vals, c_vals)
     }
 }
 
