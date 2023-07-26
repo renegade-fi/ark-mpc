@@ -70,18 +70,34 @@ const N_CONSTANT_RESULTS: usize = 6;
 /// The default size hint to give the fabric for buffer pre-allocation
 const DEFAULT_SIZE_HINT: usize = 10_000;
 
+/// A type alias for the identifier used for a gate
+pub type OperationId = usize;
+
 /// An operation within the network, describes the arguments and function to evaluate
 /// once the arguments are ready
+///
+/// `N` represents the number of results that this operation outputs
 #[derive(Clone)]
 pub struct Operation {
     /// Identifier of the result that this operation emits
-    id: ResultId,
+    id: OperationId,
+    /// The result ID of the first result in the outputs
+    result_id: ResultId,
+    /// The number of outputs this operation produces
+    output_arity: usize,
     /// The number of arguments that are still in-flight for this operation
     inflight_args: usize,
     /// The IDs of the inputs to this operation
     args: Vec<ResultId>,
     /// The type of the operation
     op_type: OperationType,
+}
+
+impl Operation {
+    /// Get the result IDs for an operation
+    pub fn result_ids(&self) -> Vec<ResultId> {
+        (self.result_id..self.result_id + self.output_arity).collect_vec()
+    }
 }
 
 impl Debug for Operation {
@@ -96,6 +112,13 @@ pub enum OperationType {
     Gate {
         /// The function to apply to the inputs
         function: Box<dyn FnOnce(Vec<ResultValue>) -> ResultValue + Send + Sync>,
+    },
+    /// A gate operation that has output arity greater than one
+    ///
+    /// We separate this out to avoid vector allocation for result values of arity one
+    GateBatch {
+        /// The function to apply to the inputs
+        function: Box<dyn FnOnce(Vec<ResultValue>) -> Vec<ResultValue> + Send + Sync>,
     },
     /// A network operation, requires that a value be sent over the network
     Network {
@@ -116,6 +139,7 @@ impl Debug for OperationType {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             OperationType::Gate { .. } => write!(f, "Gate"),
+            OperationType::GateBatch { .. } => write!(f, "GateBatch"),
             OperationType::Network { .. } => write!(f, "Network"),
         }
     }
@@ -166,8 +190,10 @@ impl Debug for MpcFabric {
 pub struct FabricInner {
     /// The ID of the local party in the MPC execution
     party_id: u64,
+    /// The next identifier to assign to a result
+    next_result_id: Arc<AtomicUsize>,
     /// The next identifier to assign to an operation
-    next_id: Arc<AtomicUsize>,
+    next_op_id: Arc<AtomicUsize>,
     /// The completed results of operations
     results: Shared<GrowableBuffer<OpResult>>,
     /// A map of operations to wakers of tasks that are waiting on the operation to complete
@@ -212,11 +238,13 @@ impl FabricInner {
             },
         );
 
-        let next_id = Arc::new(AtomicUsize::new(N_CONSTANT_RESULTS));
+        let next_result_id = Arc::new(AtomicUsize::new(N_CONSTANT_RESULTS));
+        let next_op_id = Arc::new(AtomicUsize::new(0));
 
         Self {
             party_id,
-            next_id,
+            next_result_id,
+            next_op_id,
             results: Arc::new(RwLock::new(results)),
             wakers: Arc::new(RwLock::new(HashMap::new())),
             execution_queue,
@@ -235,8 +263,13 @@ impl FabricInner {
     /// -----------
 
     /// Increment the operation counter and return the existing value
-    fn new_id(&self) -> ResultId {
-        self.next_id.fetch_add(1, Ordering::Relaxed)
+    fn new_result_id(&self) -> ResultId {
+        self.next_result_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Increment the operation counter and return the existing value
+    fn new_op_id(&self) -> OperationId {
+        self.next_op_id.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Get the hardcoded zero value in the fabric
@@ -288,7 +321,7 @@ impl FabricInner {
         let mut locked_results = self.results.write().expect("results poisoned");
 
         // Update fabric state
-        let id = self.new_id();
+        let id = self.new_result_id();
         locked_results.insert(id, OpResult { id, value });
 
         id
@@ -304,7 +337,7 @@ impl FabricInner {
         let mut locked_results = self.results.write().expect("results poisoned");
 
         // Add my share to the results
-        let id = self.new_id();
+        let id = self.new_result_id();
         locked_results.insert(
             id,
             OpResult {
@@ -315,7 +348,7 @@ impl FabricInner {
 
         // Send the counterparty their share
         if let Err(e) = self.outbound_queue.send(NetworkOutbound {
-            op_id: id,
+            result_id: id,
             payload: their_share.into(),
         }) {
             log::error!("error sending share to counterparty: {e:?}");
@@ -329,7 +362,7 @@ impl FabricInner {
     /// The peer will already send the value with the corresponding ID, so all that is needed
     /// is to allocate a slot in the result buffer for the receipt
     pub(crate) fn receive_value(&self) -> ResultId {
-        self.new_id()
+        self.new_result_id()
     }
 
     // --------------
@@ -337,13 +370,34 @@ impl FabricInner {
     // --------------
 
     /// Allocate a new in-flight gate operation in the fabric
-    pub(crate) fn new_op(&self, args: Vec<ResultId>, op_type: OperationType) -> ResultId {
-        // Get an ID for the result
-        let id = self.new_id();
-        self.execution_queue
-            .push(ExecutorMessage::Op { id, args, op_type });
+    pub(crate) fn new_op(
+        &self,
+        args: Vec<ResultId>,
+        output_arity: usize,
+        op_type: OperationType,
+    ) -> Vec<ResultId> {
+        if matches!(op_type, OperationType::Gate { .. }) {
+            assert_eq!(output_arity, 1, "gate operations must have arity 1");
+        }
 
-        id
+        // Allocate IDs for the results
+        let ids = (0..output_arity)
+            .map(|_| self.new_result_id())
+            .collect_vec();
+
+        // Build the operation
+        let op = Operation {
+            id: self.new_op_id(),
+            result_id: ids[0],
+            output_arity,
+            args,
+            inflight_args: 0,
+            op_type,
+        };
+
+        // Forward the op to the executor
+        self.execution_queue.push(ExecutorMessage::Op(op));
+        ids
     }
 }
 
@@ -660,6 +714,19 @@ impl MpcFabric {
         AuthenticatedScalarResult::new_shared(allocated)
     }
 
+    /// Allocate a batch of scalars as secret shares of already shared values
+    ///
+    /// TODO: Optimize this to use a batched gate
+    pub fn batch_allocate_preshared_scalar<T: Into<Scalar>>(
+        &self,
+        values: Vec<T>,
+    ) -> Vec<AuthenticatedScalarResult> {
+        values
+            .into_iter()
+            .map(|value| self.allocate_preshared_scalar(value))
+            .collect_vec()
+    }
+
     /// Allocate a public curve point in the fabric
     pub fn allocate_point(&self, value: StarkPoint) -> ResultHandle<StarkPoint> {
         self.allocate_value(ResultValue::Point(value))
@@ -742,8 +809,38 @@ impl MpcFabric {
         T: From<ResultValue>,
     {
         let function = Box::new(function);
-        let id = self.inner.new_op(args, OperationType::Gate { function });
+        let id = self.inner.new_op(
+            args,
+            1, /* output_arity */
+            OperationType::Gate { function },
+        )[0];
         ResultHandle::new(id, self.clone())
+    }
+
+    /// Construct a new batch gate operation in the fabric, i.e. one that can be evaluated to return
+    /// an array of results
+    ///
+    /// The array must be sized so that the fabric knows how many results to allocate buffer space for
+    /// ahead of execution
+    pub fn new_batch_gate_op<F, T, const N: usize>(
+        &self,
+        args: Vec<ResultId>,
+        output_arity: usize,
+        function: F,
+    ) -> Vec<ResultHandle<T>>
+    where
+        F: 'static + FnOnce(Vec<ResultValue>) -> Vec<ResultValue> + Send + Sync,
+        T: From<ResultValue>,
+    {
+        let function = Box::new(function);
+        let ids = self.inner.new_op(
+            args,
+            output_arity,
+            OperationType::GateBatch { function },
+        );
+        ids.into_iter()
+            .map(|id| ResultHandle::new(id, self.clone()))
+            .collect_vec()
     }
 
     /// Construct a new network operation in the fabric, i.e. one that requires a value to be sent
@@ -754,7 +851,11 @@ impl MpcFabric {
         T: From<ResultValue>,
     {
         let function = Box::new(function);
-        let id = self.inner.new_op(args, OperationType::Network { function });
+        let id = self.inner.new_op(
+            args,
+            1, /* output_arity */
+            OperationType::Network { function },
+        )[0];
         ResultHandle::new(id, self.clone())
     }
 
@@ -845,5 +946,32 @@ impl MpcFabric {
                 AuthenticatedScalarResult::new_shared(value)
             })
             .collect_vec()
+    }
+
+    /// Sample a pair of values that are multiplicative inverses of one another
+    pub fn random_inverse_pair(&self) -> (AuthenticatedScalarResult, AuthenticatedScalarResult) {
+        let (l, r) = self
+            .inner
+            .beaver_source
+            .lock()
+            .unwrap()
+            .next_shared_inverse_pair();
+        (
+            AuthenticatedScalarResult::new_shared(self.allocate_scalar(l)),
+            AuthenticatedScalarResult::new_shared(self.allocate_scalar(r)),
+        )
+    }
+
+    /// Sample a batch of values that are multiplicative inverses of one another
+    ///
+    /// TODO: Use a batched gate operation
+    pub fn random_inverse_pairs(
+        &self,
+        n: usize,
+    ) -> (
+        Vec<AuthenticatedScalarResult>,
+        Vec<AuthenticatedScalarResult>,
+    ) {
+        (0..n).map(|_| self.random_inverse_pair()).unzip()
     }
 }

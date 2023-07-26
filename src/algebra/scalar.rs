@@ -44,7 +44,7 @@ pub struct StarknetFrConfig;
 /// the order of the curve's group, see [here](https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve)
 /// for more information
 pub(crate) type ScalarInner = Fp256<MontBackend<StarknetFrConfig, 4>>;
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 /// A wrapper around the inner scalar that allows us to implement foreign traits for the `Scalar`
 pub struct Scalar(pub(crate) ScalarInner);
 
@@ -53,7 +53,7 @@ pub struct Scalar(pub(crate) ScalarInner);
 // -------------------
 
 impl Scalar {
-    /// The Arkworks prime field type that underlies the `Scalar`
+    /// The underlying field that the scalar wraps
     pub type Field = ScalarInner;
 
     /// The scalar field's additive identity

@@ -44,14 +44,7 @@ pub enum ExecutorMessage {
     /// A result of an operation
     Result(OpResult),
     /// An operation that is ready for execution
-    Op {
-        /// The id allocated to this operation's result
-        id: ResultId,
-        /// The args of the operations
-        args: Vec<ResultId>,
-        /// The operation type
-        op_type: OperationType,
-    },
+    Op(Operation),
     /// Indicates that the executor should shut down
     Shutdown,
 }
@@ -92,9 +85,7 @@ impl Executor {
             if let Some(job) = self.job_queue.pop() {
                 match job {
                     ExecutorMessage::Result(res) => self.handle_new_result(res),
-                    ExecutorMessage::Op { id, args, op_type } => {
-                        self.handle_new_operation(id, args, op_type)
-                    }
+                    ExecutorMessage::Op(operation) => self.handle_new_operation(operation),
                     ExecutorMessage::Shutdown => {
                         log::debug!("executor shutting down");
 
@@ -129,7 +120,6 @@ impl Executor {
 
         // Lock the fabric elements needed
         let mut locked_results = self.fabric.results.write().expect("results lock poisoned");
-
         let prev = locked_results.insert(result.id, result);
         assert!(prev.is_none(), "duplicate result id: {id:?}");
 
@@ -154,7 +144,7 @@ impl Executor {
                     .iter()
                     .map(|id| locked_results.get(*id).unwrap().value.clone())
                     .collect::<Vec<_>>();
-                self.execute_operation(*op_id, op.op_type, inputs);
+                self.execute_operation(op, inputs);
             }
         }
         // Wake all tasks awaiting this result
@@ -165,64 +155,67 @@ impl Executor {
     }
 
     /// Handle a new operation
-    fn handle_new_operation(
-        &mut self,
-        id: ResultId,
-        args: Vec<ResultId>,
-        operation: OperationType,
-    ) {
+    fn handle_new_operation(&mut self, mut op: Operation) {
         // Acquire all necessary locks
         let locked_results = self.fabric.results.read().expect("results lock poisoned");
 
         // Check if all arguments are ready
-        let ready = args
+        let ready = op
+            .args
             .iter()
             .filter_map(|id| locked_results.get(*id))
             .map(|res| res.value.clone())
             .collect_vec();
-        let inflight_args = args.len() - ready.len();
+        let inflight_args = op.args.len() - ready.len();
+        op.inflight_args = inflight_args;
 
         // If the operation is ready for execution, do so
         if inflight_args == 0 {
-            self.execute_operation(id, operation, ready);
+            self.execute_operation(op, ready);
             return;
         }
 
         // Otherwise, add the operation to the in-flight operations list and the dependency map
-        for arg in args.iter() {
+        for arg in op.args.iter() {
             let entry = self.dependencies.entry_mut(*arg);
             if entry.is_none() {
                 *entry = Some(Vec::new());
             }
 
-            entry.as_mut().unwrap().push(id);
+            entry.as_mut().unwrap().push(op.id);
         }
 
-        self.operations.insert(
-            id,
-            Operation {
-                id,
-                inflight_args,
-                args,
-                op_type: operation,
-            },
-        );
+        self.operations.insert(op.id, op);
     }
 
     /// Executes an operation whose arguments are ready
-    fn execute_operation(&self, id: ResultId, operation: OperationType, inputs: Vec<ResultValue>) {
-        match operation {
+    fn execute_operation(&self, op: Operation, inputs: Vec<ResultValue>) {
+        let result_ids = op.result_ids();
+        match op.op_type {
             OperationType::Gate { function } => {
+                let value = (function)(inputs);
+                self.job_queue.push(ExecutorMessage::Result(OpResult {
+                    id: op.result_id,
+                    value,
+                }))
+            }
+
+            OperationType::GateBatch { function } => {
                 let output = (function)(inputs);
-                self.job_queue
-                    .push(ExecutorMessage::Result(OpResult { id, value: output }))
+                for (result_id, value) in result_ids.into_iter().zip(output.into_iter()) {
+                    self.job_queue.push(ExecutorMessage::Result(OpResult {
+                        id: result_id,
+                        value,
+                    }))
+                }
             }
 
             OperationType::Network { function } => {
                 // Derive a network payload from the gate inputs and forward it to the outbound buffer
+                let result_id = result_ids[0];
                 let payload = (function)(inputs);
                 let outbound = NetworkOutbound {
-                    op_id: id,
+                    result_id,
                     payload: payload.clone(),
                 };
 
@@ -234,7 +227,7 @@ impl Executor {
                 // On a `send`, the local party receives a copy of the value placed as the result of
                 // the network operation, so we must re-enqueue the result
                 self.job_queue.push(ExecutorMessage::Result(OpResult {
-                    id,
+                    id: result_id,
                     value: payload.into(),
                 }))
             }

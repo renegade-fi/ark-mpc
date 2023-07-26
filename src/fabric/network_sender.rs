@@ -92,7 +92,7 @@ impl<N: MpcNetwork> NetworkSender<N> {
     /// Handle an inbound message
     async fn handle_message(&mut self, message: NetworkOutbound) {
         self.result_queue.push(ExecutorMessage::Result(OpResult {
-            id: message.op_id,
+            id: message.result_id,
             value: message.payload.into(),
         }));
     }

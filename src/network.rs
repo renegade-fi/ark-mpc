@@ -36,7 +36,7 @@ const ERR_READ_MESSAGE_LENGTH: &str = "error reading message length from stream"
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkOutbound {
     /// The operation ID that generated this message
-    pub op_id: ResultId,
+    pub result_id: ResultId,
     /// The body of the message
     pub payload: NetworkPayload,
 }
@@ -48,6 +48,8 @@ pub enum NetworkPayload {
     Bytes(Vec<u8>),
     /// A scalar value
     Scalar(Scalar),
+    /// A batch of scalar values
+    ScalarBatch(Vec<Scalar>),
     /// A point on the curve
     Point(StarkPoint),
 }

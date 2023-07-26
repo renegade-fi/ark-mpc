@@ -43,10 +43,6 @@ pub const PARTY0: u64 = 0;
 /// The second party
 pub const PARTY1: u64 = 1;
 
-// -----------
-// | Helpers |
-// -----------
-
 /// Generate a random curve point by multiplying a random scalar with the
 /// Stark curve group generator
 pub fn random_point() -> StarkPoint {

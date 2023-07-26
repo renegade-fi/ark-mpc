@@ -43,6 +43,8 @@ pub enum ResultValue {
     Bytes(Vec<u8>),
     /// A scalar value
     Scalar(Scalar),
+    /// A batch of scalars
+    ScalarBatch(Vec<Scalar>),
     /// A point on the curve
     Point(StarkPoint),
     /// An MPC scalar value
@@ -56,6 +58,7 @@ impl From<NetworkPayload> for ResultValue {
         match value {
             NetworkPayload::Bytes(bytes) => ResultValue::Bytes(bytes),
             NetworkPayload::Scalar(scalar) => ResultValue::Scalar(scalar),
+            NetworkPayload::ScalarBatch(scalars) => ResultValue::ScalarBatch(scalars),
             NetworkPayload::Point(point) => ResultValue::Point(point),
         }
     }
@@ -87,6 +90,15 @@ impl From<ResultValue> for Scalar {
         match value {
             ResultValue::Scalar(scalar) => scalar,
             _ => panic!("Cannot cast {:?} to scalar", value),
+        }
+    }
+}
+
+impl From<ResultValue> for Vec<Scalar> {
+    fn from(value: ResultValue) -> Self {
+        match value {
+            ResultValue::ScalarBatch(scalars) => scalars,
+            _ => panic!("Cannot cast {:?} to scalar batch", value),
         }
     }
 }

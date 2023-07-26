@@ -2,6 +2,9 @@
 FROM rust:1.65-slim-buster AS builder
 
 WORKDIR /build
+COPY ./rust-toolchain ./rust-toolchain
+RUN rustup install $(cat rust-toolchain)
+
 # Place a set of dummy sources in the path, build the dummy executable
 # to cache built dependencies, then bulid the full executable
 RUN mkdir src

@@ -79,6 +79,16 @@ impl AuthenticatedScalarResult {
         }
     }
 
+    /// Get the raw share as a `ScalarResult`
+    pub fn share(&self) -> ScalarResult {
+        self.value.to_scalar()
+    }
+
+    /// Get a reference to the underlying MPC fabric
+    pub fn fabric(&self) -> &MpcFabric {
+        &self.fabric
+    }
+
     /// Get the ids of the results that must be awaited
     /// before the value is ready
     pub fn ids(&self) -> Vec<ResultId> {

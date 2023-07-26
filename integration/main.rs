@@ -117,7 +117,7 @@ fn main() {
         if args.party == 0 {
             Handle::current()
                 .block_on(net.send_message(NetworkOutbound {
-                    op_id: 1,
+                    result_id: 1,
                     payload: NetworkPayload::Bytes(vec![1u8]),
                 }))
                 .unwrap();
