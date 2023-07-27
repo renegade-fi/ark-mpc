@@ -675,6 +675,14 @@ impl MpcFabric {
         ResultHandle::new(id, self.clone())
     }
 
+    /// Allocate a batch of points in the fabric
+    pub fn allocate_points(&self, values: Vec<StarkPoint>) -> Vec<ResultHandle<StarkPoint>> {
+        values
+            .into_iter()
+            .map(|value| self.allocate_point(value))
+            .collect_vec()
+    }
+
     /// Send a value to the peer, placing the identity in the local result buffer at the send ID
     pub fn send_value<T: From<ResultValue> + Into<NetworkPayload>>(
         &self,

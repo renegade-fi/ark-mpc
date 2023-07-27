@@ -55,6 +55,22 @@ pub(crate) fn assert_points_eq(a: StarkPoint, b: StarkPoint) -> Result<(), Strin
     }
 }
 
+/// Compares two batches of points
+pub(crate) fn assert_point_batches_eq(
+    a: Vec<StarkPoint>,
+    b: Vec<StarkPoint>,
+) -> Result<(), String> {
+    if a.len() != b.len() {
+        return Err(format!("Lengths differ: {a:?} != {b:?}"));
+    }
+
+    for (a, b) in a.into_iter().zip(b.into_iter()) {
+        assert_points_eq(a, b)?;
+    }
+
+    Ok(())
+}
+
 /// Assert that an error occurred during MPC execution
 pub(crate) fn assert_err<T, E>(res: Result<T, E>) -> Result<(), String> {
     if res.is_err() {
@@ -108,6 +124,7 @@ pub(crate) fn share_scalar(
     authenticated_value.mpc_share()
 }
 
+/// Share a batch of scalars
 pub(crate) fn share_scalar_batch(
     values: Vec<Scalar>,
     sender: PartyId,
@@ -130,6 +147,18 @@ pub(crate) fn share_point(
     // Share the point then cast to an `MpcStarkPoint`
     let authenticated_point = share_authenticated_point(value, sender, test_args);
     authenticated_point.mpc_share()
+}
+
+/// Share a batch of points
+pub(crate) fn share_point_batch(
+    values: Vec<StarkPoint>,
+    sender: PartyId,
+    test_args: &IntegrationTestArgs,
+) -> Vec<MpcStarkPointResult> {
+    values
+        .into_iter()
+        .map(|point| share_point(point, sender, test_args))
+        .collect_vec()
 }
 
 /// Send or receive a secret shared scalar from the given party and allocate it as an authenticated value

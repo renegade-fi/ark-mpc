@@ -21,12 +21,20 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError
 use itertools::Itertools;
 use serde::{de::Error as DeError, Deserialize, Serialize};
 
-use crate::fabric::{ResultHandle, ResultValue};
+use crate::{
+    algebra::{
+        authenticated_scalar::AUTHENTICATED_SCALAR_RESULT_LEN,
+        authenticated_stark_point::AUTHENTICATED_STARK_POINT_RESULT_LEN,
+    },
+    fabric::{ResultHandle, ResultValue},
+};
 
 use super::{
     authenticated_scalar::AuthenticatedScalarResult,
     authenticated_stark_point::AuthenticatedStarkPointResult,
     macros::{impl_borrow_variants, impl_commutative},
+    mpc_scalar::MpcScalarResult,
+    mpc_stark_point::MpcStarkPointResult,
     scalar::{Scalar, ScalarInner, ScalarResult, StarknetBaseFelt, BASE_FIELD_BYTES},
 };
 
@@ -163,6 +171,12 @@ impl StarkPoint {
     }
 }
 
+impl From<StarkPointInner> for StarkPoint {
+    fn from(p: StarkPointInner) -> Self {
+        StarkPoint(p)
+    }
+}
+
 // ------------------------------------
 // | Curve Arithmetic Implementations |
 // ------------------------------------
@@ -190,6 +204,8 @@ impl_borrow_variants!(StarkPoint, Add, add, +, StarkPoint);
 
 /// A type alias for a result that resolves to a `StarkPoint`
 pub type StarkPointResult = ResultHandle<StarkPoint>;
+/// A type alias for a result that resolves to a batch of `StarkPoint`s
+pub type BatchStarkPointResult = ResultHandle<Vec<StarkPoint>>;
 
 impl Add<&StarkPointResult> for &StarkPointResult {
     type Output = StarkPointResult;
@@ -217,6 +233,32 @@ impl Add<&StarkPoint> for &StarkPointResult {
 }
 impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPoint);
 impl_commutative!(StarkPointResult, Add, add, +, StarkPoint);
+
+impl StarkPointResult {
+    /// Add two batches of `StarkPoint`s together
+    pub fn batch_add(a: &[StarkPointResult], b: &[StarkPointResult]) -> Vec<StarkPointResult> {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "batch_add cannot compute on vectors of unequal length"
+        );
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().chain(b.iter()).map(|r| r.id).collect_vec();
+
+        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+            let a = args.drain(..n).map(StarkPoint::from).collect_vec();
+            let b = args.into_iter().map(StarkPoint::from).collect_vec();
+
+            a.into_iter()
+                .zip(b.into_iter())
+                .map(|(a, b)| a + b)
+                .map(ResultValue::Point)
+                .collect_vec()
+        })
+    }
+}
 
 // === AddAssign === //
 
@@ -275,6 +317,32 @@ impl Sub<&StarkPointResult> for &StarkPoint {
     }
 }
 
+impl StarkPointResult {
+    /// Subtract two batches of `StarkPoint`s
+    pub fn batch_sub(a: &[StarkPointResult], b: &[StarkPointResult]) -> Vec<StarkPointResult> {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "batch_sub cannot compute on vectors of unequal length"
+        );
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().chain(b.iter()).map(|r| r.id).collect_vec();
+
+        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+            let a = args.drain(..n).map(StarkPoint::from).collect_vec();
+            let b = args.into_iter().map(StarkPoint::from).collect_vec();
+
+            a.into_iter()
+                .zip(b.into_iter())
+                .map(|(a, b)| a - b)
+                .map(ResultValue::Point)
+                .collect_vec()
+        })
+    }
+}
+
 // === SubAssign === //
 
 impl SubAssign for StarkPoint {
@@ -305,6 +373,23 @@ impl Neg for &StarkPointResult {
     }
 }
 impl_borrow_variants!(StarkPointResult, Neg, neg, -);
+
+impl StarkPointResult {
+    /// Negate a batch of `StarkPoint`s
+    pub fn batch_neg(a: &[StarkPointResult]) -> Vec<StarkPointResult> {
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().map(|r| r.id).collect_vec();
+
+        fabric.new_batch_gate_op(all_ids, n /* output_arity */, |args| {
+            args.into_iter()
+                .map(StarkPoint::from)
+                .map(StarkPoint::neg)
+                .map(ResultValue::Point)
+                .collect_vec()
+        })
+    }
+}
 
 // === Scalar Multiplication === //
 
@@ -360,6 +445,71 @@ impl Mul<&ScalarResult> for &StarkPointResult {
 }
 impl_borrow_variants!(StarkPointResult, Mul, mul, *, ScalarResult);
 impl_commutative!(StarkPointResult, Mul, mul, *, ScalarResult);
+
+impl StarkPointResult {
+    /// Multiply a batch of `StarkPointResult`s with a batch of `ScalarResult`s
+    pub fn batch_mul(a: &[ScalarResult], b: &[StarkPointResult]) -> Vec<StarkPointResult> {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "batch_mul cannot compute on vectors of unequal length"
+        );
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .map(|a| a.id())
+            .chain(b.iter().map(|b| b.id()))
+            .collect_vec();
+
+        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+            let a = args.drain(..n).map(Scalar::from).collect_vec();
+            let b = args.into_iter().map(StarkPoint::from).collect_vec();
+
+            a.into_iter()
+                .zip(b.into_iter())
+                .map(|(a, b)| a * b)
+                .map(ResultValue::Point)
+                .collect_vec()
+        })
+    }
+
+    /// Multiply a batch of `MpcScalarResult`s with a batch of `StarkPointResult`s
+    pub fn batch_mul_shared(
+        a: &[MpcScalarResult],
+        b: &[StarkPointResult],
+    ) -> Vec<MpcStarkPointResult> {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "batch_mul_shared cannot compute on vectors of unequal length"
+        );
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .map(|a| a.id())
+            .chain(b.iter().map(|b| b.id()))
+            .collect_vec();
+
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+                let a = args.drain(..n).map(Scalar::from).collect_vec();
+                let b = args.into_iter().map(StarkPoint::from).collect_vec();
+
+                a.into_iter()
+                    .zip(b.into_iter())
+                    .map(|(a, b)| a * b)
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+}
 
 // === MulAssign === //
 
@@ -442,7 +592,22 @@ impl StarkPoint {
             "msm cannot compute on vectors of unequal length"
         );
 
-        Self::msm_results_iter(scalars.iter().cloned(), points.iter().copied())
+        let fabric = scalars[0].fabric();
+        let scalar_ids = scalars.iter().map(|s| s.id()).collect_vec();
+
+        let points = points.iter().map(StarkPoint::to_affine).collect_vec();
+        fabric.new_gate_op(scalar_ids, move |args| {
+            let scalars = args
+                .into_iter()
+                .map(Scalar::from)
+                .map(|s| s.inner())
+                .collect_vec();
+
+            StarkPointInner::msm(&points, &scalars)
+                .map(StarkPoint)
+                .map(ResultValue::Point)
+                .unwrap()
+        })
     }
 
     /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
@@ -452,11 +617,10 @@ impl StarkPoint {
         I: IntoIterator<Item = ScalarResult>,
         J: IntoIterator<Item = StarkPoint>,
     {
-        scalars
-            .into_iter()
-            .zip(points.into_iter())
-            .map(|(s, p)| s * p)
-            .sum()
+        Self::msm_results(
+            &scalars.into_iter().collect_vec(),
+            &points.into_iter().collect_vec(),
+        )
     }
 
     /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
@@ -470,42 +634,93 @@ impl StarkPoint {
             "msm cannot compute on vectors of unequal length"
         );
 
-        Self::msm_authenticated_iter(scalars.iter().cloned(), points.iter().copied())
+        let n = scalars.len();
+        let fabric = scalars[0].fabric();
+        let scalar_ids = scalars.iter().flat_map(|s| s.ids()).collect_vec();
+
+        let points = points.iter().map(StarkPoint::to_affine).collect_vec();
+        let res: Vec<StarkPointResult> = fabric.new_batch_gate_op(
+            scalar_ids,
+            AUTHENTICATED_SCALAR_RESULT_LEN, /* output_arity */
+            move |args| {
+                let mut shares = Vec::with_capacity(n);
+                let mut macs = Vec::with_capacity(n);
+                let mut modifiers = Vec::with_capacity(n);
+
+                for chunk in args.chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN) {
+                    shares.push(Scalar::from(chunk[0].to_owned()).inner());
+                    macs.push(Scalar::from(chunk[1].to_owned()).inner());
+                    modifiers.push(Scalar::from(chunk[2].to_owned()).inner());
+                }
+
+                // Compute the MSM of the point
+                vec![
+                    StarkPointInner::msm(&points, &shares).unwrap(),
+                    StarkPointInner::msm(&points, &macs).unwrap(),
+                    StarkPointInner::msm(&points, &modifiers).unwrap(),
+                ]
+                .into_iter()
+                .map(StarkPoint::from)
+                .map(ResultValue::Point)
+                .collect_vec()
+            },
+        );
+
+        AuthenticatedStarkPointResult {
+            share: res[0].to_owned().into(),
+            mac: res[1].to_owned().into(),
+            public_modifier: res[2].to_owned(),
+        }
     }
 
     /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
     /// as iterators
     /// This method assumes that the iterators are of the same length
-    ///
-    /// TODO: One potential optimization is to chunk the gates, so that we can perform an optimized MSM
-    /// gate level on a chunk as the chunk becomes available
-    ///
-    /// TODO: We may be able to compute a partial MSM on the results that are already present in the
-    /// result buffer using an optimized algorithm
     pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedStarkPointResult
     where
         I: IntoIterator<Item = AuthenticatedScalarResult>,
         J: IntoIterator<Item = StarkPoint>,
     {
-        scalars
-            .into_iter()
-            .zip(points.into_iter())
-            .map(|(s, p)| s * p)
-            .sum()
+        let scalars: Vec<AuthenticatedScalarResult> = scalars.into_iter().collect();
+        let points: Vec<StarkPoint> = points.into_iter().collect();
+
+        Self::msm_authenticated(&scalars, &points)
     }
 }
 
 impl StarkPointResult {
     /// Compute the multiscalar multiplication of the given scalars and points
     pub fn msm_results(scalars: &[ScalarResult], points: &[StarkPointResult]) -> StarkPointResult {
+        assert!(!scalars.is_empty(), "msm cannot compute on an empty vector");
         assert_eq!(
             scalars.len(),
             points.len(),
             "msm cannot compute on vectors of unequal length"
         );
 
-        // Re-implement the same code as below to avoid cloning the results
-        scalars.iter().zip(points.iter()).map(|(s, p)| s * p).sum()
+        let n = scalars.len();
+        let fabric = scalars[0].fabric();
+        let all_ids = scalars
+            .iter()
+            .map(|s| s.id())
+            .chain(points.iter().map(|p| p.id()))
+            .collect_vec();
+
+        fabric.new_gate_op(all_ids, move |mut args| {
+            let scalars = args
+                .drain(..n)
+                .map(Scalar::from)
+                .map(|s| s.inner())
+                .collect_vec();
+            let points = args
+                .into_iter()
+                .map(StarkPoint::from)
+                .map(|p| p.to_affine())
+                .collect_vec();
+
+            let res = StarkPointInner::msm(&points, &scalars).unwrap();
+            ResultValue::Point(res.into())
+        })
     }
 
     /// Compute the multiscalar multiplication of the given scalars and points
@@ -517,11 +732,10 @@ impl StarkPointResult {
         I: IntoIterator<Item = ScalarResult>,
         J: IntoIterator<Item = StarkPointResult>,
     {
-        scalars
-            .into_iter()
-            .zip(points.into_iter())
-            .map(|(s, p)| s * p)
-            .sum()
+        Self::msm_results(
+            &scalars.into_iter().collect_vec(),
+            &points.into_iter().collect_vec(),
+        )
     }
 
     /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
@@ -535,8 +749,56 @@ impl StarkPointResult {
             "msm cannot compute on vectors of unequal length"
         );
 
-        // Re-implement the same code as below to avoid cloning the results
-        scalars.iter().zip(points.iter()).map(|(s, p)| s * p).sum()
+        let n = scalars.len();
+        let fabric = scalars[0].fabric();
+        let all_ids = scalars
+            .iter()
+            .flat_map(|s| s.ids())
+            .chain(points.iter().map(|p| p.id()))
+            .collect_vec();
+
+        let res = fabric.new_batch_gate_op(
+            all_ids,
+            AUTHENTICATED_STARK_POINT_RESULT_LEN, /* output_arity */
+            move |mut args| {
+                let mut shares = Vec::with_capacity(n);
+                let mut macs = Vec::with_capacity(n);
+                let mut modifiers = Vec::with_capacity(n);
+
+                for mut chunk in args
+                    .drain(..AUTHENTICATED_SCALAR_RESULT_LEN * n)
+                    .map(Scalar::from)
+                    .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
+                    .into_iter()
+                {
+                    shares.push(chunk.next().unwrap().inner());
+                    macs.push(chunk.next().unwrap().inner());
+                    modifiers.push(chunk.next().unwrap().inner());
+                }
+
+                let points = args
+                    .into_iter()
+                    .map(StarkPoint::from)
+                    .map(|p| p.to_affine())
+                    .collect_vec();
+
+                vec![
+                    StarkPointInner::msm(&points, &shares).unwrap(),
+                    StarkPointInner::msm(&points, &macs).unwrap(),
+                    StarkPointInner::msm(&points, &modifiers).unwrap(),
+                ]
+                .into_iter()
+                .map(StarkPoint::from)
+                .map(ResultValue::Point)
+                .collect_vec()
+            },
+        );
+
+        AuthenticatedStarkPointResult {
+            share: res[0].to_owned().into(),
+            mac: res[1].to_owned().into(),
+            public_modifier: res[2].to_owned(),
+        }
     }
 
     /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
@@ -546,11 +808,10 @@ impl StarkPointResult {
         I: IntoIterator<Item = AuthenticatedScalarResult>,
         J: IntoIterator<Item = StarkPointResult>,
     {
-        scalars
-            .into_iter()
-            .zip(points.into_iter())
-            .map(|(s, p)| s * p)
-            .sum()
+        let scalars: Vec<AuthenticatedScalarResult> = scalars.into_iter().collect();
+        let points: Vec<StarkPointResult> = points.into_iter().collect();
+
+        Self::msm_authenticated(&scalars, &points)
     }
 }
 

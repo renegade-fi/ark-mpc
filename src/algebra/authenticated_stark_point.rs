@@ -27,6 +27,9 @@ use super::{
     stark_curve::StarkPointResult,
 };
 
+/// The number of underlying results in an `AuthenticatedStarkPointResult`
+pub(crate) const AUTHENTICATED_STARK_POINT_RESULT_LEN: usize = 3;
+
 /// A maliciously secure wrapper around `MpcStarkPoint` that includes a MAC as per
 /// the SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
 #[derive(Clone)]

@@ -3,6 +3,8 @@
 
 use std::ops::{Add, Mul, Neg, Sub};
 
+use itertools::Itertools;
+
 use crate::{
     fabric::{ResultHandle, ResultValue},
     network::NetworkPayload,
@@ -13,7 +15,7 @@ use super::{
     macros::{impl_borrow_variants, impl_commutative},
     mpc_scalar::MpcScalarResult,
     scalar::{Scalar, ScalarResult},
-    stark_curve::{StarkPoint, StarkPointResult},
+    stark_curve::{BatchStarkPointResult, StarkPoint, StarkPointResult},
 };
 
 /// Defines a secret shared type of a curve point
@@ -66,6 +68,51 @@ impl MpcStarkPointResult {
             };
 
         share0 + share1
+    }
+
+    /// Open a batch of values
+    pub fn open_batch(values: &[MpcStarkPointResult]) -> Vec<StarkPointResult> {
+        if values.is_empty() {
+            return Vec::new();
+        }
+
+        let n = values.len();
+        let fabric = &values[0].fabric();
+        let all_ids = values.iter().map(|v| v.id()).collect_vec();
+        let send_my_shares = |args: Vec<ResultValue>| {
+            NetworkPayload::PointBatch(args.into_iter().map(|arg| arg.into()).collect_vec())
+        };
+
+        // Party zero sends first then receives
+        let (party0_values, party1_values): (BatchStarkPointResult, BatchStarkPointResult) =
+            if fabric.party_id() == PARTY0 {
+                let party0_values = fabric.new_network_op(all_ids, send_my_shares);
+                let party1_values = fabric.receive_value();
+
+                (party0_values, party1_values)
+            } else {
+                let party0_values = fabric.receive_value();
+                let party1_values = fabric.new_network_op(all_ids, send_my_shares);
+
+                (party0_values, party1_values)
+            };
+
+        // Create a gate to component-wise add the shares
+        fabric.new_batch_gate_op(
+            vec![party0_values.id(), party1_values.id()],
+            n, /* output_arity */
+            |mut args| {
+                let party0_values: Vec<StarkPoint> = args.remove(0).into();
+                let party1_values: Vec<StarkPoint> = args.remove(0).into();
+
+                party0_values
+                    .into_iter()
+                    .zip(party1_values.into_iter())
+                    .map(|(x, y)| x + y)
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            },
+        )
     }
 }
 
@@ -137,6 +184,76 @@ impl Add<&MpcStarkPointResult> for &MpcStarkPointResult {
 }
 impl_borrow_variants!(MpcStarkPointResult, Add, add, +, MpcStarkPointResult);
 
+impl MpcStarkPointResult {
+    /// Add two batches of values
+    pub fn batch_add(
+        a: &[MpcStarkPointResult],
+        b: &[MpcStarkPointResult],
+    ) -> Vec<MpcStarkPointResult> {
+        assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
+        if a.is_empty() {
+            return Vec::new();
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().chain(b.iter()).map(|v| v.id()).collect_vec();
+
+        // Create a gate to component-wise add the shares
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let points = args.into_iter().map(StarkPoint::from).collect_vec();
+                let (a, b) = points.split_at(n);
+
+                a.iter()
+                    .zip(b.iter())
+                    .map(|(x, y)| x + y)
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+
+    /// Add a batch of `MpcStarkPointResults` to a batch of `StarkPointResult`s
+    pub fn batch_add_public(
+        a: &[MpcStarkPointResult],
+        b: &[StarkPointResult],
+    ) -> Vec<MpcStarkPointResult> {
+        assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
+        if a.is_empty() {
+            return Vec::new();
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .map(|v| v.id())
+            .chain(b.iter().map(|b| b.id))
+            .collect_vec();
+
+        // Add the shares in a batch gate
+        let party_id = fabric.party_id();
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+                let lhs_points = args.drain(..n).map(StarkPoint::from).collect_vec();
+                let rhs_points = args.into_iter().map(StarkPoint::from).collect_vec();
+
+                lhs_points
+                    .into_iter()
+                    .zip(rhs_points.into_iter())
+                    .map(|(x, y)| if party_id == PARTY0 { x + y } else { x })
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+}
+
 // === Subtraction === //
 
 impl Sub<&StarkPoint> for &MpcStarkPointResult {
@@ -198,6 +315,76 @@ impl Sub<&MpcStarkPointResult> for &MpcStarkPointResult {
 }
 impl_borrow_variants!(MpcStarkPointResult, Sub, sub, -, MpcStarkPointResult);
 
+impl MpcStarkPointResult {
+    /// Subtract two batches of values
+    pub fn batch_sub(
+        a: &[MpcStarkPointResult],
+        b: &[MpcStarkPointResult],
+    ) -> Vec<MpcStarkPointResult> {
+        assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
+        if a.is_empty() {
+            return Vec::new();
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().chain(b.iter()).map(|v| v.id()).collect_vec();
+
+        // Create a gate to component-wise add the shares
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let points = args.into_iter().map(StarkPoint::from).collect_vec();
+                let (a, b) = points.split_at(n);
+
+                a.iter()
+                    .zip(b.iter())
+                    .map(|(x, y)| x - y)
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+
+    /// Subtract a batch of `MpcStarkPointResults` to a batch of `StarkPointResult`s
+    pub fn batch_sub_public(
+        a: &[MpcStarkPointResult],
+        b: &[StarkPointResult],
+    ) -> Vec<MpcStarkPointResult> {
+        assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
+        if a.is_empty() {
+            return Vec::new();
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .map(|v| v.id())
+            .chain(b.iter().map(|b| b.id))
+            .collect_vec();
+
+        // Add the shares in a batch gate
+        let party_id = fabric.party_id();
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+                let lhs_points = args.drain(..n).map(StarkPoint::from).collect_vec();
+                let rhs_points = args.into_iter().map(StarkPoint::from).collect_vec();
+
+                lhs_points
+                    .into_iter()
+                    .zip(rhs_points.into_iter())
+                    .map(|(x, y)| if party_id == PARTY0 { x - y } else { x })
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+}
+
 // === Negation === //
 
 impl Neg for &MpcStarkPointResult {
@@ -213,6 +400,34 @@ impl Neg for &MpcStarkPointResult {
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Neg, neg, -);
+
+impl MpcStarkPointResult {
+    /// Negate a batch of values
+    pub fn batch_neg(values: &[MpcStarkPointResult]) -> Vec<MpcStarkPointResult> {
+        if values.is_empty() {
+            return Vec::new();
+        }
+
+        let n = values.len();
+        let fabric = values[0].fabric();
+        let all_ids = values.iter().map(|v| v.id()).collect_vec();
+
+        // Create a gate to component-wise add the shares
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let points = args.into_iter().map(StarkPoint::from).collect_vec();
+
+                points
+                    .into_iter()
+                    .map(|x| -x)
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+}
 
 // === Scalar Multiplication === //
 
@@ -271,3 +486,101 @@ impl Mul<&MpcScalarResult> for &MpcStarkPointResult {
 }
 impl_borrow_variants!(MpcStarkPointResult, Mul, mul, *, MpcScalarResult);
 impl_commutative!(MpcStarkPointResult, Mul, mul, *, MpcScalarResult);
+
+impl MpcStarkPointResult {
+    /// Multiply a batch of `MpcStarkPointResult`s with a batch of `MpcScalarResult`s
+    #[allow(non_snake_case)]
+    pub fn batch_mul(a: &[MpcScalarResult], b: &[MpcStarkPointResult]) -> Vec<MpcStarkPointResult> {
+        assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
+        if a.is_empty() {
+            return Vec::new();
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+
+        // Sample a set of beaver triples for the multiplications
+        let (beaver_a, beaver_b, beaver_c) = fabric.next_beaver_triple_batch(n);
+        let beaver_b_gen = MpcStarkPointResult::batch_mul_generator(&beaver_b);
+
+        let masked_rhs = MpcScalarResult::batch_sub(a, &beaver_a);
+        let masked_lhs = MpcStarkPointResult::batch_sub(b, &beaver_b_gen);
+
+        let eG_open = MpcStarkPointResult::open_batch(&masked_lhs);
+        let d_open = MpcScalarResult::open_batch(&masked_rhs);
+
+        // Identity [x * yG] = deG + d[bG] + [a]eG + [c]G
+        let deG = StarkPointResult::batch_mul(&d_open, &eG_open);
+        let dbG = MpcStarkPointResult::batch_mul_public(&d_open, &beaver_b_gen);
+        let aeG = StarkPointResult::batch_mul_shared(&beaver_a, &eG_open);
+        let cG = MpcStarkPointResult::batch_mul_generator(&beaver_c);
+
+        let de_db_G = MpcStarkPointResult::batch_add_public(&dbG, &deG);
+        let ae_c_G = MpcStarkPointResult::batch_add(&aeG, &cG);
+
+        MpcStarkPointResult::batch_add(&de_db_G, &ae_c_G)
+    }
+
+    /// Multiply a batch of `MpcStarkPointResult`s with a batch of `ScalarResult`s
+    pub fn batch_mul_public(
+        a: &[ScalarResult],
+        b: &[MpcStarkPointResult],
+    ) -> Vec<MpcStarkPointResult> {
+        assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
+        if a.is_empty() {
+            return Vec::new();
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .map(|v| v.id())
+            .chain(b.iter().map(|b| b.id()))
+            .collect_vec();
+
+        // Multiply the shares in a batch gate
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+                let scalars = args.drain(..n).map(Scalar::from).collect_vec();
+                let points = args.into_iter().map(StarkPoint::from).collect_vec();
+
+                scalars
+                    .into_iter()
+                    .zip(points.into_iter())
+                    .map(|(x, y)| x * y)
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+
+    /// Multiply a batch of `MpcScalarResult`s by the generator
+    pub fn batch_mul_generator(a: &[MpcScalarResult]) -> Vec<MpcStarkPointResult> {
+        if a.is_empty() {
+            return Vec::new();
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().map(|v| v.id()).collect_vec();
+
+        // Multiply the shares in a batch gate
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let scalars = args.into_iter().map(Scalar::from).collect_vec();
+                let generator = StarkPoint::generator();
+
+                scalars
+                    .into_iter()
+                    .map(|x| x * generator)
+                    .map(ResultValue::Point)
+                    .collect_vec()
+            })
+            .into_iter()
+            .map(MpcStarkPointResult::from)
+            .collect_vec()
+    }
+}
