@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use futures::Future;
+use futures::{future::join_all, Future};
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{
@@ -76,11 +76,25 @@ pub(crate) fn await_result_batch<R, T: Future<Output = R> + Clone>(res: &[T]) ->
         .collect_vec()
 }
 
+/// Await a result that may error
 pub(crate) fn await_result_with_error<R, E: Debug, T: Future<Output = Result<R, E>>>(
     res: T,
 ) -> Result<R, String> {
     Handle::current()
         .block_on(res)
+        .map_err(|err| format!("Error awaiting result: {:?}", err))
+}
+
+/// Await a batch of results that may error
+pub(crate) fn await_batch_result_with_error<R, E, T>(res: Vec<T>) -> Result<Vec<R>, String>
+where
+    E: Debug,
+    T: Future<Output = Result<R, E>>,
+{
+    Handle::current()
+        .block_on(join_all(res))
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("Error awaiting result: {:?}", err))
 }
 
@@ -125,6 +139,15 @@ pub(crate) fn share_authenticated_scalar(
     test_args: &IntegrationTestArgs,
 ) -> AuthenticatedScalarResult {
     test_args.fabric.share_scalar(value, sender)
+}
+
+/// Send or receive a batch of secret shared scalars from the given party and allocate them as authenticated values
+pub(crate) fn share_authenticated_scalar_batch(
+    values: Vec<Scalar>,
+    sender: PartyId,
+    test_args: &IntegrationTestArgs,
+) -> Vec<AuthenticatedScalarResult> {
+    test_args.fabric.batch_share_scalar(values, sender)
 }
 
 /// Send or receive a secret shared point from the given party and allocate it as an authenticated value

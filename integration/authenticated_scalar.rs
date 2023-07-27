@@ -1,16 +1,22 @@
 //! Integration tests for arithmetic on the `AuthenticatedScalar` type which provides
 //! a malicious-secure primitive
 
+use itertools::Itertools;
 use mpc_stark::{
-    algebra::{authenticated_scalar::test_helpers::*, scalar::Scalar},
+    algebra::{
+        authenticated_scalar::{test_helpers::*, AuthenticatedScalarResult},
+        scalar::Scalar,
+    },
     ResultValue, PARTY0, PARTY1,
 };
 use rand::thread_rng;
+use std::ops::Neg;
 
 use crate::{
     helpers::{
-        assert_err, assert_scalars_eq, await_result, await_result_with_error,
-        share_authenticated_scalar, share_plaintext_value,
+        assert_err, assert_scalar_batches_eq, assert_scalars_eq, await_batch_result_with_error,
+        await_result, await_result_batch, await_result_with_error, share_authenticated_scalar,
+        share_authenticated_scalar_batch, share_plaintext_value, share_plaintext_values_batch,
     },
     IntegrationTest, IntegrationTestArgs,
 };
@@ -137,6 +143,65 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_scalars_eq(expected_res, res_open)
 }
 
+/// Test batch addition between two secret shared values
+fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a batch of values
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let mut rng = thread_rng();
+    let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+    let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
+
+    // Share the values with the counterparty and compute the expected result
+    let party0_value = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let party1_value = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_value)
+        .into_iter()
+        .zip(await_result_batch(&party1_value).into_iter())
+        .map(|(x, y)| x + y)
+        .collect_vec();
+
+    // Compute the result in an MPC circuit
+    let party0_values = share_authenticated_scalar_batch(my_vals.clone(), PARTY0, test_args);
+    let party1_values = share_authenticated_scalar_batch(my_vals, PARTY1, test_args);
+
+    let res = AuthenticatedScalarResult::batch_add(&party0_values, &party1_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+
+    assert_scalar_batches_eq(res_open, expected_result)
+}
+
+/// Test batch addition between secret shared and public values
+fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a batch of values, party 1's values are made public
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let mut rng = thread_rng();
+    let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+    let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
+
+    // Share the values in the plaintext and compute the expected result
+    let party0_value = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let plaintext_value = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_value)
+        .into_iter()
+        .zip(await_result_batch(&plaintext_value).into_iter())
+        .map(|(x, y)| x + y)
+        .collect_vec();
+
+    // Compute the result in an MPC circuit
+    let party0_values = share_authenticated_scalar_batch(my_vals, PARTY0, test_args);
+    let res = AuthenticatedScalarResult::batch_add_public(&party0_values, &plaintext_value);
+
+    let res_open =
+        await_batch_result_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+
+    assert_scalar_batches_eq(res_open, expected_result)
+}
+
 /// Test subtraction between a shared point and a public scalar
 fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
@@ -183,6 +248,65 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_scalars_eq(expected_res, res_open)
 }
 
+/// Test batch subtraction between two secret shared values
+fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a batch of values
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let mut rng = thread_rng();
+    let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+    let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
+
+    // Share the values with the counterparty and compute the expected result
+    let party0_value = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let party1_value = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_value)
+        .into_iter()
+        .zip(await_result_batch(&party1_value).into_iter())
+        .map(|(x, y)| x - y)
+        .collect_vec();
+
+    // Compute the result in an MPC circuit
+    let party0_values = share_authenticated_scalar_batch(my_vals.clone(), PARTY0, test_args);
+    let party1_values = share_authenticated_scalar_batch(my_vals, PARTY1, test_args);
+
+    let res = AuthenticatedScalarResult::batch_sub(&party0_values, &party1_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+
+    assert_scalar_batches_eq(res_open, expected_result)
+}
+
+/// Test batch subtraction between secret shared and public values
+fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a batch of values, party 1's values are made public
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let mut rng = thread_rng();
+    let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+    let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
+
+    // Share the values in the plaintext and compute the expected result
+    let party0_value = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let plaintext_value = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_value)
+        .into_iter()
+        .zip(await_result_batch(&plaintext_value).into_iter())
+        .map(|(x, y)| x - y)
+        .collect_vec();
+
+    // Compute the result in an MPC circuit
+    let party0_values = share_authenticated_scalar_batch(my_vals, PARTY0, test_args);
+    let res = AuthenticatedScalarResult::batch_sub_public(&party0_values, &plaintext_value);
+
+    let res_open =
+        await_batch_result_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+
+    assert_scalar_batches_eq(res_open, expected_result)
+}
+
 /// Test negation of a value
 fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
@@ -202,6 +326,32 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Open the result and check that it matches the expected result
     let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_res, res_open)
+}
+
+/// Test negation of a batch of values
+fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Party 0 chooses the values alone for this test
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let mut rng = thread_rng();
+    let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+    let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
+
+    // Share the values in the plaintext and compute the expected result
+    let party0_value = await_result_batch(&share_plaintext_values_batch(
+        &my_vals_allocated,
+        PARTY0,
+        fabric,
+    ));
+    let expected_result = party0_value.into_iter().map(Scalar::neg).collect_vec();
+
+    // Compute the result in an MPC circuit
+    let party0_values = share_authenticated_scalar_batch(my_vals, PARTY0, test_args);
+    let res = AuthenticatedScalarResult::batch_neg(&party0_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+
+    assert_scalar_batches_eq(res_open, expected_result)
 }
 
 /// Test multiplication between a shared point and a public scalar
@@ -248,6 +398,65 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Open the result and check that it matches the expected result
     let res_open = await_result_with_error(res.open_authenticated())?;
     assert_scalars_eq(expected_res, res_open)
+}
+
+/// Test batch multiplication between two secret shared values
+fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a batch of values
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let mut rng = thread_rng();
+    let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+    let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
+
+    // Share the values with the counterparty and compute the expected result
+    let party0_value = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let party1_value = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_value)
+        .into_iter()
+        .zip(await_result_batch(&party1_value).into_iter())
+        .map(|(x, y)| x * y)
+        .collect_vec();
+
+    // Compute the result in an MPC circuit
+    let party0_values = share_authenticated_scalar_batch(my_vals.clone(), PARTY0, test_args);
+    let party1_values = share_authenticated_scalar_batch(my_vals, PARTY1, test_args);
+
+    let res = AuthenticatedScalarResult::batch_mul(&party0_values, &party1_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+
+    assert_scalar_batches_eq(res_open, expected_result)
+}
+
+/// Test batch addition between secret shared and public values
+fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    // Each party samples a batch of values, party 1's values are made public
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let mut rng = thread_rng();
+    let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
+    let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
+
+    // Share the values in the plaintext and compute the expected result
+    let party0_value = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let plaintext_value = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_value)
+        .into_iter()
+        .zip(await_result_batch(&plaintext_value).into_iter())
+        .map(|(x, y)| x * y)
+        .collect_vec();
+
+    // Compute the result in an MPC circuit
+    let party0_values = share_authenticated_scalar_batch(my_vals, PARTY0, test_args);
+    let res = AuthenticatedScalarResult::batch_mul_public(&party0_values, &plaintext_value);
+
+    let res_open =
+        await_batch_result_with_error(AuthenticatedScalarResult::open_authenticated_batch(&res))?;
+
+    assert_scalar_batches_eq(res_open, expected_result)
 }
 
 /// Test the case in which we add and then multiply by a public value
@@ -304,6 +513,16 @@ inventory::submit!(IntegrationTest {
 });
 
 inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_batch_add",
+    test_fn: test_batch_add,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_batch_add_public",
+    test_fn: test_batch_add_public,
+});
+
+inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_sub_public_scalar",
     test_fn: test_sub_public_scalar,
 });
@@ -314,8 +533,23 @@ inventory::submit!(IntegrationTest {
 });
 
 inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_batch_sub",
+    test_fn: test_batch_sub,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_batch_sub_public",
+    test_fn: test_batch_sub_public,
+});
+
+inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_neg",
     test_fn: test_neg,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_batch_neg",
+    test_fn: test_batch_neg,
 });
 
 inventory::submit!(IntegrationTest {
@@ -326,6 +560,16 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_mul",
     test_fn: test_mul,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_batch_mul",
+    test_fn: test_batch_mul,
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_scalar::test_batch_mul_public",
+    test_fn: test_batch_mul_public,
 });
 
 inventory::submit!(IntegrationTest {

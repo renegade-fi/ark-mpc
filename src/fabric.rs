@@ -888,7 +888,7 @@ impl MpcFabric {
     ///
     /// TODO: Authenticate these values either here or in the pre-processing phase as per
     /// the SPDZ paper
-    pub fn next_authenticated_beaver_triple(
+    pub fn next_authenticated_triple(
         &self,
     ) -> (
         AuthenticatedScalarResult,
@@ -910,6 +910,33 @@ impl MpcFabric {
             AuthenticatedScalarResult::new_shared(a_val),
             AuthenticatedScalarResult::new_shared(b_val),
             AuthenticatedScalarResult::new_shared(c_val),
+        )
+    }
+
+    /// Sample the next batch of beaver triples as `AuthenticatedScalar`s
+    pub fn next_authenticated_triple_batch(
+        &self,
+        n: usize,
+    ) -> (
+        Vec<AuthenticatedScalarResult>,
+        Vec<AuthenticatedScalarResult>,
+        Vec<AuthenticatedScalarResult>,
+    ) {
+        let (a_vals, b_vals, c_vals) = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_triplet_batch(n);
+
+        let a_allocated = self.allocate_scalars(a_vals);
+        let b_allocated = self.allocate_scalars(b_vals);
+        let c_allocated = self.allocate_scalars(c_vals);
+
+        (
+            AuthenticatedScalarResult::new_shared_batch(&a_allocated),
+            AuthenticatedScalarResult::new_shared_batch(&b_allocated),
+            AuthenticatedScalarResult::new_shared_batch(&c_allocated),
         )
     }
 

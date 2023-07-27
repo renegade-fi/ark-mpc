@@ -29,6 +29,7 @@ RUN sed -i 's/dummy-main.rs/main.rs/g' Cargo.toml
 COPY src ./src
 COPY integration ./integration
 
+ENV RUST_BACKTRACE=1
 RUN cargo build --test integration --features "test_helpers"
 
 CMD [ "cargo", "test" ]

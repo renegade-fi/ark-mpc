@@ -439,7 +439,7 @@ impl Mul<&AuthenticatedScalarResult> for &AuthenticatedStarkPointResult {
     fn mul(self, rhs: &AuthenticatedScalarResult) -> AuthenticatedStarkPointResult {
         // Sample a beaver triple
         let generator = StarkPoint::generator();
-        let (a, b, c) = self.fabric().next_authenticated_beaver_triple();
+        let (a, b, c) = self.fabric().next_authenticated_triple();
 
         // Open the values d = [rhs - a] and e = [lhs - bG] for curve group generator G
         let masked_rhs = rhs - &a;

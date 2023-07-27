@@ -15,7 +15,7 @@ use crate::{
     commitment::{PedersenCommitment, PedersenCommitmentResult},
     error::MpcError,
     fabric::{MpcFabric, ResultId, ResultValue},
-    PARTY0,
+    ResultHandle, PARTY0,
 };
 
 use super::{
@@ -25,6 +25,9 @@ use super::{
     scalar::{Scalar, ScalarResult},
     stark_curve::{StarkPoint, StarkPointResult},
 };
+
+/// The number of results wrapped by an `AuthenticatedScalarResult`
+pub const AUTHENTICATED_SCALAR_RESULT_LEN: usize = 3;
 
 /// A maliciously secure wrapper around an `MpcScalarResult`, includes a MAC as per the
 /// SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
@@ -77,6 +80,35 @@ impl AuthenticatedScalarResult {
         }
     }
 
+    /// Create a new batch of shared values
+    pub fn new_shared_batch(values: &[ScalarResult]) -> Vec<Self> {
+        if values.is_empty() {
+            return vec![];
+        }
+
+        let n = values.len();
+        let fabric = values[0].fabric();
+        let mpc_values = values
+            .iter()
+            .map(|v| MpcScalarResult::new_shared(v.clone()))
+            .collect_vec();
+
+        let mac_keys = (0..n)
+            .map(|_| fabric.borrow_mac_key().clone())
+            .collect_vec();
+        let values_macs = MpcScalarResult::batch_mul(&mpc_values, &mac_keys);
+
+        mpc_values
+            .into_iter()
+            .zip(values_macs.into_iter())
+            .map(|(value, mac)| Self {
+                share: value,
+                mac,
+                public_modifier: fabric.zero(),
+            })
+            .collect_vec()
+    }
+
     /// Get the raw share as an `MpcScalarResult`
     #[cfg(feature = "test_helpers")]
     pub fn mpc_share(&self) -> MpcScalarResult {
@@ -107,6 +139,24 @@ impl AuthenticatedScalarResult {
     /// Open a batch of values without checking their MACs
     pub fn open_batch(values: &[Self]) -> Vec<ScalarResult> {
         MpcScalarResult::open_batch(&values.iter().map(|val| val.share.clone()).collect_vec())
+    }
+
+    /// Convert a flattened iterator into a batch of `AuthenticatedScalarResult`s
+    ///
+    /// We assume that the iterator has been flattened in the same way order that `Self::id`s returns
+    /// the `AuthenticatedScalar`'s values: `[share, mac, public_modifier]`
+    pub fn from_flattened_iterator<I>(iter: I) -> Vec<Self>
+    where
+        I: Iterator<Item = ResultHandle<Scalar>>,
+    {
+        iter.chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
+            .into_iter()
+            .map(|mut chunk| Self {
+                share: chunk.next().unwrap().into(),
+                mac: chunk.next().unwrap().into(),
+                public_modifier: chunk.next().unwrap(),
+            })
+            .collect_vec()
     }
 
     /// Check the commitment to a MAC check and that the MAC checks sum to zero
@@ -412,31 +462,35 @@ impl_borrow_variants!(AuthenticatedScalarResult, Add, add, +, AuthenticatedScala
 impl AuthenticatedScalarResult {
     /// Add two batches of `AuthenticatedScalarResult`s
     pub fn batch_add(
-        a: Vec<AuthenticatedScalarResult>,
-        b: Vec<AuthenticatedScalarResult>,
+        a: &[AuthenticatedScalarResult],
+        b: &[AuthenticatedScalarResult],
     ) -> Vec<AuthenticatedScalarResult> {
         assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
 
         let n = a.len();
-        let results_per_value = 3;
-        let fabric = &a[0].fabric();
+        let fabric = a[0].fabric();
         let all_ids = a.iter().chain(b.iter()).flat_map(|v| v.ids()).collect_vec();
 
         // Add the underlying values
         let gate_results: Vec<ScalarResult> = fabric.new_batch_gate_op(
             all_ids,
-            results_per_value * n, /* output_arity */
+            AUTHENTICATED_SCALAR_RESULT_LEN * n, /* output_arity */
             move |mut args| {
                 let arg_len = args.len();
                 let a_vals = args.drain(..arg_len / 2).collect_vec();
                 let b_vals = args;
 
-                let mut result = Vec::with_capacity(results_per_value * n);
+                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
                 for (mut a_vals, mut b_vals) in a_vals
                     .into_iter()
-                    .chunks(results_per_value)
+                    .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
                     .into_iter()
-                    .zip(b_vals.into_iter().chunks(results_per_value).into_iter())
+                    .zip(
+                        b_vals
+                            .into_iter()
+                            .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
+                            .into_iter(),
+                    )
                 {
                     let a_share: Scalar = a_vals.next().unwrap().into();
                     let a_mac_share: Scalar = a_vals.next().unwrap().into();
@@ -456,16 +510,67 @@ impl AuthenticatedScalarResult {
         );
 
         // Collect the gate results into a series of `AuthenticatedScalarResult`s
-        gate_results
-            .into_iter()
-            .chunks(results_per_value)
-            .into_iter()
-            .map(|mut chunk| AuthenticatedScalarResult {
-                share: chunk.next().unwrap().into(),
-                mac: chunk.next().unwrap().into(),
-                public_modifier: chunk.next().unwrap(),
-            })
-            .collect_vec()
+        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+    }
+
+    /// Add a batch of `AuthenticatedScalarResult`s to a batch of `ScalarResult`s
+    pub fn batch_add_public(
+        a: &[AuthenticatedScalarResult],
+        b: &[ScalarResult],
+    ) -> Vec<AuthenticatedScalarResult> {
+        assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
+
+        let n = a.len();
+        let results_per_value = 3;
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .flat_map(|v| v.ids())
+            .chain(b.iter().map(|v| v.id()))
+            .collect_vec();
+
+        // Add the underlying values
+        let party_id = fabric.party_id();
+        let gate_results: Vec<ScalarResult> = fabric.new_batch_gate_op(
+            all_ids,
+            results_per_value * n, /* output_arity */
+            move |mut args| {
+                // Split the args
+                let a_vals = args
+                    .drain(..AUTHENTICATED_SCALAR_RESULT_LEN * n)
+                    .collect_vec();
+                let public_values = args;
+
+                let mut result = Vec::with_capacity(results_per_value * n);
+                for (mut a_vals, public_value) in a_vals
+                    .into_iter()
+                    .chunks(results_per_value)
+                    .into_iter()
+                    .zip(public_values.into_iter())
+                {
+                    let a_share: Scalar = a_vals.next().unwrap().into();
+                    let a_mac_share: Scalar = a_vals.next().unwrap().into();
+                    let a_modifier: Scalar = a_vals.next().unwrap().into();
+
+                    let public_value: Scalar = public_value.into();
+
+                    // Only the first party adds the public value to their share
+                    if party_id == PARTY0 {
+                        result.push(ResultValue::Scalar(a_share + public_value));
+                    } else {
+                        result.push(ResultValue::Scalar(a_share));
+                    }
+
+                    result.push(ResultValue::Scalar(a_mac_share));
+                    result.push(ResultValue::Scalar(a_modifier - public_value));
+                }
+
+                result
+            },
+        );
+
+        // Collect the gate results into a series of `AuthenticatedScalarResult`s
+        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
     }
 }
 
@@ -546,6 +651,121 @@ impl Sub<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
 }
 impl_borrow_variants!(AuthenticatedScalarResult, Sub, sub, -, AuthenticatedScalarResult, Output=AuthenticatedScalarResult);
 
+impl AuthenticatedScalarResult {
+    /// Add two batches of `AuthenticatedScalarResult`s
+    pub fn batch_sub(
+        a: &[AuthenticatedScalarResult],
+        b: &[AuthenticatedScalarResult],
+    ) -> Vec<AuthenticatedScalarResult> {
+        assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
+
+        let n = a.len();
+        let fabric = &a[0].fabric();
+        let all_ids = a.iter().chain(b.iter()).flat_map(|v| v.ids()).collect_vec();
+
+        // Add the underlying values
+        let gate_results: Vec<ScalarResult> = fabric.new_batch_gate_op(
+            all_ids,
+            AUTHENTICATED_SCALAR_RESULT_LEN * n, /* output_arity */
+            move |mut args| {
+                let arg_len = args.len();
+                let a_vals = args.drain(..arg_len / 2).collect_vec();
+                let b_vals = args;
+
+                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
+                for (mut a_vals, mut b_vals) in a_vals
+                    .into_iter()
+                    .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
+                    .into_iter()
+                    .zip(
+                        b_vals
+                            .into_iter()
+                            .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
+                            .into_iter(),
+                    )
+                {
+                    let a_share: Scalar = a_vals.next().unwrap().into();
+                    let a_mac_share: Scalar = a_vals.next().unwrap().into();
+                    let a_modifier: Scalar = a_vals.next().unwrap().into();
+
+                    let b_share: Scalar = b_vals.next().unwrap().into();
+                    let b_mac_share: Scalar = b_vals.next().unwrap().into();
+                    let b_modifier: Scalar = b_vals.next().unwrap().into();
+
+                    result.push(ResultValue::Scalar(a_share - b_share));
+                    result.push(ResultValue::Scalar(a_mac_share - b_mac_share));
+                    result.push(ResultValue::Scalar(a_modifier - b_modifier));
+                }
+
+                result
+            },
+        );
+
+        // Collect the gate results into a series of `AuthenticatedScalarResult`s
+        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+    }
+
+    /// Subtract a batch of `ScalarResult`s from a batch of `AuthenticatedScalarResult`s
+    pub fn batch_sub_public(
+        a: &[AuthenticatedScalarResult],
+        b: &[ScalarResult],
+    ) -> Vec<AuthenticatedScalarResult> {
+        assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
+
+        let n = a.len();
+        let results_per_value = 3;
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .flat_map(|v| v.ids())
+            .chain(b.iter().map(|v| v.id()))
+            .collect_vec();
+
+        // Add the underlying values
+        let party_id = fabric.party_id();
+        let gate_results: Vec<ScalarResult> = fabric.new_batch_gate_op(
+            all_ids,
+            results_per_value * n, /* output_arity */
+            move |mut args| {
+                // Split the args
+                let a_vals = args
+                    .drain(..AUTHENTICATED_SCALAR_RESULT_LEN * n)
+                    .collect_vec();
+                let public_values = args;
+
+                let mut result = Vec::with_capacity(results_per_value * n);
+                for (mut a_vals, public_value) in a_vals
+                    .into_iter()
+                    .chunks(results_per_value)
+                    .into_iter()
+                    .zip(public_values.into_iter())
+                {
+                    let a_share: Scalar = a_vals.next().unwrap().into();
+                    let a_mac_share: Scalar = a_vals.next().unwrap().into();
+                    let a_modifier: Scalar = a_vals.next().unwrap().into();
+
+                    let public_value: Scalar = public_value.into();
+
+                    // Only the first party adds the public value to their share
+                    if party_id == PARTY0 {
+                        result.push(ResultValue::Scalar(a_share - public_value));
+                    } else {
+                        result.push(ResultValue::Scalar(a_share));
+                    }
+
+                    result.push(ResultValue::Scalar(a_mac_share));
+                    result.push(ResultValue::Scalar(a_modifier + public_value));
+                }
+
+                result
+            },
+        );
+
+        // Collect the gate results into a series of `AuthenticatedScalarResult`s
+        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+    }
+}
+
 // === Negation === //
 
 impl Neg for &AuthenticatedScalarResult {
@@ -560,6 +780,31 @@ impl Neg for &AuthenticatedScalarResult {
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult, Neg, neg, -);
+
+impl AuthenticatedScalarResult {
+    /// Negate a batch of `AuthenticatedScalarResult`s
+    pub fn batch_neg(a: &[AuthenticatedScalarResult]) -> Vec<AuthenticatedScalarResult> {
+        if a.is_empty() {
+            return vec![];
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().flat_map(|v| v.ids()).collect_vec();
+
+        let scalars = fabric.new_batch_gate_op(
+            all_ids,
+            AUTHENTICATED_SCALAR_RESULT_LEN * n, /* output_arity */
+            |args| {
+                args.into_iter()
+                    .map(|arg| ResultValue::Scalar(-Scalar::from(arg)))
+                    .collect()
+            },
+        );
+
+        AuthenticatedScalarResult::from_flattened_iterator(scalars.into_iter())
+    }
+}
 
 // === Multiplication === //
 
@@ -597,7 +842,7 @@ impl Mul<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
     // Use the Beaver trick
     fn mul(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
         // Sample a beaver triplet
-        let (a, b, c) = self.fabric().next_authenticated_beaver_triple();
+        let (a, b, c) = self.fabric().next_authenticated_triple();
 
         // Mask the left and right hand sides
         let masked_lhs = self - &a;
@@ -623,7 +868,91 @@ impl AuthenticatedScalarResult {
         a: &[AuthenticatedScalarResult],
         b: &[AuthenticatedScalarResult],
     ) -> Vec<AuthenticatedScalarResult> {
-        a.iter().zip(b.iter()).map(|(a, b)| a * b).collect()
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "Cannot multiply batches of different sizes"
+        );
+
+        if a.is_empty() {
+            return vec![];
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let (beaver_a, beaver_b, beaver_c) = fabric.next_authenticated_triple_batch(n);
+
+        // Open the values d = [lhs - a] and e = [rhs - b]
+        let masked_lhs = AuthenticatedScalarResult::batch_sub(a, &beaver_a);
+        let masked_rhs = AuthenticatedScalarResult::batch_sub(b, &beaver_b);
+
+        let all_masks = [masked_lhs, masked_rhs].concat();
+        let opened_values = AuthenticatedScalarResult::open_batch(&all_masks);
+        let (d_open, e_open) = opened_values.split_at(n);
+
+        // Identity: [x * y] = de + d[b] + e[a] + [c]
+        let de = ScalarResult::batch_mul(d_open, e_open);
+        let db = AuthenticatedScalarResult::batch_mul_public(&beaver_b, d_open);
+        let ea = AuthenticatedScalarResult::batch_mul_public(&beaver_a, e_open);
+
+        // Add the terms
+        let de_plus_db = AuthenticatedScalarResult::batch_add_public(&db, &de);
+        let ea_plus_c = AuthenticatedScalarResult::batch_add(&ea, &beaver_c);
+        AuthenticatedScalarResult::batch_add(&de_plus_db, &ea_plus_c)
+    }
+
+    /// Multiply a batch of `AuthenticatedScalarResult`s by a batch of `ScalarResult`s
+    pub fn batch_mul_public(
+        a: &[AuthenticatedScalarResult],
+        b: &[ScalarResult],
+    ) -> Vec<AuthenticatedScalarResult> {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "Cannot multiply batches of different sizes"
+        );
+        if a.is_empty() {
+            return vec![];
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = a
+            .iter()
+            .flat_map(|a| a.ids())
+            .chain(b.iter().map(|b| b.id()))
+            .collect_vec();
+
+        let scalars = fabric.new_batch_gate_op(
+            all_ids,
+            AUTHENTICATED_SCALAR_RESULT_LEN * n, /* output_arity */
+            move |mut args| {
+                let a_vals = args
+                    .drain(..AUTHENTICATED_SCALAR_RESULT_LEN * n)
+                    .collect_vec();
+                let public_values = args;
+
+                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
+                for (a_vals, public_values) in a_vals
+                    .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
+                    .zip(public_values.into_iter())
+                {
+                    let a_share: Scalar = a_vals[0].to_owned().into();
+                    let a_mac_share: Scalar = a_vals[1].to_owned().into();
+                    let a_modifier: Scalar = a_vals[2].to_owned().into();
+
+                    let public_value: Scalar = public_values.into();
+
+                    result.push(ResultValue::Scalar(a_share * public_value));
+                    result.push(ResultValue::Scalar(a_mac_share * public_value));
+                    result.push(ResultValue::Scalar(a_modifier * public_value));
+                }
+
+                result
+            },
+        );
+
+        AuthenticatedScalarResult::from_flattened_iterator(scalars.into_iter())
     }
 }
 
