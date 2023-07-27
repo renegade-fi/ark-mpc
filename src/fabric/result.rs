@@ -11,10 +11,7 @@ use std::{
 use futures::Future;
 
 use crate::{
-    algebra::{
-        mpc_scalar::MpcScalar, mpc_stark_point::MpcStarkPoint, scalar::Scalar,
-        stark_curve::StarkPoint,
-    },
+    algebra::{scalar::Scalar, stark_curve::StarkPoint},
     network::NetworkPayload,
 };
 
@@ -47,10 +44,8 @@ pub enum ResultValue {
     ScalarBatch(Vec<Scalar>),
     /// A point on the curve
     Point(StarkPoint),
-    /// An MPC scalar value
-    MpcScalar(MpcScalar),
-    /// An MPC Stark point value
-    MpcStarkPoint(MpcStarkPoint),
+    /// A batch of points on the curve
+    PointBatch(Vec<StarkPoint>),
 }
 
 impl From<NetworkPayload> for ResultValue {
@@ -60,6 +55,7 @@ impl From<NetworkPayload> for ResultValue {
             NetworkPayload::Scalar(scalar) => ResultValue::Scalar(scalar),
             NetworkPayload::ScalarBatch(scalars) => ResultValue::ScalarBatch(scalars),
             NetworkPayload::Point(point) => ResultValue::Point(point),
+            NetworkPayload::PointBatch(points) => ResultValue::PointBatch(points),
         }
     }
 }
@@ -112,20 +108,11 @@ impl From<ResultValue> for StarkPoint {
     }
 }
 
-impl From<ResultValue> for MpcScalar {
+impl From<ResultValue> for Vec<StarkPoint> {
     fn from(value: ResultValue) -> Self {
         match value {
-            ResultValue::MpcScalar(scalar) => scalar,
-            _ => panic!("Cannot cast {:?} to mpc scalar", value),
-        }
-    }
-}
-
-impl From<ResultValue> for MpcStarkPoint {
-    fn from(value: ResultValue) -> Self {
-        match value {
-            ResultValue::MpcStarkPoint(point) => point,
-            _ => panic!("Cannot cast {:?} to mpc point", value),
+            ResultValue::PointBatch(points) => points,
+            _ => panic!("Cannot cast {:?} to point batch", value),
         }
     }
 }
@@ -152,9 +139,14 @@ pub struct ResultHandle<T: From<ResultValue>> {
 }
 
 impl<T: From<ResultValue>> ResultHandle<T> {
-    /// Get a reference to the underlying fabric
-    pub fn clone_fabric(&self) -> MpcFabric {
-        self.fabric.clone()
+    /// Get the id of the result
+    pub fn id(&self) -> ResultId {
+        self.id
+    }
+
+    /// Borrow the fabric that this result is allocated within
+    pub fn fabric(&self) -> &MpcFabric {
+        &self.fabric
     }
 }
 

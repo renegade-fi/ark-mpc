@@ -14,78 +14,59 @@ use crate::{
 
 use super::{
     macros::{impl_borrow_variants, impl_commutative},
-    mpc_stark_point::{MpcStarkPoint, MpcStarkPointResult},
+    mpc_stark_point::MpcStarkPointResult,
     scalar::{Scalar, ScalarResult},
     stark_curve::{StarkPoint, StarkPointResult},
 };
 
 /// Defines a secret shared type over the `Scalar` field
 #[derive(Clone, Debug)]
-pub struct MpcScalar {
+pub struct MpcScalarResult {
     /// The underlying value held by the local party
-    pub(crate) value: Scalar,
-    /// A reference to the underlying fabric that this value is allocated in
-    pub(crate) fabric: MpcFabric,
+    pub(crate) share: ScalarResult,
 }
 
-/// Defines the result handle type that represents a future result of an `MpcScalar`
-pub type MpcScalarResult = ResultHandle<MpcScalar>;
+impl From<ScalarResult> for MpcScalarResult {
+    fn from(share: ScalarResult) -> Self {
+        Self { share }
+    }
+}
+
+/// Defines the result handle type that represents a future result of an `MpcScalarResult`
 impl MpcScalarResult {
     /// Creates an MPC scalar from a given underlying scalar assumed to be a secret share
-    pub fn new_shared(value: ScalarResult) -> ResultHandle<MpcScalar> {
-        let fabric_clone = value.fabric.clone();
-        value.fabric.new_gate_op(vec![value.id], move |args| {
-            // Cast the args
-            let value: Scalar = args[0].to_owned().into();
-            ResultValue::MpcScalar(MpcScalar {
-                value,
-                fabric: fabric_clone,
-            })
-        })
+    pub fn new_shared(value: ScalarResult) -> MpcScalarResult {
+        value.into()
     }
 
-    /// Creates a batch of MPC scalars from a given underlying scalar assumed to be a secret share
-    pub fn new_shared_batch(values: Vec<ScalarResult>) -> Vec<MpcScalarResult> {
-        if values.is_empty() {
-            return vec![];
-        }
+    /// Get the op-id of the underlying share
+    pub fn id(&self) -> usize {
+        self.share.id
+    }
 
-        let n = values.len();
-        let fabric = &values[0].fabric;
-        let result_ids = values.iter().map(|v| v.id).collect_vec();
-        let fabric_clone = fabric.clone();
-
-        let res: Vec<MpcScalarResult> = fabric.new_batch_gate_op(result_ids, n, move |args| {
-            args.into_iter()
-                .map(|val| MpcScalar {
-                    value: val.into(),
-                    fabric: fabric_clone.clone(),
-                })
-                .map(ResultValue::MpcScalar)
-                .collect_vec()
-        });
-
-        res
+    /// Borrow the fabric that the result is allocated in
+    pub fn fabric(&self) -> &MpcFabric {
+        self.share.fabric()
     }
 
     /// Open the value; both parties send their shares to the counterparty
     pub fn open(&self) -> ResultHandle<Scalar> {
         // Party zero sends first then receives
-        let (val0, val1) = if self.fabric.party_id() == PARTY0 {
+        let (val0, val1) = if self.fabric().party_id() == PARTY0 {
             let party0_value: ResultHandle<Scalar> =
-                self.fabric.new_network_op(vec![self.id], |args| {
-                    let mpc_value: MpcScalar = args[0].to_owned().into();
-                    NetworkPayload::Scalar(mpc_value.value)
+                self.fabric().new_network_op(vec![self.id()], |args| {
+                    let share: Scalar = args[0].to_owned().into();
+                    NetworkPayload::Scalar(share)
                 });
-            let party1_value: ResultHandle<Scalar> = self.fabric.receive_value();
+            let party1_value: ResultHandle<Scalar> = self.fabric().receive_value();
 
             (party0_value, party1_value)
         } else {
-            let party0_value: ResultHandle<Scalar> = self.fabric.receive_value();
+            let party0_value: ResultHandle<Scalar> = self.fabric().receive_value();
             let party1_value: ResultHandle<Scalar> =
-                self.fabric.new_network_op(vec![self.id], |args| {
-                    let mpc_value: MpcScalar = args[0].to_owned().into();
-                    NetworkPayload::Scalar(mpc_value.value)
+                self.fabric().new_network_op(vec![self.id()], |args| {
+                    let share = args[0].to_owned().into();
+                    NetworkPayload::Scalar(share)
                 });
 
             (party0_value, party1_value)
@@ -102,18 +83,15 @@ impl MpcScalarResult {
         }
 
         let n = values.len();
-        let fabric = &values[0].fabric;
-        let my_results = values.iter().map(|v| v.id).collect_vec();
+        let fabric = &values[0].fabric();
+        let my_results = values.iter().map(|v| v.id()).collect_vec();
         let send_shares_fn = |args: Vec<ResultValue>| {
-            let shares: Vec<Scalar> = args
-                .iter()
-                .map(|arg| MpcScalar::from(arg.clone()).value)
-                .collect();
+            let shares: Vec<Scalar> = args.into_iter().map(Scalar::from).collect();
             NetworkPayload::ScalarBatch(shares)
         };
 
         // Party zero sends first then receives
-        let (party0_vals, party1_vals) = if values[0].fabric.party_id() == PARTY0 {
+        let (party0_vals, party1_vals) = if values[0].fabric().party_id() == PARTY0 {
             // Send the local shares
             let party0_vals: BatchScalarResult = fabric.new_network_op(my_results, send_shares_fn);
             let party1_vals: BatchScalarResult = fabric.receive_value();
@@ -142,10 +120,7 @@ impl MpcScalarResult {
 
     /// Convert the underlying value to a `Scalar`
     pub fn to_scalar(&self) -> ScalarResult {
-        self.fabric.new_gate_op(vec![self.id], |mut args| {
-            let value: MpcScalar = args.remove(0).into();
-            ResultValue::Scalar(value.value)
-        })
+        self.share.clone()
     }
 }
 
@@ -161,18 +136,19 @@ impl Add<&Scalar> for &MpcScalarResult {
     // Only party 0 adds the plaintext value as we do not secret share it
     fn add(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            // Cast the args
-            let lhs: MpcScalar = args[0].to_owned().into();
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcScalar(MpcScalar {
-                    value: lhs.value + rhs,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcScalar(lhs)
-            }
-        })
+        let party_id = self.fabric().party_id();
+
+        self.fabric()
+            .new_gate_op(vec![self.id()], move |args| {
+                // Cast the args
+                let lhs_share: Scalar = args[0].to_owned().into();
+                if party_id == PARTY0 {
+                    ResultValue::Scalar(lhs_share + rhs)
+                } else {
+                    ResultValue::Scalar(lhs_share)
+                }
+            })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Add, add, +, Scalar);
@@ -183,21 +159,20 @@ impl Add<&ScalarResult> for &MpcScalarResult {
 
     // Only party 0 adds the plaintext value as we do not secret share it
     fn add(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric
-            .new_gate_op(vec![self.id, rhs.id], move |mut args| {
+        let party_id = self.fabric().party_id();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id], move |mut args| {
                 // Cast the args
-                let lhs: MpcScalar = args.remove(0).into();
+                let lhs: Scalar = args.remove(0).into();
                 let rhs: Scalar = args.remove(0).into();
 
-                if lhs.fabric.party_id() == PARTY0 {
-                    ResultValue::MpcScalar(MpcScalar {
-                        value: lhs.value + rhs,
-                        fabric: lhs.fabric,
-                    })
+                if party_id == PARTY0 {
+                    ResultValue::Scalar(lhs + rhs)
                 } else {
-                    ResultValue::MpcScalar(lhs)
+                    ResultValue::Scalar(lhs)
                 }
             })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Add, add, +, ScalarResult);
@@ -207,22 +182,21 @@ impl Add<&MpcScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
     fn add(self, rhs: &MpcScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            // Cast the args
-            let lhs: MpcScalar = args[0].to_owned().into();
-            let rhs: MpcScalar = args[1].to_owned().into();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], |args| {
+                // Cast the args
+                let lhs: Scalar = args[0].to_owned().into();
+                let rhs: Scalar = args[1].to_owned().into();
 
-            ResultValue::MpcScalar(MpcScalar {
-                value: lhs.value + rhs.value,
-                fabric: lhs.fabric,
+                ResultValue::Scalar(lhs + rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Add, add, +, MpcScalarResult);
 
 impl MpcScalarResult {
-    /// Add two batches of `MpcScalar`s using a single batched gate
+    /// Add two batches of `MpcScalarResult`s using a single batched gate
     pub fn batch_add(a: &[MpcScalarResult], b: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
         assert_eq!(
             a.len(),
@@ -231,30 +205,23 @@ impl MpcScalarResult {
         );
 
         let n = a.len();
-        let fabric = &a[0].fabric;
-        let ids = a.iter().chain(b.iter()).map(|v| v.id).collect_vec();
+        let fabric = a[0].fabric();
+        let ids = a.iter().chain(b.iter()).map(|v| v.id()).collect_vec();
 
-        let fabric_clone = fabric.clone();
-        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+        let scalars = fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             // Split the args
-            let scalars = args
-                .into_iter()
-                .map(|res| MpcScalar::from(res).value)
-                .collect_vec();
+            let scalars = args.into_iter().map(Scalar::from).collect_vec();
             let (a_res, b_res) = scalars.split_at(n);
 
             // Add the values
             a_res
                 .iter()
                 .zip(b_res.iter())
-                .map(|(a, b)| {
-                    ResultValue::MpcScalar(MpcScalar {
-                        value: a + b,
-                        fabric: fabric_clone.clone(),
-                    })
-                })
+                .map(|(a, b)| ResultValue::Scalar(a + b))
                 .collect_vec()
-        })
+        });
+
+        scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 
     /// Add a batch of `MpcScalarResult`s to a batch of public `ScalarResult`s
@@ -266,34 +233,33 @@ impl MpcScalarResult {
         );
 
         let n = a.len();
-        let fabric = &a[0].fabric;
+        let fabric = a[0].fabric();
         let ids = a
             .iter()
-            .map(|v| v.id)
-            .chain(b.iter().map(|v| v.id))
+            .map(|v| v.id())
+            .chain(b.iter().map(|v| v.id()))
             .collect_vec();
 
         let party_id = fabric.party_id();
-        let fabric_clone = fabric.clone();
-        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-            if party_id == PARTY0 {
-                let mut res: Vec<ResultValue> = Vec::with_capacity(n);
+        let scalars: Vec<ScalarResult> =
+            fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+                if party_id == PARTY0 {
+                    let mut res: Vec<ResultValue> = Vec::with_capacity(n);
 
-                for i in 0..n {
-                    let lhs: MpcScalar = args[i].to_owned().into();
-                    let rhs: Scalar = args[i + n].to_owned().into();
+                    for i in 0..n {
+                        let lhs: Scalar = args[i].to_owned().into();
+                        let rhs: Scalar = args[i + n].to_owned().into();
 
-                    res.push(ResultValue::MpcScalar(MpcScalar {
-                        value: lhs.value + rhs,
-                        fabric: fabric_clone.clone(),
-                    }));
+                        res.push(ResultValue::Scalar(lhs + rhs));
+                    }
+
+                    res
+                } else {
+                    args[..n].to_vec()
                 }
+            });
 
-                res
-            } else {
-                args[..n].to_vec()
-            }
-        })
+        scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 }
 
@@ -305,19 +271,19 @@ impl Sub<&Scalar> for &MpcScalarResult {
     // Only party 0 subtracts the plaintext value as we do not secret share it
     fn sub(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            // Cast the args
-            let lhs: MpcScalar = args[0].to_owned().into();
+        let party_id = self.fabric().party_id();
+        self.fabric()
+            .new_gate_op(vec![self.id()], move |args| {
+                // Cast the args
+                let lhs: Scalar = args[0].to_owned().into();
 
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcScalar(MpcScalar {
-                    value: lhs.value - rhs,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcScalar(lhs)
-            }
-        })
+                if party_id == PARTY0 {
+                    ResultValue::Scalar(lhs - rhs)
+                } else {
+                    ResultValue::Scalar(lhs)
+                }
+            })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Sub, sub, -, Scalar);
@@ -327,21 +293,20 @@ impl Sub<&ScalarResult> for &MpcScalarResult {
 
     // Only party 0 subtracts the plaintext value as we do not secret share it
     fn sub(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric
-            .new_gate_op(vec![self.id, rhs.id], move |mut args| {
+        let party_id = self.fabric().party_id();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
                 // Cast the args
-                let lhs: MpcScalar = args.remove(0).into();
+                let lhs: Scalar = args.remove(0).into();
                 let rhs: Scalar = args.remove(0).into();
 
-                if lhs.fabric.party_id() == PARTY0 {
-                    ResultValue::MpcScalar(MpcScalar {
-                        value: lhs.value - rhs,
-                        fabric: lhs.fabric,
-                    })
+                if party_id == PARTY0 {
+                    ResultValue::Scalar(lhs - rhs)
                 } else {
-                    ResultValue::MpcScalar(lhs)
+                    ResultValue::Scalar(lhs)
                 }
             })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Sub, sub, -, ScalarResult);
@@ -350,21 +315,21 @@ impl Sub<&MpcScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
     fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            // Cast the args
-            let lhs: MpcScalar = args[0].to_owned().into();
-            let rhs: MpcScalar = args[1].to_owned().into();
-            ResultValue::MpcScalar(MpcScalar {
-                value: lhs.value - rhs.value,
-                fabric: lhs.fabric,
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], |args| {
+                // Cast the args
+                let lhs: Scalar = args[0].to_owned().into();
+                let rhs: Scalar = args[1].to_owned().into();
+
+                ResultValue::Scalar(lhs - rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Sub, sub, -, MpcScalarResult);
 
 impl MpcScalarResult {
-    /// Subtract two batches of `MpcScalar`s using a single batched gate
+    /// Subtract two batches of `MpcScalarResult`s using a single batched gate
     pub fn batch_sub(a: &[MpcScalarResult], b: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
         assert_eq!(
             a.len(),
@@ -373,34 +338,28 @@ impl MpcScalarResult {
         );
 
         let n = a.len();
-        let fabric = &a[0].fabric;
+        let fabric = a[0].fabric();
         let ids = a
             .iter()
-            .map(|v| v.id)
-            .chain(b.iter().map(|v| v.id))
+            .map(|v| v.id())
+            .chain(b.iter().map(|v| v.id()))
             .collect_vec();
 
-        let fabric_clone = fabric.clone();
-        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-            // Split the args
-            let scalars = args
-                .into_iter()
-                .map(|res| MpcScalar::from(res).value)
-                .collect_vec();
-            let (a_res, b_res) = scalars.split_at(n);
+        let scalars: Vec<ScalarResult> =
+            fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+                // Split the args
+                let scalars = args.into_iter().map(Scalar::from).collect_vec();
+                let (a_res, b_res) = scalars.split_at(n);
 
-            // Add the values
-            a_res
-                .iter()
-                .zip(b_res.iter())
-                .map(|(a, b)| {
-                    ResultValue::MpcScalar(MpcScalar {
-                        value: a - b,
-                        fabric: fabric_clone.clone(),
-                    })
-                })
-                .collect_vec()
-        })
+                // Add the values
+                a_res
+                    .iter()
+                    .zip(b_res.iter())
+                    .map(|(a, b)| ResultValue::Scalar(a - b))
+                    .collect_vec()
+            });
+
+        scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 
     /// Subtract a batch of `MpcScalarResult`s from a batch of public `ScalarResult`s
@@ -412,34 +371,32 @@ impl MpcScalarResult {
         );
 
         let n = a.len();
-        let fabric = &a[0].fabric;
+        let fabric = a[0].fabric();
         let ids = a
             .iter()
-            .map(|v| v.id)
-            .chain(b.iter().map(|v| v.id))
+            .map(|v| v.id())
+            .chain(b.iter().map(|v| v.id()))
             .collect_vec();
 
         let party_id = fabric.party_id();
-        let fabric_clone = fabric.clone();
-        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+        let scalars = fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             if party_id == PARTY0 {
                 let mut res: Vec<ResultValue> = Vec::with_capacity(n);
 
                 for i in 0..n {
-                    let lhs: MpcScalar = args[i].to_owned().into();
+                    let lhs: Scalar = args[i].to_owned().into();
                     let rhs: Scalar = args[i + n].to_owned().into();
 
-                    res.push(ResultValue::MpcScalar(MpcScalar {
-                        value: lhs.value - rhs,
-                        fabric: fabric_clone.clone(),
-                    }));
+                    res.push(ResultValue::Scalar(lhs - rhs));
                 }
 
                 res
             } else {
                 args[..n].to_vec()
             }
-        })
+        });
+
+        scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 }
 
@@ -449,48 +406,40 @@ impl Neg for &MpcScalarResult {
     type Output = MpcScalarResult;
 
     fn neg(self) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id], |args| {
-            // Cast the args
-            let lhs: MpcScalar = args[0].to_owned().into();
-            ResultValue::MpcScalar(MpcScalar {
-                value: -lhs.value,
-                fabric: lhs.fabric,
+        self.fabric()
+            .new_gate_op(vec![self.id()], |args| {
+                // Cast the args
+                let lhs: Scalar = args[0].to_owned().into();
+                ResultValue::Scalar(-lhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Neg, neg, -);
 
 impl MpcScalarResult {
-    /// Negate a batch of `MpcScalar`s using a single batched gate
+    /// Negate a batch of `MpcScalarResult`s using a single batched gate
     pub fn batch_neg(values: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
         if values.is_empty() {
             return vec![];
         }
 
         let n = values.len();
-        let fabric = &values[0].fabric;
-        let ids = values.iter().map(|v| v.id).collect_vec();
+        let fabric = values[0].fabric();
+        let ids = values.iter().map(|v| v.id()).collect_vec();
 
-        let fabric_clone = fabric.clone();
-        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+        let scalars = fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             // Split the args
-            let scalars = args
-                .into_iter()
-                .map(|res| MpcScalar::from(res).value)
-                .collect_vec();
+            let scalars = args.into_iter().map(Scalar::from).collect_vec();
 
             // Add the values
             scalars
                 .iter()
-                .map(|a| {
-                    ResultValue::MpcScalar(MpcScalar {
-                        value: -a,
-                        fabric: fabric_clone.clone(),
-                    })
-                })
+                .map(|a| ResultValue::Scalar(-a))
                 .collect_vec()
-        })
+        });
+
+        scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 }
 
@@ -501,14 +450,13 @@ impl Mul<&Scalar> for &MpcScalarResult {
 
     fn mul(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            // Cast the args
-            let lhs: MpcScalar = args[0].to_owned().into();
-            ResultValue::MpcScalar(MpcScalar {
-                value: lhs.value * rhs,
-                fabric: lhs.fabric,
+        self.fabric()
+            .new_gate_op(vec![self.id()], move |args| {
+                // Cast the args
+                let lhs: Scalar = args[0].to_owned().into();
+                ResultValue::Scalar(lhs * rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Mul, mul, *, Scalar);
@@ -518,17 +466,15 @@ impl Mul<&ScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
 
     fn mul(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric
-            .new_gate_op(vec![self.id, rhs.id], move |mut args| {
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
                 // Cast the args
-                let lhs: MpcScalar = args.remove(0).into();
+                let lhs: Scalar = args.remove(0).into();
                 let rhs: Scalar = args.remove(0).into();
 
-                ResultValue::MpcScalar(MpcScalar {
-                    value: lhs.value * rhs,
-                    fabric: lhs.fabric,
-                })
+                ResultValue::Scalar(lhs * rhs)
             })
+            .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Mul, mul, *, ScalarResult);
@@ -540,7 +486,7 @@ impl Mul<&MpcScalarResult> for &MpcScalarResult {
 
     fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
         // Sample a beaver triplet
-        let (a, b, c) = self.fabric.next_beaver_triple();
+        let (a, b, c) = self.fabric().next_beaver_triple();
 
         // Open the values d = [lhs - a] and e = [rhs - b]
         let masked_lhs = self - &a;
@@ -556,7 +502,7 @@ impl Mul<&MpcScalarResult> for &MpcScalarResult {
 impl_borrow_variants!(MpcScalarResult, Mul, mul, *, MpcScalarResult);
 
 impl MpcScalarResult {
-    /// Multiply a batch of `MpcScalars` over a single network op
+    /// Multiply a batch of `MpcScalarResults` over a single network op
     pub fn batch_mul(a: &[MpcScalarResult], b: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
         let n = a.len();
         assert_eq!(
@@ -566,7 +512,7 @@ impl MpcScalarResult {
         );
 
         // Sample a beaver triplet for each multiplication
-        let fabric = &a[0].fabric;
+        let fabric = &a[0].fabric();
         let (beaver_a, beaver_b, beaver_c) = fabric.next_beaver_triple_batch(n);
 
         // Open the values d = [lhs - a] and e = [rhs - b]
@@ -597,28 +543,27 @@ impl MpcScalarResult {
         );
 
         let n = a.len();
-        let fabric = &a[0].fabric;
+        let fabric = a[0].fabric();
         let ids = a
             .iter()
-            .map(|v| v.id)
+            .map(|v| v.id())
             .chain(b.iter().map(|v| v.id))
             .collect_vec();
 
-        let fabric_clone = fabric.clone();
-        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-            let mut res: Vec<ResultValue> = Vec::with_capacity(n);
-            for i in 0..n {
-                let lhs: MpcScalar = args[i].to_owned().into();
-                let rhs: Scalar = args[i + n].to_owned().into();
+        let scalars: Vec<ScalarResult> =
+            fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+                let mut res: Vec<ResultValue> = Vec::with_capacity(n);
+                for i in 0..n {
+                    let lhs: Scalar = args[i].to_owned().into();
+                    let rhs: Scalar = args[i + n].to_owned().into();
 
-                res.push(ResultValue::MpcScalar(MpcScalar {
-                    value: lhs.value * rhs,
-                    fabric: fabric_clone.clone(),
-                }));
-            }
+                    res.push(ResultValue::Scalar(lhs * rhs));
+                }
 
-            res
-        })
+                res
+            });
+
+        scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 }
 
@@ -629,14 +574,13 @@ impl Mul<&MpcScalarResult> for &StarkPoint {
 
     fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
         let self_owned = *self;
-        rhs.fabric.new_gate_op(vec![rhs.id], move |mut args| {
-            let rhs: MpcScalar = args.remove(0).into();
+        rhs.fabric()
+            .new_gate_op(vec![rhs.id()], move |mut args| {
+                let rhs: Scalar = args.remove(0).into();
 
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: self_owned * rhs.value,
-                fabric: rhs.fabric,
+                ResultValue::Point(self_owned * rhs)
             })
-        })
+            .into()
     }
 }
 impl_commutative!(StarkPoint, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
@@ -645,15 +589,14 @@ impl Mul<&MpcScalarResult> for &StarkPointResult {
     type Output = MpcStarkPointResult;
 
     fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
-            let lhs: StarkPoint = args.remove(0).into();
-            let rhs: MpcScalar = args.remove(0).into();
+        self.fabric
+            .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+                let lhs: StarkPoint = args.remove(0).into();
+                let rhs: Scalar = args.remove(0).into();
 
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs * rhs.value,
-                fabric: rhs.fabric,
+                ResultValue::Point(lhs * rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(StarkPointResult, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);

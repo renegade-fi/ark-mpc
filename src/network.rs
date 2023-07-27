@@ -52,6 +52,8 @@ pub enum NetworkPayload {
     ScalarBatch(Vec<Scalar>),
     /// A point on the curve
     Point(StarkPoint),
+    /// A batch of points on the curve
+    PointBatch(Vec<StarkPoint>),
 }
 
 impl From<Vec<u8>> for NetworkPayload {
@@ -66,9 +68,21 @@ impl From<Scalar> for NetworkPayload {
     }
 }
 
+impl From<Vec<Scalar>> for NetworkPayload {
+    fn from(scalars: Vec<Scalar>) -> Self {
+        Self::ScalarBatch(scalars)
+    }
+}
+
 impl From<StarkPoint> for NetworkPayload {
     fn from(point: StarkPoint) -> Self {
         Self::Point(point)
+    }
+}
+
+impl From<Vec<StarkPoint>> for NetworkPayload {
+    fn from(value: Vec<StarkPoint>) -> Self {
+        Self::PointBatch(value)
     }
 }
 

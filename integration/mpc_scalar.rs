@@ -1,4 +1,4 @@
-//! Defines unit tests for `MpcScalar` types
+//! Defines unit tests for `MpcScalarResult` types
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{mpc_scalar::MpcScalarResult, scalar::Scalar},
@@ -15,7 +15,7 @@ use crate::{
     IntegrationTest, IntegrationTestArgs,
 };
 
-/// Test addition of `MpcScalar` types
+/// Test addition of `MpcScalarResult` types
 fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
     let mut rng = thread_rng();
@@ -128,7 +128,7 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     assert_scalar_batches_eq(res_open, expected_result)
 }
 
-/// Test subtraction of `MpcScalar` types
+/// Test subtraction of `MpcScalarResult` types
 fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
     let mut rng = thread_rng();
@@ -241,7 +241,7 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     assert_scalar_batches_eq(res_open, expected_result)
 }
 
-/// Test negation of `MpcScalar` types
+/// Test negation of `MpcScalarResult` types
 ///
 /// Only party0 chooses the value
 fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -291,7 +291,7 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_scalar_batches_eq(res_open, expected_result)
 }
 
-/// Test multiplication of `MpcScalar` types
+/// Test multiplication of `MpcScalarResult` types
 fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
     let mut rng = thread_rng();
@@ -315,7 +315,7 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_scalars_eq(opened_res, expected_result)
 }
 
-/// Test multiplication of `MpcScalar` types with a plaintext scalar constant
+/// Test multiplication of `MpcScalarResult` types with a plaintext scalar constant
 ///
 /// Party 0 chooses an MPC scalar and party 1 chooses a plaintext scalar
 fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {

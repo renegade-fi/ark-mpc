@@ -4,9 +4,9 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::{
-    fabric::{MpcFabric, ResultHandle, ResultValue},
+    fabric::{ResultHandle, ResultValue},
     network::NetworkPayload,
-    PARTY0,
+    MpcFabric, ResultId, PARTY0,
 };
 
 use super::{
@@ -18,51 +18,52 @@ use super::{
 
 /// Defines a secret shared type of a curve point
 #[derive(Clone, Debug)]
-pub struct MpcStarkPoint {
+pub struct MpcStarkPointResult {
     /// The underlying value held by the local party
-    pub(crate) value: StarkPoint,
-    /// A reference to the underlying fabric that this value is allocated in
-    pub(crate) fabric: MpcFabric,
+    pub(crate) share: StarkPointResult,
+}
+
+impl From<StarkPointResult> for MpcStarkPointResult {
+    fn from(value: StarkPointResult) -> Self {
+        Self { share: value }
+    }
 }
 
 /// Defines the result handle type that represents a future result of an `MpcStarkPoint`
-pub type MpcStarkPointResult = ResultHandle<MpcStarkPoint>;
 impl MpcStarkPointResult {
     /// Creates an `MpcStarkPoint` from a given underlying point assumed to be a secret share
-    pub fn new_shared(value: ResultHandle<StarkPoint>) -> ResultHandle<MpcStarkPoint> {
-        let fabric_clone = value.fabric.clone();
-        value.fabric.new_gate_op(vec![value.id], move |args| {
-            // Cast the args
-            let value: StarkPoint = args[0].to_owned().into();
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value,
-                fabric: fabric_clone,
-            })
-        })
+    pub fn new_shared(value: StarkPointResult) -> MpcStarkPointResult {
+        MpcStarkPointResult { share: value }
+    }
+
+    /// Get the ID of the underlying share's result
+    pub fn id(&self) -> ResultId {
+        self.share.id
+    }
+
+    /// Borrow the fabric that this result is allocated in
+    pub fn fabric(&self) -> &MpcFabric {
+        self.share.fabric()
     }
 
     /// Open the value; both parties send their shares to the counterparty
     pub fn open(&self) -> ResultHandle<StarkPoint> {
+        let send_my_share =
+            |args: Vec<ResultValue>| NetworkPayload::Point(args[0].to_owned().into());
+
         // Party zero sends first then receives
-        let (share0, share1) = if self.fabric.party_id() == PARTY0 {
-            let party0_value: ResultHandle<StarkPoint> =
-                self.fabric.new_network_op(vec![self.id], |args| {
-                    let mpc_value: MpcStarkPoint = args[0].to_owned().into();
-                    NetworkPayload::Point(mpc_value.value)
-                });
-            let party1_value = self.fabric.receive_value();
+        let (share0, share1): (StarkPointResult, StarkPointResult) =
+            if self.fabric().party_id() == PARTY0 {
+                let party0_value = self.fabric().new_network_op(vec![self.id()], send_my_share);
+                let party1_value = self.fabric().receive_value();
 
-            (party0_value, party1_value)
-        } else {
-            let party0_value = self.fabric.receive_value();
-            let party1_value: ResultHandle<StarkPoint> =
-                self.fabric.new_network_op(vec![self.id], |args| {
-                    let mpc_value: MpcStarkPoint = args[0].to_owned().into();
-                    NetworkPayload::Point(mpc_value.value)
-                });
+                (party0_value, party1_value)
+            } else {
+                let party0_value = self.fabric().receive_value();
+                let party1_value = self.fabric().new_network_op(vec![self.id()], send_my_share);
 
-            (party0_value, party1_value)
-        };
+                (party0_value, party1_value)
+            };
 
         share0 + share1
     }
@@ -80,18 +81,18 @@ impl Add<&StarkPoint> for &MpcStarkPointResult {
     // Only party 0 adds the plaintext value to its share
     fn add(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: MpcStarkPoint = args[0].to_owned().into();
+        let party_id = self.fabric().party_id();
+        self.fabric()
+            .new_gate_op(vec![self.id()], move |args| {
+                let lhs: StarkPoint = args[0].to_owned().into();
 
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcStarkPoint(MpcStarkPoint {
-                    value: lhs.value + rhs,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcStarkPoint(lhs)
-            }
-        })
+                if party_id == PARTY0 {
+                    ResultValue::Point(lhs + rhs)
+                } else {
+                    ResultValue::Point(lhs)
+                }
+            })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Add, add, +, StarkPoint);
@@ -102,19 +103,19 @@ impl Add<&StarkPointResult> for &MpcStarkPointResult {
 
     // Only party 0 adds the plaintext value to its share
     fn add(self, rhs: &StarkPointResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
-            let lhs: MpcStarkPoint = args.remove(0).into();
-            let rhs: StarkPoint = args.remove(0).into();
+        let party_id = self.fabric().party_id();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
+                let lhs: StarkPoint = args.remove(0).into();
+                let rhs: StarkPoint = args.remove(0).into();
 
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcStarkPoint(MpcStarkPoint {
-                    value: lhs.value + rhs,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcStarkPoint(lhs)
-            }
-        })
+                if party_id == PARTY0 {
+                    ResultValue::Point(lhs + rhs)
+                } else {
+                    ResultValue::Point(lhs)
+                }
+            })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Add, add, +, StarkPointResult);
@@ -124,15 +125,14 @@ impl Add<&MpcStarkPointResult> for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
     fn add(self, rhs: &MpcStarkPointResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: MpcStarkPoint = args[0].to_owned().into();
-            let rhs: MpcStarkPoint = args[1].to_owned().into();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], |args| {
+                let lhs: StarkPoint = args[0].to_owned().into();
+                let rhs: StarkPoint = args[1].to_owned().into();
 
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value + rhs.value,
-                fabric: lhs.fabric,
+                ResultValue::Point(lhs + rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Add, add, +, MpcStarkPointResult);
@@ -145,18 +145,18 @@ impl Sub<&StarkPoint> for &MpcStarkPointResult {
     // Only party 0 subtracts the plaintext value
     fn sub(self, rhs: &StarkPoint) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: MpcStarkPoint = args[0].to_owned().into();
+        let party_id = self.fabric().party_id();
+        self.fabric()
+            .new_gate_op(vec![self.id()], move |args| {
+                let lhs: StarkPoint = args[0].to_owned().into();
 
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcStarkPoint(MpcStarkPoint {
-                    value: lhs.value - rhs,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcStarkPoint(lhs)
-            }
-        })
+                if party_id == PARTY0 {
+                    ResultValue::Point(lhs - rhs)
+                } else {
+                    ResultValue::Point(lhs)
+                }
+            })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Sub, sub, -, StarkPoint);
@@ -165,19 +165,19 @@ impl Sub<&StarkPointResult> for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
     fn sub(self, rhs: &StarkPointResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
-            let lhs: MpcStarkPoint = args.remove(0).into();
-            let rhs: StarkPoint = args.remove(0).into();
+        let party_id = self.fabric().party_id();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
+                let lhs: StarkPoint = args.remove(0).into();
+                let rhs: StarkPoint = args.remove(0).into();
 
-            if lhs.fabric.party_id() == PARTY0 {
-                ResultValue::MpcStarkPoint(MpcStarkPoint {
-                    value: lhs.value - rhs,
-                    fabric: lhs.fabric,
-                })
-            } else {
-                ResultValue::MpcStarkPoint(lhs)
-            }
-        })
+                if party_id == PARTY0 {
+                    ResultValue::Point(lhs - rhs)
+                } else {
+                    ResultValue::Point(lhs)
+                }
+            })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Sub, sub, -, StarkPointResult);
@@ -186,15 +186,14 @@ impl Sub<&MpcStarkPointResult> for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
     fn sub(self, rhs: &MpcStarkPointResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: MpcStarkPoint = args[0].to_owned().into();
-            let rhs: MpcStarkPoint = args[1].to_owned().into();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], |args| {
+                let lhs: StarkPoint = args[0].to_owned().into();
+                let rhs: StarkPoint = args[1].to_owned().into();
 
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value - rhs.value,
-                fabric: lhs.fabric,
+                ResultValue::Point(lhs - rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Sub, sub, -, MpcStarkPointResult);
@@ -205,13 +204,12 @@ impl Neg for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
     fn neg(self) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id], |mut args| {
-            let mpc_val: MpcStarkPoint = args.remove(0).into();
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: -mpc_val.value,
-                fabric: mpc_val.fabric,
+        self.fabric()
+            .new_gate_op(vec![self.id()], |mut args| {
+                let mpc_val: StarkPoint = args.remove(0).into();
+                ResultValue::Point(-mpc_val)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Neg, neg, -);
@@ -223,14 +221,12 @@ impl Mul<&Scalar> for &MpcStarkPointResult {
 
     fn mul(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: MpcStarkPoint = args[0].to_owned().into();
-
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value * rhs,
-                fabric: lhs.fabric,
+        self.fabric()
+            .new_gate_op(vec![self.id()], move |args| {
+                let lhs: StarkPoint = args[0].to_owned().into();
+                ResultValue::Point(lhs * rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Mul, mul, *, Scalar);
@@ -240,15 +236,14 @@ impl Mul<&ScalarResult> for &MpcStarkPointResult {
     type Output = MpcStarkPointResult;
 
     fn mul(self, rhs: &ScalarResult) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
-            let lhs: MpcStarkPoint = args.remove(0).into();
-            let rhs: Scalar = args.remove(0).into();
+        self.fabric()
+            .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+                let lhs: StarkPoint = args.remove(0).into();
+                let rhs: Scalar = args.remove(0).into();
 
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: lhs.value * rhs,
-                fabric: lhs.fabric,
+                ResultValue::Point(lhs * rhs)
             })
-        })
+            .into()
     }
 }
 impl_borrow_variants!(MpcStarkPointResult, Mul, mul, *, ScalarResult);
@@ -260,7 +255,7 @@ impl Mul<&MpcScalarResult> for &MpcStarkPointResult {
     // Use the beaver trick as in the scalar case
     fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
         let generator = StarkPoint::generator();
-        let (a, b, c) = self.fabric.next_beaver_triple();
+        let (a, b, c) = self.fabric().next_beaver_triple();
 
         // Open the values d = [rhs - a] and e = [lhs - bG] for curve group generator G
         let masked_rhs = rhs - &a;

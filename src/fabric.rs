@@ -38,8 +38,8 @@ use crate::{
     algebra::{
         authenticated_scalar::AuthenticatedScalarResult,
         authenticated_stark_point::AuthenticatedStarkPointResult,
-        mpc_scalar::{MpcScalar, MpcScalarResult},
-        mpc_stark_point::{MpcStarkPoint, MpcStarkPointResult},
+        mpc_scalar::MpcScalarResult,
+        mpc_stark_point::MpcStarkPointResult,
         scalar::{Scalar, ScalarResult},
         stark_curve::{StarkPoint, StarkPointResult},
     },
@@ -57,15 +57,9 @@ const RESULT_ZERO: ResultId = 0;
 const RESULT_ONE: ResultId = 1;
 /// The result id that is hardcoded to the curve identity point
 const RESULT_IDENTITY: ResultId = 2;
-/// The result id that is hardcoded to a shared zero value
-const RESULT_ZERO_SHARED: ResultId = 3;
-/// The result id that is hardcoded to a shared one value
-const RESULT_ONE_SHARED: ResultId = 4;
-/// The result id that is hardcoded to a shared curve identity value
-const RESULT_IDENTITY_SHARED: ResultId = 5;
 
 /// The number of constant results allocated in the fabric, i.e. those defined above
-const N_CONSTANT_RESULTS: usize = 6;
+const N_CONSTANT_RESULTS: usize = 3;
 
 /// The default size hint to give the fabric for buffer pre-allocation
 const DEFAULT_SIZE_HINT: usize = 10_000;
@@ -277,19 +271,9 @@ impl FabricInner {
         RESULT_ZERO
     }
 
-    /// Get the hardcoded shared zero value in the fabric
-    pub(crate) fn zero_shared(&self) -> ResultId {
-        RESULT_ZERO_SHARED
-    }
-
     /// Get the hardcoded one value in the fabric
     pub(crate) fn one(&self) -> ResultId {
         RESULT_ONE
-    }
-
-    /// Get the hardcoded shared one value in the fabric
-    pub(crate) fn one_shared(&self) -> ResultId {
-        RESULT_ONE_SHARED
     }
 
     /// Get the hardcoded curve identity value in the fabric
@@ -297,23 +281,9 @@ impl FabricInner {
         RESULT_IDENTITY
     }
 
-    /// Get the hardcoded shared curve identity in the fabric
-    pub(crate) fn curve_identity_shared(&self) -> ResultId {
-        RESULT_IDENTITY_SHARED
-    }
-
     // ------------------------
     // | Low Level Allocation |
     // ------------------------
-
-    /// Set a result directly, prefer to use allocation methods below for safety
-    pub(crate) fn set_result(&self, id: ResultId, value: ResultValue) -> ResultId {
-        // Acquire locks and update the result buffer
-        let mut locked_results = self.results.write().expect("results poisoned");
-        locked_results.insert(id, OpResult { id, value });
-
-        id
-    }
 
     /// Allocate a new plaintext value in the fabric
     pub(crate) fn allocate_value(&self, value: ResultValue) -> ResultId {
@@ -450,33 +420,6 @@ impl MpcFabric {
             mac_key: None,
         };
 
-        // Create shared constants for zero, one, and the curve identity
-        fabric.set_result(
-            RESULT_ZERO_SHARED,
-            ResultValue::MpcScalar(MpcScalar {
-                value: Scalar::zero(),
-                fabric: self_.clone(),
-            }),
-        );
-        fabric.set_result(
-            RESULT_ONE_SHARED,
-            ResultValue::MpcScalar(MpcScalar {
-                value: if self_.party_id() == PARTY0 {
-                    Scalar::zero()
-                } else {
-                    Scalar::one()
-                },
-                fabric: self_.clone(),
-            }),
-        );
-        fabric.set_result(
-            RESULT_IDENTITY_SHARED,
-            ResultValue::MpcStarkPoint(MpcStarkPoint {
-                value: StarkPoint::identity(),
-                fabric: self_.clone(),
-            }),
-        );
-
         // Sample a MAC key from the pre-shared values in the beaver source
         let mac_key_id = fabric.allocate_value(ResultValue::Scalar(
             fabric
@@ -524,7 +467,7 @@ impl MpcFabric {
 
     /// Get the shared zero value as an `MpcScalarResult`
     fn zero_shared(&self) -> MpcScalarResult {
-        ResultHandle::new(self.inner.zero_shared(), self.clone())
+        MpcScalarResult::new_shared(self.zero())
     }
 
     /// Get the hardcoded zero wire as an `AuthenticatedScalarResult`
@@ -536,10 +479,9 @@ impl MpcFabric {
         let mac_value = self.zero_shared();
 
         AuthenticatedScalarResult {
-            value: share_value,
+            share: share_value,
             mac: mac_value,
             public_modifier: zero_value,
-            fabric: self.clone(),
         }
     }
 
@@ -556,7 +498,7 @@ impl MpcFabric {
 
     /// Get the hardcoded shared one wire as an `MpcScalarResult`
     fn one_shared(&self) -> MpcScalarResult {
-        ResultHandle::new(self.inner.one_shared(), self.clone())
+        MpcScalarResult::new_shared(self.one())
     }
 
     /// Get the hardcoded one wire as an `AuthenticatedScalarResult`
@@ -569,10 +511,9 @@ impl MpcFabric {
             let mac_value = self.zero_shared();
 
             AuthenticatedScalarResult {
-                value: share_value,
+                share: share_value,
                 mac: mac_value,
                 public_modifier: zero_value,
-                fabric: self.clone(),
             }
         } else {
             let zero_value = self.zero();
@@ -580,10 +521,9 @@ impl MpcFabric {
             let mac_value = self.borrow_mac_key().clone();
 
             AuthenticatedScalarResult {
-                value: share_value,
+                share: share_value,
                 mac: mac_value,
                 public_modifier: zero_value,
-                fabric: self.clone(),
             }
         }
     }
@@ -601,7 +541,7 @@ impl MpcFabric {
 
     /// Get the hardcoded shared curve identity wire as an `MpcStarkPointResult`
     fn curve_identity_shared(&self) -> MpcStarkPointResult {
-        ResultHandle::new(self.inner.curve_identity_shared(), self.clone())
+        MpcStarkPointResult::new_shared(self.curve_identity())
     }
 
     /// Get the hardcoded curve identity wire as an `AuthenticatedStarkPointResult`
@@ -613,10 +553,9 @@ impl MpcFabric {
         let mac_value = self.curve_identity_shared();
 
         AuthenticatedStarkPointResult {
-            value: share_value,
+            share: share_value,
             mac: mac_value,
             public_modifier: identity_val,
-            fabric: self.clone(),
         }
     }
 
@@ -744,10 +683,17 @@ impl MpcFabric {
         self.new_network_op(vec![value.id], |mut args| args.remove(0).into())
     }
 
-    /// Send a `Scalar` that has not been previously allocated in the mpc fabric
-    pub fn send_scalar<T: Into<Scalar>>(&self, value: T) -> ResultHandle<Scalar> {
-        let scalar: Scalar = value.into();
-        self.new_network_op(vec![], move |_args| scalar.into())
+    /// Send a batch of values to the counterparty
+    pub fn send_values<T>(&self, values: &[ResultHandle<T>]) -> ResultHandle<Vec<T>>
+    where
+        T: From<ResultValue>,
+        Vec<T>: Into<NetworkPayload> + From<ResultValue>,
+    {
+        let ids = values.iter().map(|v| v.id).collect_vec();
+        self.new_network_op(ids, |args| {
+            let payload: Vec<T> = args.into_iter().map(|val| val.into()).collect();
+            payload.into()
+        })
     }
 
     /// Receive a value from the peer
@@ -772,6 +718,23 @@ impl MpcFabric {
             // Party 1 receives first then sends
             let handle = self.receive_value();
             self.send_value(value);
+            handle
+        }
+    }
+
+    /// Exchange a batch of values with the peer, i.e. send then receive or receive then send
+    /// based on party ID
+    pub fn exchange_values<T>(&self, values: &[ResultHandle<T>]) -> ResultHandle<Vec<T>>
+    where
+        T: From<ResultValue>,
+        Vec<T>: From<ResultValue> + Into<NetworkPayload>,
+    {
+        if self.party_id() == PARTY0 {
+            self.send_values(values);
+            self.receive_value()
+        } else {
+            let handle = self.receive_value();
+            self.send_values(values);
             handle
         }
     }
@@ -902,15 +865,23 @@ impl MpcFabric {
             .expect("beaver source poisoned")
             .next_triplet_batch(n);
 
-        let a_vals = self.allocate_scalars(a_vals);
-        let b_vals = self.allocate_scalars(b_vals);
-        let c_vals = self.allocate_scalars(c_vals);
+        let a_vals = self
+            .allocate_scalars(a_vals)
+            .into_iter()
+            .map(MpcScalarResult::new_shared)
+            .collect_vec();
+        let b_vals = self
+            .allocate_scalars(b_vals)
+            .into_iter()
+            .map(MpcScalarResult::new_shared)
+            .collect_vec();
+        let c_vals = self
+            .allocate_scalars(c_vals)
+            .into_iter()
+            .map(MpcScalarResult::new_shared)
+            .collect_vec();
 
-        (
-            MpcScalarResult::new_shared_batch(a_vals),
-            MpcScalarResult::new_shared_batch(b_vals),
-            MpcScalarResult::new_shared_batch(c_vals),
-        )
+        (a_vals, b_vals, c_vals)
     }
 
     /// Sample the next beaver triplet with MACs from the beaver source

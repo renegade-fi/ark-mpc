@@ -128,7 +128,7 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(opened_res, expected_result)
 }
 
-/// Test multiplication of an `MpcStarkPoint` type with an `MpcScalar` type
+/// Test multiplication of an `MpcStarkPoint` type with an `MpcScalarResult` type
 ///
 /// Party 0 chooses the point, party 1 chooses the scalar
 fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
