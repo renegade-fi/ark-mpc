@@ -509,6 +509,50 @@ impl StarkPointResult {
             .map(MpcStarkPointResult::from)
             .collect_vec()
     }
+
+    /// Multiply a batch of `AuthenticatedScalarResult`s with a batch of `StarkPointResult`s
+    pub fn batch_mul_authenticated(
+        a: &[AuthenticatedScalarResult],
+        b: &[StarkPointResult],
+    ) -> Vec<AuthenticatedStarkPointResult> {
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "batch_mul_authenticated cannot compute on vectors of unequal length"
+        );
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+        let all_ids = b
+            .iter()
+            .map(|b| b.id())
+            .chain(a.iter().flat_map(|a| a.ids()))
+            .collect_vec();
+
+        let results =
+            fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+                let points: Vec<StarkPoint> = args.drain(..n).map(StarkPoint::from).collect_vec();
+
+                let mut results = Vec::with_capacity(AUTHENTICATED_STARK_POINT_RESULT_LEN * n);
+
+                for (scalars, point) in args
+                    .chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN)
+                    .zip(points.into_iter())
+                {
+                    let share = Scalar::from(&scalars[0]);
+                    let mac = Scalar::from(&scalars[1]);
+                    let public_modifier = Scalar::from(&scalars[2]);
+
+                    results.push(ResultValue::Point(point * share));
+                    results.push(ResultValue::Point(point * mac));
+                    results.push(ResultValue::Point(point * public_modifier));
+                }
+
+                results
+            });
+
+        AuthenticatedStarkPointResult::from_flattened_iterator(results.into_iter())
+    }
 }
 
 // === MulAssign === //

@@ -90,6 +90,15 @@ impl From<ResultValue> for Scalar {
     }
 }
 
+impl From<&ResultValue> for Scalar {
+    fn from(value: &ResultValue) -> Self {
+        match value {
+            ResultValue::Scalar(scalar) => *scalar,
+            _ => panic!("Cannot cast {:?} to scalar", value),
+        }
+    }
+}
+
 impl From<ResultValue> for Vec<Scalar> {
     fn from(value: ResultValue) -> Self {
         match value {
@@ -103,6 +112,15 @@ impl From<ResultValue> for StarkPoint {
     fn from(value: ResultValue) -> Self {
         match value {
             ResultValue::Point(point) => point,
+            _ => panic!("Cannot cast {:?} to point", value),
+        }
+    }
+}
+
+impl From<&ResultValue> for StarkPoint {
+    fn from(value: &ResultValue) -> Self {
+        match value {
+            ResultValue::Point(point) => *point,
             _ => panic!("Cannot cast {:?} to point", value),
         }
     }

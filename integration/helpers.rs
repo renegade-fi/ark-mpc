@@ -188,6 +188,15 @@ pub(crate) fn share_authenticated_point(
     test_args.fabric.share_point(value, sender)
 }
 
+/// Send or receive a batch of secret shared points from the given party and allocate them as authenticated values
+pub(crate) fn share_authenticated_point_batch(
+    values: Vec<StarkPoint>,
+    sender: PartyId,
+    test_args: &IntegrationTestArgs,
+) -> Vec<AuthenticatedStarkPointResult> {
+    test_args.fabric.batch_share_point(values, sender)
+}
+
 /// Share a value with the counterparty by sender ID, the sender sends and the receiver receives
 pub(crate) fn share_plaintext_value<T: From<ResultValue> + Into<NetworkPayload>>(
     value: ResultHandle<T>,

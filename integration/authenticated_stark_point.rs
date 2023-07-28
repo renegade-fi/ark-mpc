@@ -1,9 +1,11 @@
 //! Integration tests for the `AuthenticatedStarkPoint` type
 
+use itertools::Itertools;
 use mpc_stark::{
     algebra::{
-        authenticated_stark_point::test_helpers::{
-            modify_mac, modify_public_modifier, modify_share,
+        authenticated_stark_point::{
+            test_helpers::{modify_mac, modify_public_modifier, modify_share},
+            AuthenticatedStarkPointResult,
         },
         scalar::Scalar,
     },
@@ -13,8 +15,9 @@ use rand::thread_rng;
 
 use crate::{
     helpers::{
-        assert_err, assert_points_eq, await_result, await_result_with_error,
-        share_authenticated_point, share_authenticated_scalar,
+        assert_err, assert_point_batches_eq, assert_points_eq, await_batch_result_with_error,
+        await_result, await_result_batch, await_result_with_error, share_authenticated_point,
+        share_authenticated_point_batch, share_authenticated_scalar, share_plaintext_values_batch,
     },
     IntegrationTest, IntegrationTestArgs,
 };
@@ -120,6 +123,63 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(res_open, expected_result)
 }
 
+/// Test batch addition
+fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let my_vals = (0..n).map(|_| random_point()).collect_vec();
+    let my_vals_allocated = fabric.allocate_points(my_vals.clone());
+
+    // Share the plaintext value with the counterparty and compute the result
+    let party0_values = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let party1_values = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_values)
+        .into_iter()
+        .zip(await_result_batch(&party1_values).into_iter())
+        .map(|(x, y)| x + y)
+        .collect_vec();
+
+    // Add the points in the MPC circuit
+    let party0_values = share_authenticated_point_batch(my_vals.clone(), PARTY0, test_args);
+    let party1_values = share_authenticated_point_batch(my_vals, PARTY1, test_args);
+
+    let res = AuthenticatedStarkPointResult::batch_add(&party0_values, &party1_values);
+    let res_open = await_batch_result_with_error(
+        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
+    )?;
+
+    assert_point_batches_eq(res_open, expected_result)
+}
+
+/// Test addition between a batch of `AuthenticatedStarkPoint`s and `StarkPoint`s
+fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let my_vals = (0..n).map(|_| random_point()).collect_vec();
+    let my_vals_allocated = fabric.allocate_points(my_vals.clone());
+
+    // Share the plaintext value with the counterparty and compute the result
+    let party0_values = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let plaintext_values = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_values)
+        .into_iter()
+        .zip(await_result_batch(&plaintext_values).into_iter())
+        .map(|(x, y)| x + y)
+        .collect_vec();
+
+    // Add the points in the MPC circuit
+    let party0_values = share_authenticated_point_batch(my_vals, PARTY0, test_args);
+
+    let res = AuthenticatedStarkPointResult::batch_add_public(&party0_values, &plaintext_values);
+    let res_open = await_batch_result_with_error(
+        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
+    )?;
+
+    assert_point_batches_eq(res_open, expected_result)
+}
+
 /// Test subtraction between a shared and a public point
 fn test_sub_public_point(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
@@ -159,6 +219,63 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(res_open, expected_result)
 }
 
+/// Test batch subtraction
+fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let my_vals = (0..n).map(|_| random_point()).collect_vec();
+    let my_vals_allocated = fabric.allocate_points(my_vals.clone());
+
+    // Share the plaintext value with the counterparty and compute the result
+    let party0_values = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let party1_values = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_values)
+        .into_iter()
+        .zip(await_result_batch(&party1_values).into_iter())
+        .map(|(x, y)| x - y)
+        .collect_vec();
+
+    // Add the points in the MPC circuit
+    let party0_values = share_authenticated_point_batch(my_vals.clone(), PARTY0, test_args);
+    let party1_values = share_authenticated_point_batch(my_vals, PARTY1, test_args);
+
+    let res = AuthenticatedStarkPointResult::batch_sub(&party0_values, &party1_values);
+    let res_open = await_batch_result_with_error(
+        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
+    )?;
+
+    assert_point_batches_eq(res_open, expected_result)
+}
+
+/// Test addition between a batch of `AuthenticatedStarkPoint`s and `StarkPoint`s
+fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let my_vals = (0..n).map(|_| random_point()).collect_vec();
+    let my_vals_allocated = fabric.allocate_points(my_vals.clone());
+
+    // Share the plaintext value with the counterparty and compute the result
+    let party0_values = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let plaintext_values = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_values)
+        .into_iter()
+        .zip(await_result_batch(&plaintext_values).into_iter())
+        .map(|(x, y)| x - y)
+        .collect_vec();
+
+    // Add the points in the MPC circuit
+    let party0_values = share_authenticated_point_batch(my_vals, PARTY0, test_args);
+
+    let res = AuthenticatedStarkPointResult::batch_sub_public(&party0_values, &plaintext_values);
+    let res_open = await_batch_result_with_error(
+        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
+    )?;
+
+    assert_point_batches_eq(res_open, expected_result)
+}
+
 /// Test negation
 fn test_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point
@@ -175,6 +292,30 @@ fn test_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let res_open = await_result_with_error(result.open_authenticated())?;
 
     assert_points_eq(res_open, expected_result)
+}
+
+/// Test batch negation
+fn test_batch_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let my_values = (0..n).map(|_| random_point()).collect_vec();
+    let my_values_allocated = fabric.allocate_points(my_values.clone());
+
+    // Party 0's values are used for the negation
+    let party0_values = share_plaintext_values_batch(&my_values_allocated, PARTY0, fabric);
+    let expected_res = await_result_batch(&party0_values)
+        .into_iter()
+        .map(|x| -x)
+        .collect_vec();
+
+    // Compute the expected result in an MPC circuit
+    let party0_values = share_authenticated_point_batch(my_values, PARTY0, test_args);
+    let res = AuthenticatedStarkPointResult::batch_neg(&party0_values);
+    let res_open = await_batch_result_with_error(
+        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
+    )?;
+
+    assert_point_batches_eq(expected_res, res_open)
 }
 
 /// Test multiplication with a public scalar
@@ -220,6 +361,63 @@ fn test_multiplication(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(res_open, expected_result)
 }
 
+/// Test batch multiplication
+fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let my_vals = (0..n).map(|_| random_point()).collect_vec();
+    let my_vals_allocated = fabric.allocate_points(my_vals.clone());
+
+    // Share the plaintext value with the counterparty and compute the result
+    let party0_values = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let party1_values = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_values)
+        .into_iter()
+        .zip(await_result_batch(&party1_values).into_iter())
+        .map(|(x, y)| x - y)
+        .collect_vec();
+
+    // Add the points in the MPC circuit
+    let party0_values = share_authenticated_point_batch(my_vals.clone(), PARTY0, test_args);
+    let party1_values = share_authenticated_point_batch(my_vals, PARTY1, test_args);
+
+    let res = AuthenticatedStarkPointResult::batch_sub(&party0_values, &party1_values);
+    let res_open = await_batch_result_with_error(
+        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
+    )?;
+
+    assert_point_batches_eq(res_open, expected_result)
+}
+
+/// Test addition between a batch of `AuthenticatedStarkPoint`s and `StarkPoint`s
+fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+    let n = 10;
+    let fabric = &test_args.fabric;
+    let my_vals = (0..n).map(|_| random_point()).collect_vec();
+    let my_vals_allocated = fabric.allocate_points(my_vals.clone());
+
+    // Share the plaintext value with the counterparty and compute the result
+    let party0_values = share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric);
+    let plaintext_values = share_plaintext_values_batch(&my_vals_allocated, PARTY1, fabric);
+
+    let expected_result = await_result_batch(&party0_values)
+        .into_iter()
+        .zip(await_result_batch(&plaintext_values).into_iter())
+        .map(|(x, y)| x - y)
+        .collect_vec();
+
+    // Add the points in the MPC circuit
+    let party0_values = share_authenticated_point_batch(my_vals, PARTY0, test_args);
+
+    let res = AuthenticatedStarkPointResult::batch_sub_public(&party0_values, &plaintext_values);
+    let res_open = await_batch_result_with_error(
+        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
+    )?;
+
+    assert_point_batches_eq(res_open, expected_result)
+}
+
 inventory::submit!(IntegrationTest {
     name: "authenticated_stark_point::test_open_authenticated",
     test_fn: test_open_authenticated
@@ -251,6 +449,16 @@ inventory::submit!(IntegrationTest {
 });
 
 inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_batch_add",
+    test_fn: test_batch_add
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_batch_add_public",
+    test_fn: test_batch_add_public
+});
+
+inventory::submit!(IntegrationTest {
     name: "authenticated_stark_point::test_sub_public_point",
     test_fn: test_sub_public_point
 });
@@ -261,8 +469,23 @@ inventory::submit!(IntegrationTest {
 });
 
 inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_batch_sub",
+    test_fn: test_batch_sub
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_batch_sub_public",
+    test_fn: test_batch_sub_public
+});
+
+inventory::submit!(IntegrationTest {
     name: "authenticated_stark_point::test_negation",
     test_fn: test_negation
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_batch_negation",
+    test_fn: test_batch_negation
 });
 
 inventory::submit!(IntegrationTest {
@@ -273,4 +496,14 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated_stark_point::test_multiplication",
     test_fn: test_multiplication
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_batch_mul",
+    test_fn: test_batch_mul
+});
+
+inventory::submit!(IntegrationTest {
+    name: "authenticated_stark_point::test_batch_mul_public",
+    test_fn: test_batch_mul_public
 });

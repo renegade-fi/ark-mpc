@@ -633,6 +633,19 @@ impl MpcFabric {
         AuthenticatedStarkPointResult::new_shared(point)
     }
 
+    /// Share a batch of `StarkPoint`s with the counterparty
+    ///
+    /// TODO: Use a batched request to the network layer
+    pub fn batch_share_point(
+        &self,
+        vals: Vec<StarkPoint>,
+        sender: PartyId,
+    ) -> Vec<AuthenticatedStarkPointResult> {
+        vals.into_iter()
+            .map(|val| self.share_point(val, sender))
+            .collect_vec()
+    }
+
     /// Allocate a public value in the fabric
     pub fn allocate_scalar<T: Into<Scalar>>(&self, value: T) -> ResultHandle<Scalar> {
         let id = self.inner.allocate_value(ResultValue::Scalar(value.into()));
