@@ -40,8 +40,8 @@ use crate::{
         authenticated_stark_point::AuthenticatedStarkPointResult,
         mpc_scalar::MpcScalarResult,
         mpc_stark_point::MpcStarkPointResult,
-        scalar::{Scalar, ScalarResult},
-        stark_curve::{StarkPoint, StarkPointResult},
+        scalar::{BatchScalarResult, Scalar, ScalarResult},
+        stark_curve::{BatchStarkPointResult, StarkPoint, StarkPointResult},
     },
     beaver::SharedValueSource,
     buffer::GrowableBuffer,
@@ -597,16 +597,34 @@ impl MpcFabric {
     }
 
     /// Share a batch of `Scalar` values with the counterparty
-    ///
-    /// TODO: Use a batched request to the network layer
     pub fn batch_share_scalar<T: Into<Scalar>>(
         &self,
         vals: Vec<T>,
         sender: PartyId,
     ) -> Vec<AuthenticatedScalarResult> {
-        vals.into_iter()
-            .map(|val| self.share_scalar(val, sender))
-            .collect_vec()
+        let n = vals.len();
+        let shares: BatchScalarResult = if self.party_id() == sender {
+            let vals = vals.into_iter().map(|val| val.into()).collect_vec();
+            let mut rng = thread_rng();
+
+            let peer_shares = (0..vals.len())
+                .map(|_| Scalar::random(&mut rng))
+                .collect_vec();
+            let my_shares = vals
+                .iter()
+                .zip(peer_shares.iter())
+                .map(|(val, share)| val - share)
+                .collect_vec();
+
+            self.allocate_shared_value(
+                ResultValue::ScalarBatch(my_shares),
+                ResultValue::ScalarBatch(peer_shares),
+            )
+        } else {
+            self.receive_value()
+        };
+
+        AuthenticatedScalarResult::new_shared_from_batch_result(shares, n)
     }
 
     /// Share a `StarkPoint` value with the counterparty
@@ -634,16 +652,36 @@ impl MpcFabric {
     }
 
     /// Share a batch of `StarkPoint`s with the counterparty
-    ///
-    /// TODO: Use a batched request to the network layer
     pub fn batch_share_point(
         &self,
         vals: Vec<StarkPoint>,
         sender: PartyId,
     ) -> Vec<AuthenticatedStarkPointResult> {
-        vals.into_iter()
-            .map(|val| self.share_point(val, sender))
-            .collect_vec()
+        let n = vals.len();
+        let shares: BatchStarkPointResult = if self.party_id() == sender {
+            let mut rng = thread_rng();
+            let generator = StarkPoint::generator();
+            let peer_shares = (0..vals.len())
+                .map(|_| {
+                    let discrete_log = Scalar::random(&mut rng);
+                    discrete_log * generator
+                })
+                .collect_vec();
+            let my_shares = vals
+                .iter()
+                .zip(peer_shares.iter())
+                .map(|(val, share)| val - share)
+                .collect_vec();
+
+            self.allocate_shared_value(
+                ResultValue::PointBatch(my_shares),
+                ResultValue::PointBatch(peer_shares),
+            )
+        } else {
+            self.receive_value()
+        };
+
+        AuthenticatedStarkPointResult::new_shared_from_batch_result(shares, n)
     }
 
     /// Allocate a public value in the fabric
@@ -670,16 +708,12 @@ impl MpcFabric {
     }
 
     /// Allocate a batch of scalars as secret shares of already shared values
-    ///
-    /// TODO: Optimize this to use a batched gate
     pub fn batch_allocate_preshared_scalar<T: Into<Scalar>>(
         &self,
         values: Vec<T>,
     ) -> Vec<AuthenticatedScalarResult> {
-        values
-            .into_iter()
-            .map(|value| self.allocate_preshared_scalar(value))
-            .collect_vec()
+        let values = self.allocate_scalars(values);
+        AuthenticatedScalarResult::new_shared_batch(&values)
     }
 
     /// Allocate a public curve point in the fabric
@@ -773,16 +807,12 @@ impl MpcFabric {
     }
 
     /// Share a batch of public values with the counterparty
-    ///
-    /// TODO: Optimize this to use batch network operations
-    pub fn batch_share_plaintext<T>(&self, values: Vec<T>, sender: PartyId) -> Vec<ResultHandle<T>>
+    pub fn batch_share_plaintext<T>(&self, values: Vec<T>, sender: PartyId) -> ResultHandle<Vec<T>>
     where
-        T: 'static + From<ResultValue> + Into<NetworkPayload> + Send + Sync,
+        T: 'static + From<ResultValue> + Send + Sync,
+        Vec<T>: Into<NetworkPayload> + From<ResultValue>,
     {
-        values
-            .into_iter()
-            .map(|value| self.share_plaintext(value, sender))
-            .collect_vec()
+        self.share_plaintext(values, sender)
     }
 
     // -------------------
@@ -1011,8 +1041,6 @@ impl MpcFabric {
     }
 
     /// Sample a batch of values that are multiplicative inverses of one another
-    ///
-    /// TODO: Use a batched gate operation
     pub fn random_inverse_pairs(
         &self,
         n: usize,
@@ -1020,6 +1048,20 @@ impl MpcFabric {
         Vec<AuthenticatedScalarResult>,
         Vec<AuthenticatedScalarResult>,
     ) {
-        (0..n).map(|_| self.random_inverse_pair()).unzip()
+        let (left, right) = self
+            .inner
+            .beaver_source
+            .lock()
+            .unwrap()
+            .next_shared_inverse_pair_batch(n);
+
+        let left_right = left.into_iter().chain(right.into_iter()).collect_vec();
+        let allocated_left_right = self.allocate_scalars(left_right);
+        let authenticated_left_right =
+            AuthenticatedScalarResult::new_shared_batch(&allocated_left_right);
+
+        // Split left and right
+        let (left, right) = authenticated_left_right.split_at(n);
+        (left.to_vec(), right.to_vec())
     }
 }

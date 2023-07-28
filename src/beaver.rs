@@ -30,10 +30,10 @@ pub trait SharedValueSource: Send + Sync {
     /// Fetch the next pair of values that are multiplicative inverses of one another
     fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar);
     /// Fetch the next batch of multiplicative inverse pairs
-    fn next_shared_inverse_pair_batch(&mut self, num_pairs: usize) -> Vec<(Scalar, Scalar)> {
+    fn next_shared_inverse_pair_batch(&mut self, num_pairs: usize) -> (Vec<Scalar>, Vec<Scalar>) {
         (0..num_pairs)
             .map(|_| self.next_shared_inverse_pair())
-            .collect_vec()
+            .unzip()
     }
     /// Fetch the next beaver triplet
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar);

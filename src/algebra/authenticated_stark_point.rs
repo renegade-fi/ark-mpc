@@ -25,7 +25,7 @@ use super::{
     macros::{impl_borrow_variants, impl_commutative},
     mpc_stark_point::MpcStarkPointResult,
     scalar::{Scalar, ScalarResult},
-    stark_curve::StarkPointResult,
+    stark_curve::{BatchStarkPointResult, StarkPointResult},
 };
 
 /// The number of underlying results in an `AuthenticatedStarkPointResult`
@@ -105,6 +105,22 @@ impl AuthenticatedStarkPointResult {
                 public_modifier: fabric.curve_identity(),
             })
             .collect_vec()
+    }
+
+    /// Creates a batch of `AuthenticatedStarkPoint`s from a batch result
+    ///
+    /// The batch result combines the batch into one result, so it must be split out
+    /// first before creating the `AuthenticatedStarkPointResult`s
+    pub fn new_shared_from_batch_result(
+        values: BatchStarkPointResult,
+        n: usize,
+    ) -> Vec<AuthenticatedStarkPointResult> {
+        // Convert to a set of scalar results, the identity gate does this when set to `n` output arity
+        let scalar_results = values
+            .fabric()
+            .new_batch_gate_op(vec![values.id()], n, |args| args);
+
+        Self::new_shared_batch(&scalar_results)
     }
 
     /// Get the ID of the underlying share's result
@@ -1002,7 +1018,7 @@ impl AuthenticatedStarkPointResult {
 impl AuthenticatedStarkPointResult {
     /// Multiscalar multiplication
     ///
-    /// TODO: Batch this implementation onto the network if necessary
+    /// TODO: Maybe make use of a fast MSM operation under the hood once the blinded points are revealed
     pub fn msm(
         scalars: &[AuthenticatedScalarResult],
         points: &[AuthenticatedStarkPointResult],
@@ -1012,11 +1028,50 @@ impl AuthenticatedStarkPointResult {
             points.len(),
             "multiscalar_mul requires equal length vectors"
         );
-        let init = &scalars[0] * &points[0];
-        scalars[1..]
-            .iter()
-            .zip(points[1..].iter())
-            .fold(init, |acc, (s, p)| acc + (s * p))
+        assert!(
+            !scalars.is_empty(),
+            "multiscalar_mul requires non-empty vectors"
+        );
+
+        let mul_out = AuthenticatedStarkPointResult::batch_mul(scalars, points);
+
+        // Create a gate to sum the points
+        let fabric = scalars[0].fabric();
+        let all_ids = mul_out.iter().flat_map(|p| p.ids()).collect_vec();
+
+        let results = fabric.new_batch_gate_op(
+            all_ids,
+            AUTHENTICATED_STARK_POINT_RESULT_LEN, /* output_arity */
+            move |args| {
+                // Accumulators
+                let mut share = StarkPoint::identity();
+                let mut mac = StarkPoint::identity();
+                let mut modifier = StarkPoint::identity();
+
+                for mut chunk in args
+                    .into_iter()
+                    .map(StarkPoint::from)
+                    .chunks(AUTHENTICATED_STARK_POINT_RESULT_LEN)
+                    .into_iter()
+                {
+                    share += chunk.next().unwrap();
+                    mac += chunk.next().unwrap();
+                    modifier += chunk.next().unwrap();
+                }
+
+                vec![
+                    ResultValue::Point(share),
+                    ResultValue::Point(mac),
+                    ResultValue::Point(modifier),
+                ]
+            },
+        );
+
+        AuthenticatedStarkPointResult {
+            share: results[0].clone().into(),
+            mac: results[1].clone().into(),
+            public_modifier: results[2].clone(),
+        }
     }
 
     /// Multiscalar multiplication on iterator types

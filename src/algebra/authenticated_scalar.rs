@@ -22,7 +22,7 @@ use super::{
     authenticated_stark_point::AuthenticatedStarkPointResult,
     macros::{impl_borrow_variants, impl_commutative},
     mpc_scalar::MpcScalarResult,
-    scalar::{Scalar, ScalarResult},
+    scalar::{BatchScalarResult, Scalar, ScalarResult},
     stark_curve::{StarkPoint, StarkPointResult},
 };
 
@@ -107,6 +107,22 @@ impl AuthenticatedScalarResult {
                 public_modifier: fabric.zero(),
             })
             .collect_vec()
+    }
+
+    /// Create a nwe shared batch of values from a batch network result
+    ///
+    /// The batch result combines the batch into one result, so it must be split out
+    /// first before creating the `AuthenticatedScalarResult`s
+    pub fn new_shared_from_batch_result(
+        values: BatchScalarResult,
+        n: usize,
+    ) -> Vec<AuthenticatedScalarResult> {
+        // Convert to a set of scalar results, the identity gate does this when set to `n` output arity
+        let scalar_results = values
+            .fabric()
+            .new_batch_gate_op(vec![values.id()], n, |args| args);
+
+        Self::new_shared_batch(&scalar_results)
     }
 
     /// Get the raw share as an `MpcScalarResult`
@@ -862,8 +878,6 @@ impl_borrow_variants!(AuthenticatedScalarResult, Mul, mul, *, AuthenticatedScala
 
 impl AuthenticatedScalarResult {
     /// Multiply a batch of values using the Beaver trick
-    ///
-    /// TODO: Optimize this to use a network message
     pub fn batch_mul(
         a: &[AuthenticatedScalarResult],
         b: &[AuthenticatedScalarResult],
