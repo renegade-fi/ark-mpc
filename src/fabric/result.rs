@@ -65,8 +65,9 @@ impl From<ResultValue> for NetworkPayload {
         match value {
             ResultValue::Bytes(bytes) => NetworkPayload::Bytes(bytes),
             ResultValue::Scalar(scalar) => NetworkPayload::Scalar(scalar),
+            ResultValue::ScalarBatch(scalars) => NetworkPayload::ScalarBatch(scalars),
             ResultValue::Point(point) => NetworkPayload::Point(point),
-            _ => panic!("not a valid network payload type"),
+            ResultValue::PointBatch(points) => NetworkPayload::PointBatch(points),
         }
     }
 }

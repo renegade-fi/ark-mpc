@@ -529,8 +529,10 @@ impl StarkPointResult {
             .chain(a.iter().flat_map(|a| a.ids()))
             .collect_vec();
 
-        let results =
-            fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
+        let results = fabric.new_batch_gate_op(
+            all_ids,
+            AUTHENTICATED_STARK_POINT_RESULT_LEN * n, /* output_arity */
+            move |mut args| {
                 let points: Vec<StarkPoint> = args.drain(..n).map(StarkPoint::from).collect_vec();
 
                 let mut results = Vec::with_capacity(AUTHENTICATED_STARK_POINT_RESULT_LEN * n);
@@ -549,7 +551,8 @@ impl StarkPointResult {
                 }
 
                 results
-            });
+            },
+        );
 
         AuthenticatedStarkPointResult::from_flattened_iterator(results.into_iter())
     }

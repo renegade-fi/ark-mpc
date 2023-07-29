@@ -1064,4 +1064,30 @@ impl MpcFabric {
         let (left, right) = authenticated_left_right.split_at(n);
         (left.to_vec(), right.to_vec())
     }
+
+    /// Sample a random shared bit from the beaver source
+    pub fn random_shared_bit(&self) -> AuthenticatedScalarResult {
+        let bit = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_shared_bit();
+
+        let bit = self.allocate_scalar(bit);
+        AuthenticatedScalarResult::new_shared(bit)
+    }
+
+    /// Sample a batch of random shared bits from the beaver source
+    pub fn random_shared_bits(&self, n: usize) -> Vec<AuthenticatedScalarResult> {
+        let bits = self
+            .inner
+            .beaver_source
+            .lock()
+            .expect("beaver source poisoned")
+            .next_shared_bit_batch(n);
+
+        let bits = self.allocate_scalars(bits);
+        AuthenticatedScalarResult::new_shared_batch(&bits)
+    }
 }

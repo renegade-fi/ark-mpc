@@ -117,10 +117,13 @@ impl AuthenticatedScalarResult {
         values: BatchScalarResult,
         n: usize,
     ) -> Vec<AuthenticatedScalarResult> {
-        // Convert to a set of scalar results, the identity gate does this when set to `n` output arity
+        // Convert to a set of scalar results
         let scalar_results = values
             .fabric()
-            .new_batch_gate_op(vec![values.id()], n, |args| args);
+            .new_batch_gate_op(vec![values.id()], n, |mut args| {
+                let scalars: Vec<Scalar> = args.pop().unwrap().into();
+                scalars.into_iter().map(ResultValue::Scalar).collect()
+            });
 
         Self::new_shared_batch(&scalar_results)
     }

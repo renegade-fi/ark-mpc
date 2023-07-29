@@ -115,10 +115,13 @@ impl AuthenticatedStarkPointResult {
         values: BatchStarkPointResult,
         n: usize,
     ) -> Vec<AuthenticatedStarkPointResult> {
-        // Convert to a set of scalar results, the identity gate does this when set to `n` output arity
+        // Convert to a set of scalar results
         let scalar_results = values
             .fabric()
-            .new_batch_gate_op(vec![values.id()], n, |args| args);
+            .new_batch_gate_op(vec![values.id()], n, |mut args| {
+                let args: Vec<StarkPoint> = args.pop().unwrap().into();
+                args.into_iter().map(ResultValue::Point).collect_vec()
+            });
 
         Self::new_shared_batch(&scalar_results)
     }
