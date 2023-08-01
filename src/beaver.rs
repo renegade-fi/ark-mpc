@@ -56,37 +56,46 @@ pub trait SharedValueSource: Send + Sync {
         (a_vals, b_vals, c_vals)
     }
 }
-
-/// A dummy value source that outputs only ones
-/// Used for testing
+/// An implementation of a beaver value source that returns
+/// beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
 #[cfg(any(feature = "test_helpers", test))]
 #[derive(Clone, Debug, Default)]
-pub struct DummySharedScalarSource;
-
-#[cfg(any(feature = "test_helpers", test))]
-#[allow(dead_code)]
-impl DummySharedScalarSource {
-    /// Constructor
-    pub fn new() -> Self {
-        Self
-    }
+pub struct PartyIDBeaverSource {
+    /// The ID of the local party
+    party_id: u64,
 }
 
 #[cfg(any(feature = "test_helpers", test))]
-impl SharedValueSource for DummySharedScalarSource {
+impl PartyIDBeaverSource {
+    /// Create a new beaver source given the local party_id
+    pub fn new(party_id: u64) -> Self {
+        Self { party_id }
+    }
+}
+
+/// The PartyIDBeaverSource returns beaver triplets split statically between the
+/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] = (2, 4)
+#[cfg(any(feature = "test_helpers", test))]
+impl SharedValueSource for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar {
-        Scalar::one()
-    }
-
-    fn next_shared_value(&mut self) -> Scalar {
-        Scalar::one()
-    }
-
-    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (Scalar::one(), Scalar::one())
+        // Simply output partyID, assume partyID \in {0, 1}
+        assert!(self.party_id == 0 || self.party_id == 1);
+        Scalar::from(self.party_id)
     }
 
     fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
-        (Scalar::one(), Scalar::one(), Scalar::one())
+        if self.party_id == 0 {
+            (Scalar::from(1u64), Scalar::from(3u64), Scalar::from(2u64))
+        } else {
+            (Scalar::from(1u64), Scalar::from(0u64), Scalar::from(4u64))
+        }
+    }
+
+    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
+        (Scalar::from(self.party_id), Scalar::from(self.party_id))
+    }
+
+    fn next_shared_value(&mut self) -> Scalar {
+        Scalar::from(self.party_id)
     }
 }

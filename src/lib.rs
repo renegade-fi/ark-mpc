@@ -67,13 +67,57 @@ pub type BeaverSource<S: SharedValueSource> = Rc<RefCell<S>>;
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
-    use crate::{beaver::DummySharedScalarSource, network::NoRecvNetwork, MpcFabric};
+    use futures::Future;
+
+    use crate::{
+        beaver::PartyIDBeaverSource,
+        network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
+        MpcFabric, PARTY0, PARTY1,
+    };
 
     /// Create a mock fabric
     pub fn mock_fabric() -> MpcFabric {
         let network = NoRecvNetwork::default();
-        let beaver_source = DummySharedScalarSource::new();
+        let beaver_source = PartyIDBeaverSource::default();
 
         MpcFabric::new(network, beaver_source)
+    }
+
+    /// Run a mock MPC connected by a duplex stream as the mock network
+    ///
+    /// This will spawn two tasks to execute either side of the MPC
+    ///
+    /// Returns the outputs of both parties
+    pub async fn execute_mock_mpc<T, S, F>(mut f: F) -> (T, T)
+    where
+        T: Send + 'static,
+        S: Future<Output = T> + Send + 'static,
+        F: FnMut(MpcFabric) -> S,
+    {
+        // Build a duplex stream to broker communication between the two parties
+        let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
+        let party0_fabric = MpcFabric::new(
+            MockNetwork::new(PARTY0, party0_stream),
+            PartyIDBeaverSource::new(PARTY0),
+        );
+        let party1_fabric = MpcFabric::new(
+            MockNetwork::new(PARTY1, party1_stream),
+            PartyIDBeaverSource::new(PARTY1),
+        );
+
+        // Spawn two tasks to execute the MPC
+        let fabric0 = party0_fabric.clone();
+        let fabric1 = party1_fabric.clone();
+        let party0_task = tokio::spawn(f(fabric0));
+        let party1_task = tokio::spawn(f(fabric1));
+
+        let party0_output = party0_task.await.unwrap();
+        let party1_output = party1_task.await.unwrap();
+
+        // Shutdown the fabrics
+        party0_fabric.shutdown();
+        party1_fabric.shutdown();
+
+        (party0_output, party1_output)
     }
 }

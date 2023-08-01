@@ -664,7 +664,7 @@ impl Sub<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
         AuthenticatedScalarResult {
             share: &self.share - &rhs.share,
             mac: &self.mac - &rhs.mac,
-            public_modifier: self.public_modifier.clone(),
+            public_modifier: self.public_modifier.clone() - rhs.public_modifier.clone(),
         }
     }
 }
@@ -1027,5 +1027,25 @@ pub mod test_helpers {
     /// Modify the public modifier of an `AuthenticatedScalarResult` by adding an offset
     pub fn modify_public_modifier(val: &mut AuthenticatedScalarResult, new_value: Scalar) {
         val.public_modifier = val.fabric().allocate_scalar(new_value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{algebra::scalar::Scalar, test_helpers::execute_mock_mpc};
+
+    /// Test a simple `XOR` circuit
+    #[tokio::test]
+    async fn test_xor_circuit() {
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a = &fabric.zero_authenticated();
+            let b = &fabric.zero_authenticated();
+            let res = a + b - Scalar::from(2u64) * a * b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), 0.into());
     }
 }
