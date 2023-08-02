@@ -272,21 +272,34 @@ impl Sub<&Scalar> for &MpcScalarResult {
     fn sub(self, rhs: &Scalar) -> Self::Output {
         let rhs = *rhs;
         let party_id = self.fabric().party_id();
-        self.fabric()
-            .new_gate_op(vec![self.id()], move |args| {
-                // Cast the args
-                let lhs: Scalar = args[0].to_owned().into();
 
-                if party_id == PARTY0 {
-                    ResultValue::Scalar(lhs - rhs)
-                } else {
-                    ResultValue::Scalar(lhs)
-                }
-            })
-            .into()
+        if party_id == PARTY0 {
+            &self.share - rhs
+        } else {
+            // Party 1 must perform an operation to keep the result queues in sync
+            &self.share - Scalar::zero()
+        }
+        .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Sub, sub, -, Scalar);
+
+impl Sub<&MpcScalarResult> for &Scalar {
+    type Output = MpcScalarResult;
+
+    // Only party 0 subtracts the plaintext value as we do not secret share it
+    fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
+        let party_id = rhs.fabric().party_id();
+
+        if party_id == PARTY0 {
+            self - &rhs.share
+        } else {
+            // Party 1 must perform an operation to keep the result queues in sync
+            Scalar::zero() - &rhs.share
+        }
+        .into()
+    }
+}
 
 impl Sub<&ScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
@@ -294,22 +307,35 @@ impl Sub<&ScalarResult> for &MpcScalarResult {
     // Only party 0 subtracts the plaintext value as we do not secret share it
     fn sub(self, rhs: &ScalarResult) -> Self::Output {
         let party_id = self.fabric().party_id();
-        self.fabric()
-            .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
-                // Cast the args
-                let lhs: Scalar = args.remove(0).into();
-                let rhs: Scalar = args.remove(0).into();
 
-                if party_id == PARTY0 {
-                    ResultValue::Scalar(lhs - rhs)
-                } else {
-                    ResultValue::Scalar(lhs)
-                }
-            })
-            .into()
+        if party_id == PARTY0 {
+            &self.share - rhs
+        } else {
+            // Party 1 must perform an operation to keep the result queues in sync
+            self.share.clone() + Scalar::zero()
+        }
+        .into()
     }
 }
 impl_borrow_variants!(MpcScalarResult, Sub, sub, -, ScalarResult);
+
+impl Sub<&MpcScalarResult> for &ScalarResult {
+    type Output = MpcScalarResult;
+
+    // Only party 0 subtracts the plaintext value as we do not secret share it
+    fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
+        let party_id = rhs.fabric().party_id();
+
+        if party_id == PARTY0 {
+            self - &rhs.share
+        } else {
+            // Party 1 must perform an operation to keep the result queues in sync
+            Scalar::zero() - rhs.share.clone()
+        }
+        .into()
+    }
+}
+impl_borrow_variants!(ScalarResult, Sub, sub, -, MpcScalarResult, Output=MpcScalarResult);
 
 impl Sub<&MpcScalarResult> for &MpcScalarResult {
     type Output = MpcScalarResult;
@@ -601,3 +627,40 @@ impl Mul<&MpcScalarResult> for &StarkPointResult {
 }
 impl_borrow_variants!(StarkPointResult, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
 impl_commutative!(StarkPointResult, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
+
+#[cfg(test)]
+mod test {
+    use rand::thread_rng;
+
+    use crate::{algebra::scalar::Scalar, test_helpers::execute_mock_mpc, PARTY0};
+
+    /// Test subtraction with a non-commutative pair of types
+    #[tokio::test]
+    async fn test_sub() {
+        let mut rng = thread_rng();
+        let value1 = Scalar::random(&mut rng);
+        let value2 = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            // Allocate the first value as a shared scalar and the second as a public scalar
+            let party0_value = fabric.share_scalar(value1, PARTY0).mpc_share();
+            let public_value = fabric.allocate_scalar(value2);
+
+            // Subtract the public value from the shared value
+            let res1 = &party0_value - &public_value;
+            let res_open1 = res1.open().await;
+            let expected1 = value1 - value2;
+
+            // Subtract the shared value from the public value
+            let res2 = &public_value - &party0_value;
+            let res_open2 = res2.open().await;
+            let expected2 = value2 - value1;
+
+            (res_open1 == expected1, res_open2 == expected2)
+        })
+        .await;
+
+        assert!(res.0);
+        assert!(res.1)
+    }
+}

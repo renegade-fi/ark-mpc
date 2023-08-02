@@ -259,7 +259,19 @@ impl Sub<&Scalar> for &ScalarResult {
     }
 }
 impl_borrow_variants!(ScalarResult, Sub, sub, -, Scalar);
-impl_commutative!(ScalarResult, Sub, sub, -, Scalar);
+
+impl Sub<&ScalarResult> for &Scalar {
+    type Output = ScalarResult;
+
+    fn sub(self, rhs: &ScalarResult) -> Self::Output {
+        let lhs = *self;
+        rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
+            let rhs: Scalar = args[0].to_owned().into();
+            ResultValue::Scalar(lhs - rhs)
+        })
+    }
+}
+impl_borrow_variants!(Scalar, Sub, sub, -, ScalarResult, Output=ScalarResult);
 
 impl Sub<&ScalarResult> for &ScalarResult {
     type Output = ScalarResult;

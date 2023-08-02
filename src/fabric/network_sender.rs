@@ -55,10 +55,19 @@ impl<N: MpcNetwork> NetworkSender<N> {
             tokio::select! {
                 // Next outbound message
                 x = self.outbound.recv() => {
-                    // Forward onto the network
-                    if let Err(e) = self.send(x.unwrap()).await {
-                        log::error!("error sending outbound: {e:?}");
+                    match x {
+                        Some(outbound) => {
+                            // Forward onto the network
+                            if let Err(e) = self.send(outbound).await {
+                                log::error!("error sending outbound: {e:?}");
+                            }
+                        },
+                        None => {
+                            log::debug!("outbound channel closed, terminating...\n");
+                            return;
+                        }
                     }
+
                 },
 
                 // Next inbound set of scalars

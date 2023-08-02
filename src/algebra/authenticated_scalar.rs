@@ -613,11 +613,7 @@ impl Sub<&Scalar> for &AuthenticatedScalarResult {
     fn sub(self, rhs: &Scalar) -> Self::Output {
         // Party 1 subtracts a zero value from their share to allocate a new ID for the result
         // and stay in sync with party 0
-        let new_share = if self.fabric().party_id() == PARTY0 {
-            &self.share - rhs
-        } else {
-            &self.share - Scalar::from(0)
-        };
+        let new_share = &self.share - rhs;
 
         // Both parties add the public value to their modifier, and the MACs do not change
         // when adding a public value
@@ -630,32 +626,64 @@ impl Sub<&Scalar> for &AuthenticatedScalarResult {
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult, Sub, sub, -, Scalar, Output=AuthenticatedScalarResult);
-impl_commutative!(AuthenticatedScalarResult, Sub, sub, -, Scalar, Output=AuthenticatedScalarResult);
+
+impl Sub<&AuthenticatedScalarResult> for &Scalar {
+    type Output = AuthenticatedScalarResult;
+
+    fn sub(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
+        // Party 1 subtracts a zero value from their share to allocate a new ID for the result
+        // and stay in sync with party 0
+        let new_share = self - &rhs.share;
+
+        // Both parties add the public value to their modifier, and the MACs do not change
+        // when adding a public value
+        let new_modifier = -self - &rhs.public_modifier;
+        AuthenticatedScalarResult {
+            share: new_share,
+            mac: -&rhs.mac,
+            public_modifier: new_modifier,
+        }
+    }
+}
+impl_borrow_variants!(Scalar, Sub, sub, -, AuthenticatedScalarResult, Output=AuthenticatedScalarResult);
 
 impl Sub<&ScalarResult> for &AuthenticatedScalarResult {
     type Output = AuthenticatedScalarResult;
 
     fn sub(self, rhs: &ScalarResult) -> Self::Output {
-        // Party 1 subtracts a zero value from their share to allocate a new ID for the result
-        // and stay in sync with party 0
-        let new_share = if self.fabric().party_id() == PARTY0 {
-            &self.share - rhs
-        } else {
-            &self.share - Scalar::from(0)
-        };
+        let new_share = &self.share - rhs;
 
         // Both parties add the public value to their modifier, and the MACs do not change
         // when adding a public value
         let new_modifier = &self.public_modifier + rhs;
         AuthenticatedScalarResult {
             share: new_share,
-            mac: self.mac.clone(),
+            mac: -&self.mac,
             public_modifier: new_modifier,
         }
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult, Sub, sub, -, ScalarResult, Output=AuthenticatedScalarResult);
-impl_commutative!(AuthenticatedScalarResult, Sub, sub, -, ScalarResult, Output=AuthenticatedScalarResult);
+
+impl Sub<&AuthenticatedScalarResult> for &ScalarResult {
+    type Output = AuthenticatedScalarResult;
+
+    fn sub(self, rhs: &AuthenticatedScalarResult) -> Self::Output {
+        // Party 1 subtracts a zero value from their share to allocate a new ID for the result
+        // and stay in sync with party 0
+        let new_share = self - &rhs.share;
+
+        // Both parties add the public value to their modifier, and the MACs do not change
+        // when adding a public value
+        let new_modifier = -self - &rhs.public_modifier;
+        AuthenticatedScalarResult {
+            share: new_share,
+            mac: -&rhs.mac,
+            public_modifier: new_modifier,
+        }
+    }
+}
+impl_borrow_variants!(ScalarResult, Sub, sub, -, AuthenticatedScalarResult, Output=AuthenticatedScalarResult);
 
 impl Sub<&AuthenticatedScalarResult> for &AuthenticatedScalarResult {
     type Output = AuthenticatedScalarResult;
@@ -1032,7 +1060,68 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod tests {
-    use crate::{algebra::scalar::Scalar, test_helpers::execute_mock_mpc};
+    use rand::thread_rng;
+
+    use crate::{algebra::scalar::Scalar, test_helpers::execute_mock_mpc, PARTY0};
+
+    /// Test subtraction across non-commutative types
+    #[tokio::test]
+    async fn test_sub() {
+        let mut rng = thread_rng();
+        let value1 = Scalar::random(&mut rng);
+        let value2 = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            // Allocate the first value as a shared scalar and the second as a public scalar
+            let party0_value = fabric.share_scalar(value1, PARTY0);
+            let public_value = fabric.allocate_scalar(value2);
+
+            // Subtract the public value from the shared value
+            let res1 = &party0_value - &public_value;
+            let res_open1 = res1.open_authenticated().await.unwrap();
+            let expected1 = value1 - value2;
+
+            // Subtract the shared value from the public value
+            let res2 = &public_value - &party0_value;
+            let res_open2 = res2.open_authenticated().await.unwrap();
+            let expected2 = value2 - value1;
+
+            (res_open1 == expected1, res_open2 == expected2)
+        })
+        .await;
+
+        assert!(res.0);
+        assert!(res.1)
+    }
+
+    /// Tests subtraction with a constant value outside of the fabric
+    #[tokio::test]
+    async fn test_sub_constant() {
+        let mut rng = thread_rng();
+        let value1 = Scalar::random(&mut rng);
+        let value2 = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            // Allocate the first value as a shared scalar and the second as a public scalar
+            let party0_value = fabric.share_scalar(value1, PARTY0);
+
+            // Subtract the public value from the shared value
+            let res1 = &party0_value - value2;
+            let res_open1 = res1.open_authenticated().await.unwrap();
+            let expected1 = value1 - value2;
+
+            // Subtract the shared value from the public value
+            let res2 = value2 - &party0_value;
+            let res_open2 = res2.open_authenticated().await.unwrap();
+            let expected2 = value2 - value1;
+
+            (res_open1 == expected1, res_open2 == expected2)
+        })
+        .await;
+
+        assert!(res.0);
+        assert!(res.1)
+    }
 
     /// Test a simple `XOR` circuit
     #[tokio::test]
