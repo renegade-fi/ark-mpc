@@ -90,7 +90,7 @@ impl Executor {
                         log::debug!("executor shutting down");
 
                         // In benchmarks print the average queue length
-                        #[cfg(all(feature = "benchmarks", feature = "debug_info"))]
+                        #[cfg(feature = "debug_info")]
                         {
                             println!("average queue length: {}", self.avg_queue_length());
                         }
@@ -100,7 +100,7 @@ impl Executor {
                 }
             }
 
-            #[cfg(feature = "benchmarks")]
+            #[cfg(feature = "debug_info")]
             {
                 self.summed_queue_length += self.job_queue.len() as u64;
                 self.queue_length_sample_count += 1;
@@ -109,7 +109,7 @@ impl Executor {
     }
 
     /// Returns the average queue length over the execution of the executor
-    #[cfg(feature = "benchmarks")]
+    #[cfg(feature = "debug_info")]
     pub fn avg_queue_length(&self) -> f64 {
         (self.summed_queue_length as f64) / (self.queue_length_sample_count as f64)
     }

@@ -658,7 +658,7 @@ impl Sub<&ScalarResult> for &AuthenticatedScalarResult {
         let new_modifier = &self.public_modifier + rhs;
         AuthenticatedScalarResult {
             share: new_share,
-            mac: -&self.mac,
+            mac: self.mac.clone(),
             public_modifier: new_modifier,
         }
     }
