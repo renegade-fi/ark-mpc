@@ -1,7 +1,12 @@
 //! Defines a mock network for unit tests
 
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
+
 use async_trait::async_trait;
-use futures::future::pending;
+use futures::{future::pending, Future, Sink, Stream};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{error::MpcNetworkError, PARTY0};
@@ -18,23 +23,36 @@ impl MpcNetwork for NoRecvNetwork {
         PARTY0
     }
 
-    async fn send_message(&mut self, _message: NetworkOutbound) -> Result<(), MpcNetworkError> {
-        Ok(())
-    }
-
-    async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError> {
-        pending().await
-    }
-
-    async fn exchange_messages(
-        &mut self,
-        _message: NetworkOutbound,
-    ) -> Result<NetworkOutbound, MpcNetworkError> {
-        pending().await
-    }
-
     async fn close(&mut self) -> Result<(), MpcNetworkError> {
         Ok(())
+    }
+}
+
+impl Stream for NoRecvNetwork {
+    type Item = Result<NetworkOutbound, MpcNetworkError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Box::pin(pending()).as_mut().poll(cx)
+    }
+}
+
+impl Sink<NetworkOutbound> for NoRecvNetwork {
+    type Error = MpcNetworkError;
+
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, _item: NetworkOutbound) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -99,31 +117,39 @@ impl MpcNetwork for MockNetwork {
         self.party_id
     }
 
-    async fn send_message(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
-        self.mock_conn.send(message);
-        Ok(())
-    }
-
-    async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError> {
-        let msg = self.mock_conn.recv().await;
-        Ok(msg)
-    }
-
-    async fn exchange_messages(
-        &mut self,
-        message: NetworkOutbound,
-    ) -> Result<NetworkOutbound, MpcNetworkError> {
-        if self.party_id() == PARTY0 {
-            self.send_message(message).await?;
-            self.receive_message().await
-        } else {
-            let res = self.receive_message().await?;
-            self.send_message(message).await?;
-            Ok(res)
-        }
-    }
-
     async fn close(&mut self) -> Result<(), MpcNetworkError> {
         Ok(())
+    }
+}
+
+impl Stream for MockNetwork {
+    type Item = Result<NetworkOutbound, MpcNetworkError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Box::pin(self.mock_conn.recv())
+            .as_mut()
+            .poll(cx)
+            .map(|value| Some(Ok(value)))
+    }
+}
+
+impl Sink<NetworkOutbound> for MockNetwork {
+    type Error = MpcNetworkError;
+
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: NetworkOutbound) -> Result<(), Self::Error> {
+        self.mock_conn.send(item);
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 }
