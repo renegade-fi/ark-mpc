@@ -4,9 +4,10 @@ use clap::Parser;
 use colored::Colorize;
 use dns_lookup::lookup_host;
 use env_logger::Builder;
+use futures::{SinkExt, StreamExt};
 use helpers::PartyIDBeaverSource;
 use mpc_stark::{
-    network::{MpcNetwork, NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
+    network::{NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
     MpcFabric, PARTY0,
 };
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
@@ -116,13 +117,13 @@ fn main() {
         // Send a byte to give the connection time to establish
         if args.party == 0 {
             Handle::current()
-                .block_on(net.send_message(NetworkOutbound {
+                .block_on(net.send(NetworkOutbound {
                     result_id: 1,
                     payload: NetworkPayload::Bytes(vec![1u8]),
                 }))
                 .unwrap();
         } else {
-            let _recv_bytes = Handle::current().block_on(net.receive_message()).unwrap();
+            let _recv_bytes = Handle::current().block_on(net.next()).unwrap();
         }
 
         let beaver_source = PartyIDBeaverSource::new(args.party);

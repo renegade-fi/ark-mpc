@@ -27,10 +27,10 @@ pub struct Executor {
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
     /// The total sampled queue length of the executor's work queue
-    #[cfg(feature = "benchmarks")]
+    #[cfg(feature = "debug_info")]
     summed_queue_length: u64,
     /// The number of samples taken of the executor's work queue length
-    #[cfg(feature = "benchmarks")]
+    #[cfg(feature = "debug_info")]
     queue_length_sample_count: usize,
 }
 
@@ -56,7 +56,7 @@ impl Executor {
         job_queue: Arc<SegQueue<ExecutorMessage>>,
         fabric: FabricInner,
     ) -> Self {
-        #[cfg(feature = "benchmarks")]
+        #[cfg(feature = "debug_info")]
         {
             Self {
                 job_queue,
@@ -68,7 +68,7 @@ impl Executor {
             }
         }
 
-        #[cfg(not(feature = "benchmarks"))]
+        #[cfg(not(feature = "debug_info"))]
         {
             Self {
                 job_queue,

@@ -4,17 +4,21 @@
 use std::sync::Arc;
 
 use crossbeam::queue::SegQueue;
+use futures::stream::SplitSink;
+use futures::SinkExt;
+use futures::{stream::SplitStream, StreamExt};
 use tokio::sync::broadcast::Receiver as BroadcastReceiver;
 use tokio::sync::mpsc::UnboundedReceiver as TokioReceiver;
 use tracing::log;
 
-use crate::{
-    error::MpcNetworkError,
-    network::{MpcNetwork, NetworkOutbound},
-};
+use crate::error::MpcNetworkError;
+use crate::network::{MpcNetwork, NetworkOutbound};
 
 use super::executor::ExecutorMessage;
 use super::result::OpResult;
+
+/// Error message emitted when a stream closes early
+const ERR_STREAM_FINISHED_EARLY: &str = "stream finished early";
 
 // -------------------------
 // | Sender Implementation |
@@ -33,7 +37,7 @@ pub(crate) struct NetworkSender<N: MpcNetwork> {
     shutdown: BroadcastReceiver<()>,
 }
 
-impl<N: MpcNetwork> NetworkSender<N> {
+impl<N: MpcNetwork + 'static> NetworkSender<N> {
     /// Creates a new network sender
     pub fn new(
         outbound: TokioReceiver<NetworkOutbound>,
@@ -50,59 +54,71 @@ impl<N: MpcNetwork> NetworkSender<N> {
     }
 
     /// A helper for the `run` method that allows error handling in the caller
-    pub async fn run(mut self) {
-        loop {
-            tokio::select! {
-                // Next outbound message
-                x = self.outbound.recv() => {
-                    match x {
-                        Some(outbound) => {
-                            // Forward onto the network
-                            if let Err(e) = self.send(outbound).await {
-                                log::error!("error sending outbound: {e:?}");
-                            }
-                        },
-                        None => {
-                            log::debug!("outbound channel closed, terminating...\n");
-                            return;
-                        }
-                    }
+    pub async fn run(self) {
+        // Destructure `self` to take ownership of each field
+        let NetworkSender {
+            outbound,
+            result_queue,
+            network,
+            mut shutdown,
+        } = self;
 
-                },
+        // Start a read and write loop separately
+        let (send, recv) = network.split();
+        let read_loop_fut = tokio::spawn(Self::read_loop(recv, result_queue));
+        let write_loop_fut = tokio::spawn(Self::write_loop(outbound, send));
 
-                // Next inbound set of scalars
-                res = self.network.receive_message() => {
-                    match res {
-                        Ok(msg) => self.handle_message(msg).await,
-
-                        Err(e) => {
-                            log::error!("error receiving message: {e}");
-                            return;
-                        }
-                    }
-                }
-
-                // Shutdown signal from the fabric
-                _ = self.shutdown.recv() => {
-                    // Close down the network
-                    log::debug!("shutdown signal received, terminating...\n");
-                    self.network.close().await.expect("error closing network");
-                    return;
-                }
-            }
+        // Await either of the loops to finish or the shutdown signal
+        tokio::select! {
+            err = read_loop_fut => {
+                log::error!("error in `NetworkSender::read_loop`: {err:?}");
+            },
+            err = write_loop_fut => {
+                log::error!("error in `NetworkSender::write_loop`: {err:?}")
+            },
+            _ = shutdown.recv() => {
+                log::info!("received shutdown signal")
+            },
         }
     }
 
-    /// Sends a message over the network
-    async fn send(&mut self, message: NetworkOutbound) -> Result<(), MpcNetworkError> {
-        self.network.send_message(message).await
+    /// The read loop for the network, reads messages from the network and re-enqueues them
+    /// with the executor
+    async fn read_loop(
+        mut network_stream: SplitStream<N>,
+        result_queue: Arc<SegQueue<ExecutorMessage>>,
+    ) -> MpcNetworkError {
+        while let Some(msg) = network_stream.next().await {
+            match msg {
+                Ok(msg) => {
+                    result_queue.push(ExecutorMessage::Result(OpResult {
+                        id: msg.result_id,
+                        value: msg.payload.into(),
+                    }));
+                }
+                Err(e) => {
+                    log::error!("error receiving message: {e}");
+                    return e;
+                }
+            }
+        }
+
+        MpcNetworkError::RecvError(ERR_STREAM_FINISHED_EARLY.to_string())
     }
 
-    /// Handle an inbound message
-    async fn handle_message(&mut self, message: NetworkOutbound) {
-        self.result_queue.push(ExecutorMessage::Result(OpResult {
-            id: message.result_id,
-            value: message.payload.into(),
-        }));
+    /// The write loop for the network, reads messages from the outbound queue and sends them
+    /// onto the network
+    async fn write_loop(
+        mut outbound_stream: TokioReceiver<NetworkOutbound>,
+        mut network: SplitSink<N, NetworkOutbound>,
+    ) -> MpcNetworkError {
+        while let Some(msg) = outbound_stream.recv().await {
+            if let Err(e) = network.send(msg).await {
+                log::error!("error sending outbound: {e:?}");
+                return e;
+            }
+        }
+
+        MpcNetworkError::RecvError(ERR_STREAM_FINISHED_EARLY.to_string())
     }
 }
