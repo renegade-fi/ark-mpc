@@ -1,5 +1,5 @@
 //! Errors defined across the MPC implementation
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
 use quinn::{ConnectError, ConnectionError};
 
@@ -21,6 +21,7 @@ impl Display for MpcError {
         write!(f, "{:?}", self)
     }
 }
+impl Error for MpcError {}
 
 /// An error on the MPC network during communication
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,6 +46,7 @@ impl Display for MpcNetworkError {
         write!(f, "{:?}", self)
     }
 }
+impl Error for MpcNetworkError {}
 
 /// An error setting up the MPC fabric
 #[derive(Clone, Debug, PartialEq, Eq)]
