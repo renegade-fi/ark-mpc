@@ -50,7 +50,7 @@ async fn main() {
 ## Tests
 Unit tests for isolated parts of the library are available via
 ```bash
-cargo test --lib
+cargo test --lib --features test_helpers
 ```
 
 The bulk of this library's testing is best done with real communication; and so most of the tests are integration tests. The integration tests can be run as
