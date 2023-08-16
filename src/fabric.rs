@@ -21,13 +21,11 @@ use tracing::log;
 
 use crossbeam::queue::SegQueue;
 use std::{
-    collections::HashMap,
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, RwLock,
+        Arc, Mutex,
     },
-    task::Waker,
 };
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
@@ -44,12 +42,14 @@ use crate::{
         stark_curve::{BatchStarkPointResult, StarkPoint, StarkPointResult},
     },
     beaver::SharedValueSource,
-    buffer::GrowableBuffer,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
-    Shared, PARTY0,
+    PARTY0,
 };
 
-use self::{network_sender::NetworkSender, result::OpResult};
+use self::{
+    network_sender::NetworkSender,
+    result::{OpResult, ResultWaiter},
+};
 
 /// The result id that is hardcoded to zero
 const RESULT_ZERO: ResultId = 0;
@@ -188,10 +188,6 @@ pub struct FabricInner {
     next_result_id: Arc<AtomicUsize>,
     /// The next identifier to assign to an operation
     next_op_id: Arc<AtomicUsize>,
-    /// The completed results of operations
-    results: Shared<GrowableBuffer<OpResult>>,
-    /// A map of operations to wakers of tasks that are waiting on the operation to complete
-    wakers: Shared<HashMap<ResultId, Vec<Waker>>>,
     /// A sender to the executor
     execution_queue: Arc<SegQueue<ExecutorMessage>>,
     /// The underlying queue to the network
@@ -209,7 +205,6 @@ impl Debug for FabricInner {
 impl FabricInner {
     /// Constructor
     pub fn new<S: 'static + SharedValueSource>(
-        size_hint: usize,
         party_id: u64,
         execution_queue: Arc<SegQueue<ExecutorMessage>>,
         outbound_queue: TokioSender<NetworkOutbound>,
@@ -221,16 +216,24 @@ impl FabricInner {
         let one = ResultValue::Scalar(Scalar::one());
         let identity = ResultValue::Point(StarkPoint::identity());
 
-        let mut results = GrowableBuffer::new(size_hint);
-        results.insert(RESULT_ZERO, OpResult { id: 0, value: zero });
-        results.insert(RESULT_ONE, OpResult { id: 1, value: one });
-        results.insert(
-            RESULT_IDENTITY,
+        for initial_result in vec![
             OpResult {
-                id: 2,
+                id: RESULT_ZERO,
+                value: zero,
+            },
+            OpResult {
+                id: RESULT_ONE,
+                value: one,
+            },
+            OpResult {
+                id: RESULT_IDENTITY,
                 value: identity,
             },
-        );
+        ]
+        .into_iter()
+        {
+            execution_queue.push(ExecutorMessage::Result(initial_result));
+        }
 
         let next_result_id = Arc::new(AtomicUsize::new(N_CONSTANT_RESULTS));
         let next_op_id = Arc::new(AtomicUsize::new(0));
@@ -239,12 +242,16 @@ impl FabricInner {
             party_id,
             next_result_id,
             next_op_id,
-            results: Arc::new(RwLock::new(results)),
-            wakers: Arc::new(RwLock::new(HashMap::new())),
             execution_queue,
             outbound_queue,
             beaver_source: Arc::new(Mutex::new(Box::new(beaver_source))),
         }
+    }
+
+    /// Register a waiter on a result    
+    pub(crate) fn register_waiter(&self, waiter: ResultWaiter) {
+        self.execution_queue
+            .push(ExecutorMessage::NewWaiter(waiter));
     }
 
     /// Shutdown the inner fabric, by sending a shutdown message to the executor
@@ -287,12 +294,10 @@ impl FabricInner {
 
     /// Allocate a new plaintext value in the fabric
     pub(crate) fn allocate_value(&self, value: ResultValue) -> ResultId {
-        // Acquire locks
-        let mut locked_results = self.results.write().expect("results poisoned");
-
-        // Update fabric state
+        // Forward the result to the executor
         let id = self.new_result_id();
-        locked_results.insert(id, OpResult { id, value });
+        self.execution_queue
+            .push(ExecutorMessage::Result(OpResult { id, value }));
 
         id
     }
@@ -303,18 +308,12 @@ impl FabricInner {
         my_share: ResultValue,
         their_share: ResultValue,
     ) -> ResultId {
-        // Acquire locks
-        let mut locked_results = self.results.write().expect("results poisoned");
-
-        // Add my share to the results
+        // Forward the local party's share to the executor
         let id = self.new_result_id();
-        locked_results.insert(
+        self.execution_queue.push(ExecutorMessage::Result(OpResult {
             id,
-            OpResult {
-                id,
-                value: my_share,
-            },
-        );
+            value: my_share,
+        }));
 
         // Send the counterparty their share
         if let Err(e) = self.outbound_queue.send(NetworkOutbound {
@@ -394,7 +393,6 @@ impl MpcFabric {
 
         // Build a fabric
         let fabric = FabricInner::new(
-            size_hint,
             network.party_id(),
             execution_queue.clone(),
             outbound_sender,
@@ -448,6 +446,11 @@ impl MpcFabric {
         self.shutdown
             .send(())
             .expect("error sending shutdown signal");
+    }
+
+    /// Register a waiter on a result
+    pub fn register_waiter(&self, waiter: ResultWaiter) {
+        self.inner.register_waiter(waiter);
     }
 
     /// Immutably borrow the MAC key
