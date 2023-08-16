@@ -6,7 +6,7 @@ mod mock;
 mod stream_buffer;
 
 use futures::{Future, Sink, Stream};
-#[cfg(any(feature = "test_helpers", test))]
+#[cfg(any(feature = "test_helpers", feature = "benchmarks", test))]
 pub use mock::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream};
 
 use async_trait::async_trait;

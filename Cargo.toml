@@ -26,7 +26,8 @@ harness = false
 required-features = ["test_helpers"]
 
 [profile.bench]
-opt-level = 0
+opt-level = 3
+lto = true
 debug = true
 
 [[bench]]
@@ -43,6 +44,11 @@ required-features = ["benchmarks", "test_helpers"]
 name = "growable_buffer"
 harness = false
 required-features = ["benchmarks"]
+
+[[bench]]
+name = "mul_throughput"
+harness = false
+required-features = ["benchmarks", "test_helpers"]
 
 [dependencies]
 # == Concurrency == #
