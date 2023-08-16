@@ -65,8 +65,9 @@ pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
 #[allow(type_alias_bounds)]
 pub type BeaverSource<S: SharedValueSource> = Rc<RefCell<S>>;
 
-#[cfg(test)]
-pub(crate) mod test_helpers {
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
+    //! Defines test helpers for use in unit and integration tests, as well as benchmarks
     use futures::Future;
 
     use crate::{
