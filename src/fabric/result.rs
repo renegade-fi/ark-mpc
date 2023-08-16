@@ -3,9 +3,11 @@
 //! Beaver multiplication
 
 use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
     pin::Pin,
-    task::{Context, Poll},
+    sync::{Arc, RwLock},
+    task::{Context, Poll, Waker},
 };
 
 use futures::Future;
@@ -13,9 +15,13 @@ use futures::Future;
 use crate::{
     algebra::{scalar::Scalar, stark_curve::StarkPoint},
     network::NetworkPayload,
+    Shared,
 };
 
 use super::MpcFabric;
+
+/// Error message when a result buffer lock is poisoned
+pub(crate) const ERR_RESULT_BUFFER_POISONED: &str = "result buffer lock poisoned";
 
 // ---------------------
 // | Result Value Type |
@@ -34,7 +40,7 @@ pub struct OpResult {
 }
 
 /// The value of a result
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum ResultValue {
     /// A byte value
     Bytes(Vec<u8>),
@@ -46,6 +52,20 @@ pub enum ResultValue {
     Point(StarkPoint),
     /// A batch of points on the curve
     PointBatch(Vec<StarkPoint>),
+}
+
+impl Debug for ResultValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            ResultValue::Bytes(bytes) => f.debug_tuple("Bytes").field(bytes).finish(),
+            ResultValue::Scalar(scalar) => f.debug_tuple("Scalar").field(scalar).finish(),
+            ResultValue::ScalarBatch(scalars) => {
+                f.debug_tuple("ScalarBatch").field(scalars).finish()
+            }
+            ResultValue::Point(point) => f.debug_tuple("Point").field(point).finish(),
+            ResultValue::PointBatch(points) => f.debug_tuple("PointBatch").field(points).finish(),
+        }
+    }
 }
 
 impl From<NetworkPayload> for ResultValue {
@@ -151,6 +171,8 @@ impl From<ResultValue> for Vec<StarkPoint> {
 pub struct ResultHandle<T: From<ResultValue>> {
     /// The id of the result
     pub(crate) id: ResultId,
+    /// The buffer that the result will be written to when it becomes available
+    pub(crate) result_buffer: Shared<Option<ResultValue>>,
     /// The underlying fabric
     pub(crate) fabric: MpcFabric,
     /// A phantom for the type of the result
@@ -174,6 +196,7 @@ impl<T: From<ResultValue>> ResultHandle<T> {
     pub(crate) fn new(id: ResultId, fabric: MpcFabric) -> Self {
         Self {
             id,
+            result_buffer: Arc::new(RwLock::new(None)),
             fabric,
             phantom: PhantomData,
         }
@@ -185,20 +208,43 @@ impl<T: From<ResultValue>> ResultHandle<T> {
     }
 }
 
-impl<T: From<ResultValue>> Future for ResultHandle<T> {
+/// A struct describing an async task that is waiting on a result
+pub struct ResultWaiter {
+    /// The id of the result that the task is waiting on
+    pub result_id: ResultId,
+    /// The buffer that the result will be written to when it becomes available
+    pub result_buffer: Shared<Option<ResultValue>>,
+    /// The waker of the task
+    pub waker: Waker,
+}
+
+impl Debug for ResultWaiter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("ResultWaiter")
+            .field("id", &self.result_id)
+            .finish()
+    }
+}
+
+impl<T: From<ResultValue> + Debug> Future for ResultHandle<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let locked_results = self.fabric.inner.results.read().expect("results poisoned");
-        let mut locked_wakers = self.fabric.inner.wakers.write().expect("wakers poisoned");
+        // Lock the result buffer
+        let locked_result = self.result_buffer.read().expect(ERR_RESULT_BUFFER_POISONED);
 
-        match locked_results.get(self.id) {
-            Some(res) => Poll::Ready(res.value.clone().into()),
+        // If the result is ready, return it, otherwise register the current context's waker
+        // with the `Executor`
+        match locked_result.clone() {
+            Some(res) => Poll::Ready(res.into()),
             None => {
-                locked_wakers
-                    .entry(self.id)
-                    .or_insert_with(Vec::new)
-                    .push(cx.waker().clone());
+                let waiter = ResultWaiter {
+                    result_id: self.id,
+                    result_buffer: self.result_buffer.clone(),
+                    waker: cx.waker().clone(),
+                };
+
+                self.fabric.register_waiter(waiter);
                 Poll::Pending
             }
         }

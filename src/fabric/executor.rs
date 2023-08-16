@@ -1,6 +1,7 @@
 //! The executor receives IDs of operations that are ready for execution, executes
 //! them, and places the result back into the fabric for further executions
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crossbeam::queue::SegQueue;
@@ -8,8 +9,10 @@ use itertools::Itertools;
 use tracing::log;
 
 use crate::buffer::GrowableBuffer;
+use crate::fabric::result::ERR_RESULT_BUFFER_POISONED;
 use crate::network::NetworkOutbound;
 
+use super::result::ResultWaiter;
 use super::{result::OpResult, FabricInner};
 use super::{Operation, OperationType, ResultId, ResultValue};
 
@@ -24,6 +27,10 @@ pub struct Executor {
     operations: GrowableBuffer<Operation>,
     /// The dependency map; maps in-flight results to operations that are waiting for them
     dependencies: GrowableBuffer<Vec<ResultId>>,
+    /// The completed results of operations
+    results: GrowableBuffer<OpResult>,
+    /// An index of waiters for incomplete results
+    waiters: HashMap<ResultId, Vec<ResultWaiter>>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
     /// The total sampled queue length of the executor's work queue
@@ -45,6 +52,8 @@ pub enum ExecutorMessage {
     Result(OpResult),
     /// An operation that is ready for execution
     Op(Operation),
+    /// A new waiter has registered itself for a result
+    NewWaiter(ResultWaiter),
     /// Indicates that the executor should shut down
     Shutdown,
 }
@@ -62,6 +71,8 @@ impl Executor {
                 job_queue,
                 operations: GrowableBuffer::new(circuit_size_hint),
                 dependencies: GrowableBuffer::new(circuit_size_hint),
+                results: GrowableBuffer::new(circuit_size_hint),
+                waiters: HashMap::new(),
                 fabric,
                 summed_queue_length: 0,
                 queue_length_sample_count: 0,
@@ -74,6 +85,8 @@ impl Executor {
                 job_queue,
                 operations: GrowableBuffer::new(circuit_size_hint),
                 dependencies: GrowableBuffer::new(circuit_size_hint),
+                results: GrowableBuffer::new(circuit_size_hint),
+                waiters: HashMap::new(),
                 fabric,
             }
         }
@@ -86,6 +99,7 @@ impl Executor {
                 match job {
                     ExecutorMessage::Result(res) => self.handle_new_result(res),
                     ExecutorMessage::Op(operation) => self.handle_new_operation(operation),
+                    ExecutorMessage::NewWaiter(waiter) => self.handle_new_waiter(waiter),
                     ExecutorMessage::Shutdown => {
                         log::debug!("executor shutting down");
 
@@ -119,8 +133,7 @@ impl Executor {
         let id = result.id;
 
         // Lock the fabric elements needed
-        let mut locked_results = self.fabric.results.write().expect("results lock poisoned");
-        let prev = locked_results.insert(result.id, result);
+        let prev = self.results.insert(result.id, result);
         assert!(prev.is_none(), "duplicate result id: {id:?}");
 
         // Execute any ready dependencies
@@ -142,28 +155,22 @@ impl Executor {
                 let inputs = op
                     .args
                     .iter()
-                    .map(|id| locked_results.get(*id).unwrap().value.clone())
+                    .map(|id| self.results.get(*id).unwrap().value.clone())
                     .collect::<Vec<_>>();
                 self.execute_operation(op, inputs);
             }
         }
-        // Wake all tasks awaiting this result
-        let mut locked_wakers = self.fabric.wakers.write().expect("wakers lock poisoned");
-        for waker in locked_wakers.remove(&id).unwrap_or_default().into_iter() {
-            waker.wake();
-        }
+
+        self.wake_waiters_on_result(id);
     }
 
     /// Handle a new operation
     fn handle_new_operation(&mut self, mut op: Operation) {
-        // Acquire all necessary locks
-        let locked_results = self.fabric.results.read().expect("results lock poisoned");
-
         // Check if all arguments are ready
         let ready = op
             .args
             .iter()
-            .filter_map(|id| locked_results.get(*id))
+            .filter_map(|id| self.results.get(*id))
             .map(|res| res.value.clone())
             .collect_vec();
         let inflight_args = op.args.len() - ready.len();
@@ -230,6 +237,40 @@ impl Executor {
                     id: result_id,
                     value: payload.into(),
                 }))
+            }
+        }
+    }
+
+    /// Handle a new waiter for a result
+    pub fn handle_new_waiter(&mut self, waiter: ResultWaiter) {
+        let id = waiter.result_id;
+
+        // Insert the new waiter to the queue
+        self.waiters
+            .entry(waiter.result_id)
+            .or_insert_with(Vec::new)
+            .push(waiter);
+
+        // If the result being awaited is already available, wake the waiter
+        if self.results.get(id).is_some() {
+            self.wake_waiters_on_result(id);
+        }
+    }
+
+    /// Wake all the waiters for a given result
+    pub fn wake_waiters_on_result(&mut self, result_id: ResultId) {
+        // Wake all tasks awaiting this result
+        if let Some(waiters) = self.waiters.remove(&result_id) {
+            let result = &self.results.get(result_id).unwrap().value;
+            for waiter in waiters.into_iter() {
+                // Place the result in the waiter's buffer and wake up the waiting thread
+                let mut buffer = waiter
+                    .result_buffer
+                    .write()
+                    .expect(ERR_RESULT_BUFFER_POISONED);
+
+                buffer.replace(result.clone());
+                waiter.waker.wake();
             }
         }
     }
