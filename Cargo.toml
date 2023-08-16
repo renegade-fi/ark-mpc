@@ -50,6 +50,11 @@ name = "mul_throughput"
 harness = false
 required-features = ["benchmarks", "test_helpers"]
 
+[[bench]]
+name = "msm_throughput"
+harness = false
+required-features = ["benchmarks", "test_helpers"]
+
 [dependencies]
 # == Concurrency == #
 async-trait = "0.1"
