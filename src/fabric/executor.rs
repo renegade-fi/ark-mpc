@@ -14,7 +14,7 @@ use crate::network::NetworkOutbound;
 
 use super::result::ResultWaiter;
 use super::{result::OpResult, FabricInner};
-use super::{Operation, OperationType, ResultId, ResultValue};
+use super::{Operation, OperationType, ResultId};
 
 /// The executor is responsible for executing operation that are ready for execution, either
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
@@ -137,32 +137,26 @@ impl Executor {
         assert!(prev.is_none(), "duplicate result id: {id:?}");
 
         // Execute any ready dependencies
-        for op_id in self
-            .dependencies
-            .get(id)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-        {
-            {
-                let mut operation = self.operations.get_mut(op_id).unwrap();
+        if let Some(deps) = self.dependencies.get(id) {
+            let mut ready_ops = Vec::new();
+            for op_id in deps.iter() {
+                {
+                    let mut operation = self.operations.get_mut(*op_id).unwrap();
 
-                operation.inflight_args -= 1;
-                if operation.inflight_args > 0 {
-                    continue;
-                }
-            } // explicitly drop the mutable `self` reference
+                    operation.inflight_args -= 1;
+                    if operation.inflight_args > 0 {
+                        continue;
+                    }
+                } // explicitly drop the mutable `self` reference
 
-            // Take ownership of the operation
-            let op = self.operations.take(op_id).unwrap();
+                // Mark the operation as ready for execution
+                ready_ops.push(*op_id);
+            }
 
-            // Get the inputs and execute the method to produce the output
-            let inputs = op
-                .args
-                .iter()
-                .map(|id| self.results.get(*id).unwrap().value.clone())
-                .collect::<Vec<_>>();
-            self.execute_operation(op, inputs);
+            for op in ready_ops.into_iter() {
+                let op = self.operations.take(op).unwrap();
+                self.execute_operation(op);
+            }
         }
 
         self.wake_waiters_on_result(id);
@@ -171,18 +165,17 @@ impl Executor {
     /// Handle a new operation
     fn handle_new_operation(&mut self, mut op: Operation) {
         // Check if all arguments are ready
-        let ready = op
+        let n_ready = op
             .args
             .iter()
             .filter_map(|id| self.results.get(*id))
-            .map(|res| res.value.clone())
-            .collect_vec();
-        let inflight_args = op.args.len() - ready.len();
+            .count();
+        let inflight_args = op.args.len() - n_ready;
         op.inflight_args = inflight_args;
 
         // If the operation is ready for execution, do so
         if inflight_args == 0 {
-            self.execute_operation(op, ready);
+            self.execute_operation(op);
             return;
         }
 
@@ -200,8 +193,16 @@ impl Executor {
     }
 
     /// Executes an operation whose arguments are ready
-    fn execute_operation(&mut self, op: Operation, inputs: Vec<ResultValue>) {
+    fn execute_operation(&mut self, op: Operation) {
         let result_ids = op.result_ids();
+
+        // Collect the inputs to the operation
+        let inputs = op
+            .args
+            .iter()
+            .map(|arg| self.results.get(*arg).unwrap().value.clone())
+            .collect_vec();
+
         match op.op_type {
             OperationType::Gate { function } => {
                 let value = (function)(inputs);
