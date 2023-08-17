@@ -7,8 +7,8 @@ use crossbeam::queue::SegQueue;
 use futures::stream::SplitSink;
 use futures::SinkExt;
 use futures::{stream::SplitStream, StreamExt};
+use kanal::AsyncReceiver as KanalReceiver;
 use tokio::sync::broadcast::Receiver as BroadcastReceiver;
-use tokio::sync::mpsc::UnboundedReceiver as TokioReceiver;
 use tracing::log;
 
 use crate::error::MpcNetworkError;
@@ -28,7 +28,7 @@ const ERR_STREAM_FINISHED_EARLY: &str = "stream finished early";
 /// onto the network and pulling results off the network, re-enqueuing them for processing
 pub(crate) struct NetworkSender<N: MpcNetwork> {
     /// The outbound queue of messages to send
-    outbound: TokioReceiver<NetworkOutbound>,
+    outbound: KanalReceiver<NetworkOutbound>,
     /// The queue of completed results
     result_queue: Arc<SegQueue<ExecutorMessage>>,
     /// The underlying network connection
@@ -40,7 +40,7 @@ pub(crate) struct NetworkSender<N: MpcNetwork> {
 impl<N: MpcNetwork + 'static> NetworkSender<N> {
     /// Creates a new network sender
     pub fn new(
-        outbound: TokioReceiver<NetworkOutbound>,
+        outbound: KanalReceiver<NetworkOutbound>,
         result_queue: Arc<SegQueue<ExecutorMessage>>,
         network: N,
         shutdown: BroadcastReceiver<()>,
@@ -109,10 +109,10 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
     /// The write loop for the network, reads messages from the outbound queue and sends them
     /// onto the network
     async fn write_loop(
-        mut outbound_stream: TokioReceiver<NetworkOutbound>,
+        outbound_stream: KanalReceiver<NetworkOutbound>,
         mut network: SplitSink<N, NetworkOutbound>,
     ) -> MpcNetworkError {
-        while let Some(msg) = outbound_stream.recv().await {
+        while let Ok(msg) = outbound_stream.recv().await {
             if let Err(e) = network.send(msg).await {
                 log::error!("error sending outbound: {e:?}");
                 return e;

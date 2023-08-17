@@ -20,6 +20,7 @@ use futures::executor::block_on;
 use tracing::log;
 
 use crossbeam::queue::SegQueue;
+use kanal::Sender as KanalSender;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::{
@@ -28,7 +29,6 @@ use std::{
     },
 };
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use itertools::Itertools;
 
@@ -191,7 +191,7 @@ pub struct FabricInner {
     /// A sender to the executor
     execution_queue: Arc<SegQueue<ExecutorMessage>>,
     /// The underlying queue to the network
-    outbound_queue: TokioSender<NetworkOutbound>,
+    outbound_queue: KanalSender<NetworkOutbound>,
     /// The underlying shared randomness source
     beaver_source: Arc<Mutex<Box<dyn SharedValueSource>>>,
 }
@@ -207,7 +207,7 @@ impl FabricInner {
     pub fn new<S: 'static + SharedValueSource>(
         party_id: u64,
         execution_queue: Arc<SegQueue<ExecutorMessage>>,
-        outbound_queue: TokioSender<NetworkOutbound>,
+        outbound_queue: KanalSender<NetworkOutbound>,
         beaver_source: S,
     ) -> Self {
         // Allocate a zero and a one as well as the curve identity in the fabric to begin,
@@ -388,14 +388,15 @@ impl MpcFabric {
     ) -> Self {
         // Build communication primitives
         let execution_queue = Arc::new(SegQueue::new());
-        let (outbound_sender, outbound_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let (outbound_sender, outbound_receiver) = kanal::unbounded_async();
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1 /* capacity */);
 
         // Build a fabric
         let fabric = FabricInner::new(
             network.party_id(),
             execution_queue.clone(),
-            outbound_sender,
+            outbound_sender.to_sync(),
             beaver_source,
         );
 
