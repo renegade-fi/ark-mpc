@@ -137,28 +137,32 @@ impl Executor {
         assert!(prev.is_none(), "duplicate result id: {id:?}");
 
         // Execute any ready dependencies
-        if let Some(deps) = self.dependencies.get(id) {
-            for op_id in deps.iter() {
-                {
-                    let mut operation = self.operations.get_mut(*op_id).unwrap();
+        for op_id in self
+            .dependencies
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+        {
+            {
+                let mut operation = self.operations.get_mut(op_id).unwrap();
 
-                    operation.inflight_args -= 1;
-                    if operation.inflight_args > 0 {
-                        continue;
-                    }
-                } // explicitly drop the mutable `self` reference
+                operation.inflight_args -= 1;
+                if operation.inflight_args > 0 {
+                    continue;
+                }
+            } // explicitly drop the mutable `self` reference
 
-                // Take ownership of the operation
-                let op = self.operations.take(*op_id).unwrap();
+            // Take ownership of the operation
+            let op = self.operations.take(op_id).unwrap();
 
-                // Get the inputs and execute the method to produce the output
-                let inputs = op
-                    .args
-                    .iter()
-                    .map(|id| self.results.get(*id).unwrap().value.clone())
-                    .collect::<Vec<_>>();
-                self.execute_operation(op, inputs);
-            }
+            // Get the inputs and execute the method to produce the output
+            let inputs = op
+                .args
+                .iter()
+                .map(|id| self.results.get(*id).unwrap().value.clone())
+                .collect::<Vec<_>>();
+            self.execute_operation(op, inputs);
         }
 
         self.wake_waiters_on_result(id);
@@ -196,25 +200,24 @@ impl Executor {
     }
 
     /// Executes an operation whose arguments are ready
-    fn execute_operation(&self, op: Operation, inputs: Vec<ResultValue>) {
+    fn execute_operation(&mut self, op: Operation, inputs: Vec<ResultValue>) {
         let result_ids = op.result_ids();
         match op.op_type {
             OperationType::Gate { function } => {
                 let value = (function)(inputs);
-                self.job_queue.push(ExecutorMessage::Result(OpResult {
+                self.handle_new_result(OpResult {
                     id: op.result_id,
                     value,
-                }))
+                });
             }
 
             OperationType::GateBatch { function } => {
                 let output = (function)(inputs);
-                for (result_id, value) in result_ids.into_iter().zip(output.into_iter()) {
-                    self.job_queue.push(ExecutorMessage::Result(OpResult {
-                        id: result_id,
-                        value,
-                    }))
-                }
+                result_ids
+                    .into_iter()
+                    .zip(output.into_iter())
+                    .map(|(id, value)| OpResult { id, value })
+                    .for_each(|res| self.handle_new_result(res));
             }
 
             OperationType::Network { function } => {
@@ -233,12 +236,12 @@ impl Executor {
 
                 // On a `send`, the local party receives a copy of the value placed as the result of
                 // the network operation, so we must re-enqueue the result
-                self.job_queue.push(ExecutorMessage::Result(OpResult {
+                self.handle_new_result(OpResult {
                     id: result_id,
                     value: payload.into(),
-                }))
+                });
             }
-        }
+        };
     }
 
     /// Handle a new waiter for a result
