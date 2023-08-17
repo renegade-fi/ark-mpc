@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use mpc_stark::{algebra::scalar::Scalar, buffer::GrowableBuffer};
 
 // --------------
@@ -17,7 +17,7 @@ pub fn buffer_read__sequential(c: &mut Criterion) {
         group.bench_function(BenchmarkId::from_parameter(buffer_size), |b| {
             b.iter(|| {
                 for i in 0..buffer_size {
-                    buffer.get(i);
+                    black_box(buffer.get(i));
                 }
             })
         });
