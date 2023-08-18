@@ -20,8 +20,6 @@ use super::{Operation, OperationType, ResultId};
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
 pub struct Executor {
     /// The job queue for the executor
-    ///
-    /// TODO: Use an `ArrayQueue` here for slightly improved performance
     job_queue: Arc<SegQueue<ExecutorMessage>>,
     /// The operation buffer, stores in-flight operations
     operations: GrowableBuffer<Operation>,
@@ -46,6 +44,7 @@ pub struct Executor {
 ///  execute any operations that are now ready
 /// - An operation directly, which the executor will execute immediately if all of its
 ///  arguments are ready
+/// - A new waiter for a result, which the executor will add to its waiter map
 #[derive(Debug)]
 pub enum ExecutorMessage {
     /// A result of an operation
@@ -131,8 +130,6 @@ impl Executor {
     /// Handle a new result
     fn handle_new_result(&mut self, result: OpResult) {
         let id = result.id;
-
-        // Lock the fabric elements needed
         let prev = self.results.insert(result.id, result);
         assert!(prev.is_none(), "duplicate result id: {id:?}");
 
@@ -140,14 +137,12 @@ impl Executor {
         if let Some(deps) = self.dependencies.get(id) {
             let mut ready_ops = Vec::new();
             for op_id in deps.iter() {
-                {
-                    let mut operation = self.operations.get_mut(*op_id).unwrap();
+                let mut operation = self.operations.get_mut(*op_id).unwrap();
 
-                    operation.inflight_args -= 1;
-                    if operation.inflight_args > 0 {
-                        continue;
-                    }
-                } // explicitly drop the mutable `self` reference
+                operation.inflight_args -= 1;
+                if operation.inflight_args > 0 {
+                    continue;
+                }
 
                 // Mark the operation as ready for execution
                 ready_ops.push(*op_id);
