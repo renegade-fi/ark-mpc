@@ -41,6 +41,11 @@ use super::{
 /// The number of points and scalars to pull from an iterated MSM when
 /// performing a multiscalar multiplication
 const MSM_CHUNK_SIZE: usize = 1 << 16;
+/// The threshold at which we call out to the Arkworks MSM implementation
+///
+/// MSM sizes below this threshold are computed serially as the parallelism overhead is
+/// too significant
+const MSM_SIZE_THRESHOLD: usize = 10;
 
 /// The security level used in the hash-to-curve implementation, in bytes
 pub const HASH_TO_CURVE_SECURITY: usize = 16; // 128 bit security
@@ -594,6 +599,11 @@ impl StarkPoint {
             "msm cannot compute on vectors of unequal length"
         );
 
+        let n = scalars.len();
+        if n < MSM_SIZE_THRESHOLD {
+            return scalars.iter().zip(points.iter()).map(|(s, p)| s * p).sum();
+        }
+
         let affine_points = points.iter().map(|p| p.0.into_affine()).collect_vec();
         let stripped_scalars = scalars.iter().map(|s| s.0).collect_vec();
         StarkPointInner::msm(&affine_points, &stripped_scalars)
@@ -603,32 +613,26 @@ impl StarkPoint {
 
     /// Compute the multiscalar multiplication of the given scalars and points
     /// represented as streaming iterators
-    ///
-    /// This is roughly a re-implementation of the `ark-ec` msm defined here:
-    ///     https://github.com/arkworks-rs/algebra/blob/master/ec/src/scalar_mul/variable_base/mod.rs#L54-L60
-    /// but with less restrictive trait bounds
     pub fn msm_iter<I, J>(scalars: I, points: J) -> StarkPoint
     where
         I: IntoIterator<Item = Scalar>,
         J: IntoIterator<Item = StarkPoint>,
     {
-        let scalars = scalars.into_iter().map(|s| s.0).chunks(MSM_CHUNK_SIZE);
-        let points = points
+        let mut res = StarkPoint::identity();
+        for (scalar_chunk, point_chunk) in scalars
             .into_iter()
-            .map(|p| p.0.into_affine())
-            .chunks(MSM_CHUNK_SIZE);
-
-        let mut res = StarkPointInner::zero();
-        for (scalar_chunk, point_chunk) in scalars.into_iter().zip(points.into_iter()) {
-            let scalar_chunk: Vec<ScalarInner> = scalar_chunk.collect();
-            let point_chunk: Vec<Affine<StarknetCurveConfig>> = point_chunk.collect();
-
-            let chunk_res = StarkPointInner::msm_unchecked(&point_chunk, &scalar_chunk);
+            .chunks(MSM_CHUNK_SIZE)
+            .into_iter()
+            .zip(points.into_iter().chunks(MSM_CHUNK_SIZE).into_iter())
+        {
+            let scalars: Vec<Scalar> = scalar_chunk.collect();
+            let points: Vec<StarkPoint> = point_chunk.collect();
+            let chunk_res = StarkPoint::msm(&scalars, &points);
 
             res += chunk_res;
         }
 
-        StarkPoint(res)
+        res
     }
 
     /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
@@ -642,18 +646,12 @@ impl StarkPoint {
         let fabric = scalars[0].fabric();
         let scalar_ids = scalars.iter().map(|s| s.id()).collect_vec();
 
-        let points = points.iter().map(StarkPoint::to_affine).collect_vec();
+        // Clone `points` so that the gate closure may capture it
+        let points = points.to_vec();
         fabric.new_gate_op(scalar_ids, move |args| {
-            let scalars = args
-                .into_iter()
-                .map(Scalar::from)
-                .map(|s| s.inner())
-                .collect_vec();
+            let scalars = args.into_iter().map(Scalar::from).collect_vec();
 
-            StarkPointInner::msm(&points, &scalars)
-                .map(StarkPoint)
-                .map(ResultValue::Point)
-                .unwrap()
+            ResultValue::Point(StarkPoint::msm(&scalars, &points))
         })
     }
 
@@ -685,7 +683,8 @@ impl StarkPoint {
         let fabric = scalars[0].fabric();
         let scalar_ids = scalars.iter().flat_map(|s| s.ids()).collect_vec();
 
-        let points = points.iter().map(StarkPoint::to_affine).collect_vec();
+        // Clone points to let the gate closure take ownership
+        let points = points.to_vec();
         let res: Vec<StarkPointResult> = fabric.new_batch_gate_op(
             scalar_ids,
             AUTHENTICATED_SCALAR_RESULT_LEN, /* output_arity */
@@ -695,19 +694,18 @@ impl StarkPoint {
                 let mut modifiers = Vec::with_capacity(n);
 
                 for chunk in args.chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN) {
-                    shares.push(Scalar::from(chunk[0].to_owned()).inner());
-                    macs.push(Scalar::from(chunk[1].to_owned()).inner());
-                    modifiers.push(Scalar::from(chunk[2].to_owned()).inner());
+                    shares.push(Scalar::from(chunk[0].to_owned()));
+                    macs.push(Scalar::from(chunk[1].to_owned()));
+                    modifiers.push(Scalar::from(chunk[2].to_owned()));
                 }
 
                 // Compute the MSM of the point
                 vec![
-                    StarkPointInner::msm(&points, &shares).unwrap(),
-                    StarkPointInner::msm(&points, &macs).unwrap(),
-                    StarkPointInner::msm(&points, &modifiers).unwrap(),
+                    StarkPoint::msm(&shares, &points),
+                    StarkPoint::msm(&macs, &points),
+                    StarkPoint::msm(&modifiers, &points),
                 ]
                 .into_iter()
-                .map(StarkPoint::from)
                 .map(ResultValue::Point)
                 .collect_vec()
             },
@@ -754,19 +752,11 @@ impl StarkPointResult {
             .collect_vec();
 
         fabric.new_gate_op(all_ids, move |mut args| {
-            let scalars = args
-                .drain(..n)
-                .map(Scalar::from)
-                .map(|s| s.inner())
-                .collect_vec();
-            let points = args
-                .into_iter()
-                .map(StarkPoint::from)
-                .map(|p| p.to_affine())
-                .collect_vec();
+            let scalars = args.drain(..n).map(Scalar::from).collect_vec();
+            let points = args.into_iter().map(StarkPoint::from).collect_vec();
 
-            let res = StarkPointInner::msm(&points, &scalars).unwrap();
-            ResultValue::Point(res.into())
+            let res = StarkPoint::msm(&scalars, &points);
+            ResultValue::Point(res)
         })
     }
 
@@ -818,24 +808,19 @@ impl StarkPointResult {
                     .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
                     .into_iter()
                 {
-                    shares.push(chunk.next().unwrap().inner());
-                    macs.push(chunk.next().unwrap().inner());
-                    modifiers.push(chunk.next().unwrap().inner());
+                    shares.push(chunk.next().unwrap());
+                    macs.push(chunk.next().unwrap());
+                    modifiers.push(chunk.next().unwrap());
                 }
 
-                let points = args
-                    .into_iter()
-                    .map(StarkPoint::from)
-                    .map(|p| p.to_affine())
-                    .collect_vec();
+                let points = args.into_iter().map(StarkPoint::from).collect_vec();
 
                 vec![
-                    StarkPointInner::msm(&points, &shares).unwrap(),
-                    StarkPointInner::msm(&points, &macs).unwrap(),
-                    StarkPointInner::msm(&points, &modifiers).unwrap(),
+                    StarkPoint::msm(&shares, &points),
+                    StarkPoint::msm(&macs, &points),
+                    StarkPoint::msm(&modifiers, &points),
                 ]
                 .into_iter()
-                .map(StarkPoint::from)
                 .map(ResultValue::Point)
                 .collect_vec()
             },
