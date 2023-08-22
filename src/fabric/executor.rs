@@ -32,10 +32,10 @@ pub struct Executor {
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
     /// The total sampled queue length of the executor's work queue
-    #[cfg(feature = "debug_info")]
+    #[cfg(feature = "stats")]
     summed_queue_length: u64,
     /// The number of samples taken of the executor's work queue length
-    #[cfg(feature = "debug_info")]
+    #[cfg(feature = "stats")]
     queue_length_sample_count: usize,
 }
 
@@ -64,7 +64,7 @@ impl Executor {
         job_queue: Arc<SegQueue<ExecutorMessage>>,
         fabric: FabricInner,
     ) -> Self {
-        #[cfg(feature = "debug_info")]
+        #[cfg(feature = "stats")]
         {
             Self {
                 job_queue,
@@ -78,7 +78,7 @@ impl Executor {
             }
         }
 
-        #[cfg(not(feature = "debug_info"))]
+        #[cfg(not(feature = "stats"))]
         {
             Self {
                 job_queue,
@@ -103,7 +103,7 @@ impl Executor {
                         log::debug!("executor shutting down");
 
                         // In benchmarks print the average queue length
-                        #[cfg(feature = "debug_info")]
+                        #[cfg(feature = "stats")]
                         {
                             println!("average queue length: {}", self.avg_queue_length());
                         }
@@ -113,7 +113,7 @@ impl Executor {
                 }
             }
 
-            #[cfg(feature = "debug_info")]
+            #[cfg(feature = "stats")]
             {
                 self.summed_queue_length += self.job_queue.len() as u64;
                 self.queue_length_sample_count += 1;
@@ -122,7 +122,7 @@ impl Executor {
     }
 
     /// Returns the average queue length over the execution of the executor
-    #[cfg(feature = "debug_info")]
+    #[cfg(feature = "stats")]
     pub fn avg_queue_length(&self) -> f64 {
         (self.summed_queue_length as f64) / (self.queue_length_sample_count as f64)
     }

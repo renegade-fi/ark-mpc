@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [features]
 benchmarks = []
-debug_info = ["benchmarks"]
+stats = ["benchmarks"]
 test_helpers = []
 
 [[test]]
