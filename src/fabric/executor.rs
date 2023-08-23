@@ -2,6 +2,7 @@
 //! them, and places the result back into the fabric for further executions
 
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
 use crossbeam::queue::SegQueue;
@@ -15,6 +16,93 @@ use crate::network::NetworkOutbound;
 use super::result::ResultWaiter;
 use super::{result::OpResult, FabricInner};
 use super::{Operation, OperationType, ResultId};
+
+// ---------
+// | Stats |
+// ---------
+
+/// Statistics tracked by the executor
+#[derive(Default)]
+pub struct ExecutorStats {
+    /// The total number of operations executed by the executor
+    n_ops: usize,
+    /// The total number of network ops executed by the executor
+    n_network_ops: usize,
+    /// The total sampled queue length of the executor's work queue
+    summed_queue_length: u64,
+    /// The number of samples taken of the executor's work queue length
+    queue_length_sample_count: usize,
+    /// Maps operations to their depth in the circuit, where depth is defined as the number of
+    /// network operations that must be executed before the operation can be executed
+    result_depth_map: HashMap<ResultId, usize>,
+}
+
+impl ExecutorStats {
+    /// Increment the number of operations executed by the executor
+    pub fn increment_n_ops(&mut self) {
+        self.n_ops += 1;
+    }
+
+    /// Increment the number of network operations executed by the executor
+    pub fn increment_n_network_ops(&mut self) {
+        self.n_network_ops += 1;
+    }
+
+    /// Add a sampled queue length to the executor's stats
+    pub fn add_queue_length_sample(&mut self, queue_length: usize) {
+        self.summed_queue_length += queue_length as u64;
+        self.queue_length_sample_count += 1;
+    }
+
+    /// Get the average queue length over the execution of the executor
+    pub fn avg_queue_length(&self) -> f64 {
+        (self.summed_queue_length as f64) / (self.queue_length_sample_count as f64)
+    }
+
+    /// Add an operation to the executor's depth map
+    pub fn new_operation(
+        &mut self,
+        id: ResultId,
+        dependencies: Vec<ResultId>,
+        from_network_op: bool,
+    ) {
+        let max_dep = dependencies
+            .iter()
+            .map(|dep| self.result_depth_map.get(dep).unwrap_or(&0))
+            .max()
+            .unwrap_or(&0);
+
+        let depth = if from_network_op {
+            max_dep + 1
+        } else {
+            *max_dep
+        };
+
+        self.result_depth_map.insert(id, depth);
+    }
+
+    /// Get the maximum depth of any operation in the circuit
+    pub fn max_depth(&self) -> usize {
+        *self.result_depth_map.values().max().unwrap_or(&0)
+    }
+}
+
+impl Debug for ExecutorStats {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let avg_queue_length = self.avg_queue_length();
+        let max_depth = self.max_depth();
+        f.debug_struct("ExecutorStats")
+            .field("n_ops", &self.n_ops)
+            .field("n_network_ops", &self.n_network_ops)
+            .field("avg_queue_length", &avg_queue_length)
+            .field("max_depth", &max_depth)
+            .finish()
+    }
+}
+
+// ------------
+// | Executor |
+// ------------
 
 /// The executor is responsible for executing operation that are ready for execution, either
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
@@ -31,12 +119,9 @@ pub struct Executor {
     waiters: HashMap<ResultId, Vec<ResultWaiter>>,
     /// The underlying fabric that the executor is a part of
     fabric: FabricInner,
-    /// The total sampled queue length of the executor's work queue
+    /// The collected statistics of the executor
     #[cfg(feature = "stats")]
-    summed_queue_length: u64,
-    /// The number of samples taken of the executor's work queue length
-    #[cfg(feature = "stats")]
-    queue_length_sample_count: usize,
+    stats: ExecutorStats,
 }
 
 /// The type that the `Executor` receives on its channel, this may either be:
@@ -73,8 +158,7 @@ impl Executor {
                 results: GrowableBuffer::new(circuit_size_hint),
                 waiters: HashMap::new(),
                 fabric,
-                summed_queue_length: 0,
-                queue_length_sample_count: 0,
+                stats: ExecutorStats::default(),
             }
         }
 
@@ -104,9 +188,7 @@ impl Executor {
 
                         // In benchmarks print the average queue length
                         #[cfg(feature = "stats")]
-                        {
-                            println!("average queue length: {}", self.avg_queue_length());
-                        }
+                        println!("Executor stats: {:?}", self.stats);
 
                         break;
                     }
@@ -114,17 +196,8 @@ impl Executor {
             }
 
             #[cfg(feature = "stats")]
-            {
-                self.summed_queue_length += self.job_queue.len() as u64;
-                self.queue_length_sample_count += 1;
-            }
+            self.stats.add_queue_length_sample(self.job_queue.len());
         }
-    }
-
-    /// Returns the average queue length over the execution of the executor
-    #[cfg(feature = "stats")]
-    pub fn avg_queue_length(&self) -> f64 {
-        (self.summed_queue_length as f64) / (self.queue_length_sample_count as f64)
     }
 
     /// Handle a new result
@@ -159,6 +232,16 @@ impl Executor {
 
     /// Handle a new operation
     fn handle_new_operation(&mut self, mut op: Operation) {
+        #[cfg(feature = "stats")]
+        {
+            self.record_op_depth(&op);
+
+            self.stats.increment_n_ops();
+            if let OperationType::Network { .. } = op.op_type {
+                self.stats.increment_n_network_ops();
+            }
+        }
+
         // Check if all arguments are ready
         let n_ready = op
             .args
@@ -185,6 +268,20 @@ impl Executor {
         }
 
         self.operations.insert(op.id, op);
+    }
+
+    /// Record the depth of an operation in the circuit
+    #[cfg(feature = "stats")]
+    fn record_op_depth(&mut self, op: &Operation) {
+        let dependencies = op
+            .args
+            .iter()
+            .filter_map(|id| self.results.get(*id))
+            .map(|res| res.id)
+            .collect_vec();
+
+        let is_network_op = matches!(op.op_type, OperationType::Network { .. });
+        self.stats.new_operation(op.id, dependencies, is_network_op);
     }
 
     /// Executes an operation whose arguments are ready
