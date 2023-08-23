@@ -59,6 +59,11 @@ required-features = ["benchmarks"]
 name = "native_msm"
 harness = false
 
+[[bench]]
+name = "test_stats"
+harness = false
+required-features = ["benchmarks", "stats", "test_helpers"]
+
 [dependencies]
 # == Concurrency == #
 async-trait = "0.1"
