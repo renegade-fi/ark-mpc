@@ -17,6 +17,10 @@ use crate::{
 
 use super::{config, stream_buffer::BufferWithCursor, MpcNetwork, NetworkOutbound, PartyId};
 
+// -------------
+// | Constants |
+// -------------
+
 /// The number of bytes in a u64
 const BYTES_PER_U64: usize = 8;
 
@@ -26,6 +30,10 @@ const ERR_STREAM_FINISHED_EARLY: &str = "stream finished early";
 const ERR_READ_MESSAGE_LENGTH: &str = "error reading message length from stream";
 /// Error message emitted when the the send `Sink` is not ready
 const ERR_SEND_BUFFER_FULL: &str = "send buffer full";
+
+// -----------------------
+// | Quic Implementation |
+// -----------------------
 
 /// Implements an MpcNetwork on top of QUIC
 pub struct QuicTwoPartyNet {
