@@ -131,7 +131,7 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
 
         // Log the stats after execution finishes
         #[cfg(feature = "stats")]
-        println!("network stats: {:#?}", stats);
+        println!("Network stats: {:#?}", stats);
     }
 
     /// The read loop for the network, reads messages from the network and re-enqueues them
