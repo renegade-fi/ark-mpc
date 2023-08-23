@@ -22,8 +22,9 @@ use super::{Operation, OperationType, ResultId};
 // ---------
 
 /// Statistics tracked by the executor
+#[cfg(feature = "stats")]
 #[derive(Default)]
-pub struct ExecutorStats {
+struct ExecutorStats {
     /// The total number of operations executed by the executor
     n_ops: usize,
     /// The total number of network ops executed by the executor
@@ -37,6 +38,7 @@ pub struct ExecutorStats {
     result_depth_map: HashMap<ResultId, usize>,
 }
 
+#[cfg(feature = "stats")]
 impl ExecutorStats {
     /// Increment the number of operations executed by the executor
     pub fn increment_n_ops(&mut self) {
@@ -60,13 +62,9 @@ impl ExecutorStats {
     }
 
     /// Add an operation to the executor's depth map
-    pub fn new_operation(
-        &mut self,
-        id: ResultId,
-        dependencies: Vec<ResultId>,
-        from_network_op: bool,
-    ) {
-        let max_dep = dependencies
+    pub fn new_operation(&mut self, op: &Operation, from_network_op: bool) {
+        let max_dep = op
+            .args
             .iter()
             .map(|dep| self.result_depth_map.get(dep).unwrap_or(&0))
             .max()
@@ -78,7 +76,9 @@ impl ExecutorStats {
             *max_dep
         };
 
-        self.result_depth_map.insert(id, depth);
+        for id in op.result_ids() {
+            self.result_depth_map.insert(id, depth);
+        }
     }
 
     /// Get the maximum depth of any operation in the circuit
@@ -87,6 +87,7 @@ impl ExecutorStats {
     }
 }
 
+#[cfg(feature = "stats")]
 impl Debug for ExecutorStats {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let avg_queue_length = self.avg_queue_length();
@@ -273,15 +274,8 @@ impl Executor {
     /// Record the depth of an operation in the circuit
     #[cfg(feature = "stats")]
     fn record_op_depth(&mut self, op: &Operation) {
-        let dependencies = op
-            .args
-            .iter()
-            .filter_map(|id| self.results.get(*id))
-            .map(|res| res.id)
-            .collect_vec();
-
         let is_network_op = matches!(op.op_type, OperationType::Network { .. });
-        self.stats.new_operation(op.id, dependencies, is_network_op);
+        self.stats.new_operation(op, is_network_op);
     }
 
     /// Executes an operation whose arguments are ready
