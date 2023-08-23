@@ -1,6 +1,8 @@
 //! Defines an abstraction over the network that receives jobs scheduled onto the
 //! network and re-enqueues them in the result buffer for dependent instructions
 
+use std::fmt::Debug;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 use crossbeam::queue::SegQueue;
@@ -19,6 +21,49 @@ use super::result::OpResult;
 
 /// Error message emitted when a stream closes early
 const ERR_STREAM_FINISHED_EARLY: &str = "stream finished early";
+
+// ---------
+// | Stats |
+// ---------
+
+/// The network stats structs
+#[derive(Debug, Default)]
+pub struct NetworkStats {
+    /// The number of bytes sent
+    pub bytes_sent: AtomicUsize,
+    /// The number of bytes received
+    pub bytes_received: AtomicUsize,
+    /// The number of messages sent
+    pub messages_sent: AtomicUsize,
+    /// The number of messages received
+    pub messages_received: AtomicUsize,
+}
+
+impl NetworkStats {
+    /// Increment the number of bytes sent
+    pub fn increment_bytes_sent(&self, bytes: usize) {
+        self.bytes_sent
+            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Increment the number of bytes received
+    pub fn increment_bytes_received(&self, bytes: usize) {
+        self.bytes_received
+            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Increment the number of messages sent
+    pub fn increment_messages_sent(&self) {
+        self.messages_sent
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Increment the number of messages received
+    pub fn increment_messages_received(&self) {
+        self.messages_received
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 // -------------------------
 // | Sender Implementation |
@@ -63,10 +108,13 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
             mut shutdown,
         } = self;
 
+        // Setup the stats for the network
+        let stats = Arc::new(NetworkStats::default());
+
         // Start a read and write loop separately
-        let (send, recv) = network.split();
-        let read_loop_fut = tokio::spawn(Self::read_loop(recv, result_queue));
-        let write_loop_fut = tokio::spawn(Self::write_loop(outbound, send));
+        let (send, recv): (SplitSink<N, NetworkOutbound>, SplitStream<N>) = network.split();
+        let read_loop_fut = tokio::spawn(Self::read_loop(recv, result_queue, stats.clone()));
+        let write_loop_fut = tokio::spawn(Self::write_loop(outbound, send, stats.clone()));
 
         // Await either of the loops to finish or the shutdown signal
         tokio::select! {
@@ -80,6 +128,10 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
                 log::info!("received shutdown signal")
             },
         }
+
+        // Log the stats after execution finishes
+        #[cfg(feature = "stats")]
+        println!("network stats: {:#?}", stats);
     }
 
     /// The read loop for the network, reads messages from the network and re-enqueues them
@@ -87,20 +139,20 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
     async fn read_loop(
         mut network_stream: SplitStream<N>,
         result_queue: Arc<SegQueue<ExecutorMessage>>,
+        stats: Arc<NetworkStats>,
     ) -> MpcNetworkError {
-        while let Some(msg) = network_stream.next().await {
-            match msg {
-                Ok(msg) => {
-                    result_queue.push(ExecutorMessage::Result(OpResult {
-                        id: msg.result_id,
-                        value: msg.payload.into(),
-                    }));
-                }
-                Err(e) => {
-                    log::error!("error receiving message: {e}");
-                    return e;
-                }
+        while let Some(Ok(msg)) = network_stream.next().await {
+            #[cfg(feature = "stats")]
+            {
+                let n_bytes = serde_json::to_vec(&msg).unwrap().len();
+                stats.increment_bytes_received(n_bytes);
+                stats.increment_messages_received();
             }
+
+            result_queue.push(ExecutorMessage::Result(OpResult {
+                id: msg.result_id,
+                value: msg.payload.into(),
+            }));
         }
 
         MpcNetworkError::RecvError(ERR_STREAM_FINISHED_EARLY.to_string())
@@ -111,8 +163,16 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
     async fn write_loop(
         outbound_stream: KanalReceiver<NetworkOutbound>,
         mut network: SplitSink<N, NetworkOutbound>,
+        stats: Arc<NetworkStats>,
     ) -> MpcNetworkError {
         while let Ok(msg) = outbound_stream.recv().await {
+            #[cfg(feature = "stats")]
+            {
+                let n_bytes = serde_json::to_vec(&msg).unwrap().len();
+                stats.increment_bytes_sent(n_bytes);
+                stats.increment_messages_sent();
+            }
+
             if let Err(e) = network.send(msg).await {
                 log::error!("error sending outbound: {e:?}");
                 return e;
