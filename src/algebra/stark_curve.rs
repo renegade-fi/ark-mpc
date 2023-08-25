@@ -15,10 +15,11 @@ use ark_ec::{
     short_weierstrass::{Affine, Projective, SWCurveConfig},
     CurveConfig, CurveGroup, Group, VariableBaseMSM,
 };
-use ark_ff::{MontFp, PrimeField, Zero};
+use ark_ff::{BigInt, MontFp, PrimeField, Zero};
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use itertools::Itertools;
+use num_bigint::BigUint;
 use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::{
@@ -123,6 +124,23 @@ impl StarkPoint {
     /// Convert the point to affine
     pub fn to_affine(&self) -> Affine<StarknetCurveConfig> {
         self.0.into_affine()
+    }
+
+    /// Construct a `StarkPoint` from its affine coordinates
+    pub fn from_affine_coords(x: BigUint, y: BigUint) -> Self {
+        let x_bigint = BigInt::try_from(x).unwrap();
+        let y_bigint = BigInt::try_from(y).unwrap();
+        let x = StarknetBaseFelt::from(x_bigint);
+        let y = StarknetBaseFelt::from(y_bigint);
+
+        let aff = Affine {
+            x,
+            y,
+            infinity: false,
+        };
+        assert!(aff.is_on_curve(), "invalid affine coordinates");
+
+        Self(aff.into())
     }
 
     /// The group generator
@@ -941,5 +959,18 @@ mod test {
         // As long as the method does not error, the test is successful
         let res = StarkPoint::from_uniform_bytes(buf);
         assert!(res.is_ok())
+    }
+
+    /// Tests converting to and from affine coordinates
+    #[test]
+    fn test_to_from_affine_coords() {
+        let projective = random_point();
+        let affine = projective.to_affine();
+
+        let x = BigUint::from(affine.x);
+        let y = BigUint::from(affine.y);
+        let recovered = StarkPoint::from_affine_coords(x, y);
+
+        assert_eq!(projective, recovered);
     }
 }
