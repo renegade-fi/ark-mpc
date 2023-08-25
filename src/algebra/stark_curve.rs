@@ -138,7 +138,6 @@ impl StarkPoint {
             y,
             infinity: false,
         };
-        assert!(aff.is_on_curve(), "invalid affine coordinates");
 
         Self(aff.into())
     }
