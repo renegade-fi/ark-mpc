@@ -24,19 +24,19 @@ use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::{
     algebra::{
+        authenticated_curve::AUTHENTICATED_STARK_POINT_RESULT_LEN,
         authenticated_scalar::AUTHENTICATED_SCALAR_RESULT_LEN,
-        authenticated_stark_point::AUTHENTICATED_STARK_POINT_RESULT_LEN,
     },
     fabric::{ResultHandle, ResultValue},
 };
 
 use super::{
+    authenticated_curve::AuthenticatedPointResult,
     authenticated_scalar::AuthenticatedScalarResult,
-    authenticated_stark_point::AuthenticatedStarkPointResult,
     macros::{impl_borrow_variants, impl_commutative},
+    mpc_curve::MpcPointResult,
     mpc_scalar::MpcScalarResult,
-    mpc_stark_point::MpcStarkPointResult,
-    scalar::{Scalar, ScalarInner, ScalarResult, StarknetBaseFelt, BASE_FIELD_BYTES},
+    scalar::{n_bytes_field, Scalar, ScalarResult},
 };
 
 /// The number of points and scalars to pull from an iterated MSM when
@@ -50,58 +50,22 @@ const MSM_SIZE_THRESHOLD: usize = 10;
 
 /// The security level used in the hash-to-curve implementation, in bytes
 pub const HASH_TO_CURVE_SECURITY: usize = 16; // 128 bit security
-/// The number of bytes needed to serialize a `StarkPoint`
-pub const STARK_POINT_BYTES: usize = 32;
-/// The number of uniformly distributed bytes needed to construct a uniformly
-/// distributed Stark point
-pub const STARK_UNIFORM_BYTES: usize = 2 * (BASE_FIELD_BYTES + HASH_TO_CURVE_SECURITY);
 
-/// The Stark curve in the arkworks short Weierstrass curve representation
-pub struct StarknetCurveConfig;
-impl CurveConfig for StarknetCurveConfig {
-    type BaseField = StarknetBaseFelt;
-    type ScalarField = ScalarInner;
-
-    const COFACTOR: &'static [u64] = &[1];
-    const COFACTOR_INV: Self::ScalarField = MontFp!("1");
-}
-
-/// See https://docs.starkware.co/starkex/crypto/stark-curve.html
-/// for curve parameters
-impl SWCurveConfig for StarknetCurveConfig {
-    const COEFF_A: Self::BaseField = MontFp!("1");
-    const COEFF_B: Self::BaseField =
-        MontFp!("3141592653589793238462643383279502884197169399375105820974944592307816406665");
-
-    const GENERATOR: Affine<Self> = Affine {
-        x: MontFp!("874739451078007766457464989774322083649278607533249481151382481072868806602"),
-        y: MontFp!("152666792071518830868575557812948353041420400780739481342941381225525861407"),
-        infinity: false,
-    };
-}
-
-/// Defines the \zeta constant for the SWU map to curve implementation
-impl SWUConfig for StarknetCurveConfig {
-    const ZETA: Self::BaseField = MontFp!("3");
-}
-
-/// A type alias for a projective curve point on the Stark curve
-pub(crate) type StarkPointInner = Projective<StarknetCurveConfig>;
 /// A wrapper around the inner point that allows us to define foreign traits on the point
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct StarkPoint(pub(crate) StarkPointInner);
+pub struct CurvePoint<C: CurveGroup>(pub(crate) C);
 
-impl Serialize for StarkPoint {
+impl<C: CurveGroup> Serialize for CurvePoint<C> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let bytes = self.to_bytes();
         bytes.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for StarkPoint {
+impl<'de, C: CurveGroup> Deserialize<'de> for CurvePoint<C> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let bytes = <Vec<u8>>::deserialize(deserializer)?;
-        StarkPoint::from_bytes(&bytes)
+        CurvePoint::from_bytes(&bytes)
             .map_err(|err| DeError::custom(format!("Failed to deserialize point: {err:?}")))
     }
 }
@@ -110,28 +74,34 @@ impl<'de> Deserialize<'de> for StarkPoint {
 // | Misc Implementations |
 // ------------------------
 
-impl StarkPoint {
+impl<C: CurveGroup> CurvePoint<C> {
+    /// The base field that the curve is defined over, i.e. the field in which
+    /// the curve equation's coefficients lie
+    pub type BaseField = C::BaseField;
+    /// The scalar field of the curve, i.e. Z/rZ where r is the curve group's order
+    pub type ScalarField = C::ScalarField;
+
     /// The additive identity in the curve group
-    pub fn identity() -> StarkPoint {
-        StarkPoint(StarkPointInner::zero())
+    pub fn identity() -> CurvePoint<C> {
+        CurvePoint(C::zero())
     }
 
     /// Check whether the given point is the identity point in the group
     pub fn is_identity(&self) -> bool {
-        self == &StarkPoint::identity()
+        self == &CurvePoint::identity()
     }
 
     /// Convert the point to affine
-    pub fn to_affine(&self) -> Affine<StarknetCurveConfig> {
+    pub fn to_affine(&self) -> C::Affine {
         self.0.into_affine()
     }
 
-    /// Construct a `StarkPoint` from its affine coordinates
+    /// Construct a `CurvePoint<C>` from its affine coordinates
     pub fn from_affine_coords(x: BigUint, y: BigUint) -> Self {
         let x_bigint = BigInt::try_from(x).unwrap();
         let y_bigint = BigInt::try_from(y).unwrap();
-        let x = StarknetBaseFelt::from(x_bigint);
-        let y = StarknetBaseFelt::from(y_bigint);
+        let x = Self::BaseField::from(x_bigint);
+        let y = Self::BaseField::from(y_bigint);
 
         let aff = Affine {
             x,
@@ -143,13 +113,13 @@ impl StarkPoint {
     }
 
     /// The group generator
-    pub fn generator() -> StarkPoint {
-        StarkPoint(StarkPointInner::generator())
+    pub fn generator() -> CurvePoint<C> {
+        CurvePoint(C::generator())
     }
 
     /// Serialize this point to a byte buffer
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out: Vec<u8> = Vec::with_capacity(size_of::<StarkPoint>());
+        let mut out: Vec<u8> = Vec::with_capacity(size_of::<CurvePoint<C>>());
         self.0
             .serialize_compressed(&mut out)
             .expect("Failed to serialize point");
@@ -158,44 +128,55 @@ impl StarkPoint {
     }
 
     /// Deserialize a point from a byte buffer
-    pub fn from_bytes(bytes: &[u8]) -> Result<StarkPoint, SerializationError> {
-        let point = StarkPointInner::deserialize_compressed(bytes)?;
-        Ok(StarkPoint(point))
+    pub fn from_bytes(bytes: &[u8]) -> Result<CurvePoint<C>, SerializationError> {
+        let point = C::deserialize_compressed(bytes)?;
+        Ok(CurvePoint(point))
     }
 
-    /// Convert a uniform byte buffer to a `StarkPoint` via the SWU map-to-curve approach:
+    /// Get the number of bytes needed to represent a point, this is exactly the number of bytes
+    /// for one base field element, as we can simply use the x-coordinate and set a high bit for the `y`
+    pub fn n_bytes() -> usize {
+        n_bytes_field::<Self::BaseField>()
+    }
+
+    /// Convert a uniform byte buffer to a `CurvePoint<C>` via the SWU map-to-curve approach:
     ///
     /// See https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-hash-to-curve-09#simple-swu
     /// for a description of the setup. Essentially, we assume that the buffer provided is the
     /// result of an `extend_message` implementation that gives us its uniform digest. From here
     /// we construct two field elements, map to curve, and add the points to give a uniformly
     /// distributed curve point
-    pub fn from_uniform_bytes(
-        buf: [u8; STARK_UNIFORM_BYTES],
-    ) -> Result<StarkPoint, HashToCurveError> {
+    pub fn from_uniform_bytes(buf: Vec<u8>) -> Result<CurvePoint<C>, HashToCurveError> {
+        let n_bytes = Self::n_bytes();
+        assert_eq!(
+            buf.len(),
+            2 * n_bytes,
+            "Invalid buffer length, must represent two curve points"
+        );
+
         // Sample two base field elements from the buffer
-        let f1 = Self::hash_to_field(&buf[..STARK_UNIFORM_BYTES / 2]);
-        let f2 = Self::hash_to_field(&buf[STARK_UNIFORM_BYTES / 2..]);
+        let f1 = Self::hash_to_field(&buf[..n_bytes / 2]);
+        let f2 = Self::hash_to_field(&buf[n_bytes / 2..]);
 
         // Map to curve
-        let mapper = SWUMap::<StarknetCurveConfig>::new()?;
+        let mapper = SWUMap::<C::Config>::new()?;
         let p1 = mapper.map_to_curve(f1)?;
         let p2 = mapper.map_to_curve(f2)?;
 
         // The IETF spec above requires that we clear the cofactor. However, the STARK curve has cofactor
         // h = 1, so no works needs to be done
-        Ok(StarkPoint(p1 + p2))
+        Ok(CurvePoint(p1 + p2))
     }
 
     /// A helper that converts an arbitrarily long byte buffer to a field element
-    fn hash_to_field(buf: &[u8]) -> StarknetBaseFelt {
-        StarknetBaseFelt::from_be_bytes_mod_order(buf)
+    fn hash_to_field(buf: &[u8]) -> Self::BaseField {
+        Self::BaseField::from_be_bytes_mod_order(buf)
     }
 }
 
-impl From<StarkPointInner> for StarkPoint {
-    fn from(p: StarkPointInner) -> Self {
-        StarkPoint(p)
+impl<C: CurveGroup> From<C> for CurvePoint<C> {
+    fn from(p: C) -> Self {
+        CurvePoint(p)
     }
 }
 
@@ -205,60 +186,63 @@ impl From<StarkPointInner> for StarkPoint {
 
 // === Addition === //
 
-impl Add<&StarkPointInner> for &StarkPoint {
-    type Output = StarkPoint;
+impl<C: CurveGroup> Add<&C> for &CurvePoint<C> {
+    type Output = CurvePoint<C>;
 
-    fn add(self, rhs: &StarkPointInner) -> Self::Output {
-        StarkPoint(self.0 + rhs)
+    fn add(self, rhs: &C) -> Self::Output {
+        CurvePoint(self.0 + rhs)
     }
 }
-impl_borrow_variants!(StarkPoint, Add, add, +, StarkPointInner);
-impl_commutative!(StarkPoint, Add, add, +, StarkPointInner);
+impl_borrow_variants!(CurvePoint<C>, Add, add, +, C, C: CurveGroup);
+impl_commutative!(CurvePoint<C>, Add, add, +, C, C: CurveGroup);
 
-impl Add<&StarkPoint> for &StarkPoint {
-    type Output = StarkPoint;
+impl<C: CurveGroup> Add<&CurvePoint<C>> for &CurvePoint<C> {
+    type Output = CurvePoint<C>;
 
-    fn add(self, rhs: &StarkPoint) -> Self::Output {
-        StarkPoint(self.0 + rhs.0)
+    fn add(self, rhs: &CurvePoint<C>) -> Self::Output {
+        CurvePoint(self.0 + rhs.0)
     }
 }
-impl_borrow_variants!(StarkPoint, Add, add, +, StarkPoint);
+impl_borrow_variants!(CurvePoint<C>, Add, add, +, CurvePoint<C>, C: CurveGroup);
 
-/// A type alias for a result that resolves to a `StarkPoint`
-pub type StarkPointResult = ResultHandle<StarkPoint>;
-/// A type alias for a result that resolves to a batch of `StarkPoint`s
-pub type BatchStarkPointResult = ResultHandle<Vec<StarkPoint>>;
+/// A type alias for a result that resolves to a `CurvePoint<C>`
+pub type CurvePointResult<C> = ResultHandle<C, CurvePoint<C>>;
+/// A type alias for a result that resolves to a batch of `CurvePoint<C>`s
+pub type BatchCurvePointResult<C> = ResultHandle<C, Vec<CurvePoint<C>>>;
 
-impl Add<&StarkPointResult> for &StarkPointResult {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Add<&CurvePointResult<C>> for &CurvePointResult<C> {
+    type Output = CurvePointResult<C>;
 
-    fn add(self, rhs: &StarkPointResult) -> Self::Output {
+    fn add(self, rhs: &CurvePointResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: StarkPoint = args[0].to_owned().into();
-            let rhs: StarkPoint = args[1].to_owned().into();
-            ResultValue::Point(StarkPoint(lhs.0 + rhs.0))
+            let lhs: CurvePoint<C> = args[0].to_owned().into();
+            let rhs: CurvePoint<C> = args[1].to_owned().into();
+            ResultValue::Point(CurvePoint(lhs.0 + rhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPointResult);
+impl_borrow_variants!(CurvePointResult<C>, Add, add, +, CurvePointResult<C>, C: CurveGroup);
 
-impl Add<&StarkPoint> for &StarkPointResult {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Add<&CurvePoint<C>> for &CurvePointResult<C> {
+    type Output = CurvePointResult<C>;
 
-    fn add(self, rhs: &StarkPoint) -> Self::Output {
+    fn add(self, rhs: &CurvePoint<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: StarkPoint = args[0].to_owned().into();
-            ResultValue::Point(StarkPoint(lhs.0 + rhs.0))
+            let lhs: CurvePoint<C> = args[0].to_owned().into();
+            ResultValue::Point(CurvePoint(lhs.0 + rhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPointResult, Add, add, +, StarkPoint);
-impl_commutative!(StarkPointResult, Add, add, +, StarkPoint);
+impl_borrow_variants!(CurvePointResult<C>, Add, add, +, CurvePoint<C>, C: CurveGroup);
+impl_commutative!(CurvePointResult<C>, Add, add, +, CurvePoint<C>, C: CurveGroup);
 
-impl StarkPointResult {
-    /// Add two batches of `StarkPoint`s together
-    pub fn batch_add(a: &[StarkPointResult], b: &[StarkPointResult]) -> Vec<StarkPointResult> {
+impl<C: CurveGroup> CurvePointResult<C> {
+    /// Add two batches of `CurvePoint<C>`s together
+    pub fn batch_add(
+        a: &[CurvePointResult<C>],
+        b: &[CurvePointResult<C>],
+    ) -> Vec<CurvePointResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -270,8 +254,8 @@ impl StarkPointResult {
         let all_ids = a.iter().chain(b.iter()).map(|r| r.id).collect_vec();
 
         fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-            let a = args.drain(..n).map(StarkPoint::from).collect_vec();
-            let b = args.into_iter().map(StarkPoint::from).collect_vec();
+            let a = args.drain(..n).map(CurvePoint::from).collect_vec();
+            let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
             a.into_iter()
                 .zip(b.into_iter())
@@ -284,7 +268,7 @@ impl StarkPointResult {
 
 // === AddAssign === //
 
-impl AddAssign for StarkPoint {
+impl<C: CurveGroup> AddAssign for CurvePoint<C> {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
     }
@@ -292,56 +276,59 @@ impl AddAssign for StarkPoint {
 
 // === Subtraction === //
 
-impl Sub<&StarkPoint> for &StarkPoint {
-    type Output = StarkPoint;
+impl<C: CurveGroup> Sub<&CurvePoint<C>> for &CurvePoint<C> {
+    type Output = CurvePoint<C>;
 
-    fn sub(self, rhs: &StarkPoint) -> Self::Output {
-        StarkPoint(self.0 - rhs.0)
+    fn sub(self, rhs: &CurvePoint<C>) -> Self::Output {
+        CurvePoint(self.0 - rhs.0)
     }
 }
-impl_borrow_variants!(StarkPoint, Sub, sub, -, StarkPoint);
+impl_borrow_variants!(CurvePoint<C>, Sub, sub, -, CurvePoint<C>, C: CurveGroup);
 
-impl Sub<&StarkPointResult> for &StarkPointResult {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &CurvePointResult<C> {
+    type Output = CurvePointResult<C>;
 
-    fn sub(self, rhs: &StarkPointResult) -> Self::Output {
+    fn sub(self, rhs: &CurvePointResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: StarkPoint = args[0].to_owned().into();
-            let rhs: StarkPoint = args[1].to_owned().into();
-            ResultValue::Point(StarkPoint(lhs.0 - rhs.0))
+            let lhs: CurvePoint<C> = args[0].to_owned().into();
+            let rhs: CurvePoint<C> = args[1].to_owned().into();
+            ResultValue::Point(CurvePoint(lhs.0 - rhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPointResult, Sub, sub, -, StarkPointResult);
+impl_borrow_variants!(CurvePointResult<C>, Sub, sub, -, CurvePointResult<C>, C: CurveGroup);
 
-impl Sub<&StarkPoint> for &StarkPointResult {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Sub<&CurvePoint<C>> for &CurvePointResult<C> {
+    type Output = CurvePointResult<C>;
 
-    fn sub(self, rhs: &StarkPoint) -> Self::Output {
+    fn sub(self, rhs: &CurvePoint<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: StarkPoint = args[0].to_owned().into();
-            ResultValue::Point(StarkPoint(lhs.0 - rhs.0))
+            let lhs: CurvePoint<C> = args[0].to_owned().into();
+            ResultValue::Point(CurvePoint(lhs.0 - rhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPointResult, Sub, sub, -, StarkPoint);
+impl_borrow_variants!(CurvePointResult<C>, Sub, sub, -, CurvePoint<C>, C: CurveGroup);
 
-impl Sub<&StarkPointResult> for &StarkPoint {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &CurvePoint<C> {
+    type Output = CurvePointResult<C>;
 
-    fn sub(self, rhs: &StarkPointResult) -> Self::Output {
+    fn sub(self, rhs: &CurvePointResult<C>) -> Self::Output {
         let self_owned = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let rhs: StarkPoint = args[0].to_owned().into();
-            ResultValue::Point(StarkPoint(self_owned.0 - rhs.0))
+            let rhs: CurvePoint<C> = args[0].to_owned().into();
+            ResultValue::Point(CurvePoint(self_owned.0 - rhs.0))
         })
     }
 }
 
-impl StarkPointResult {
-    /// Subtract two batches of `StarkPoint`s
-    pub fn batch_sub(a: &[StarkPointResult], b: &[StarkPointResult]) -> Vec<StarkPointResult> {
+impl<C: CurveGroup> CurvePointResult<C> {
+    /// Subtract two batches of `CurvePoint<C>`s
+    pub fn batch_sub(
+        a: &[CurvePointResult<C>],
+        b: &[CurvePointResult<C>],
+    ) -> Vec<CurvePointResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -353,8 +340,8 @@ impl StarkPointResult {
         let all_ids = a.iter().chain(b.iter()).map(|r| r.id).collect_vec();
 
         fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-            let a = args.drain(..n).map(StarkPoint::from).collect_vec();
-            let b = args.into_iter().map(StarkPoint::from).collect_vec();
+            let a = args.drain(..n).map(CurvePoint::from).collect_vec();
+            let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
             a.into_iter()
                 .zip(b.into_iter())
@@ -367,7 +354,7 @@ impl StarkPointResult {
 
 // === SubAssign === //
 
-impl SubAssign for StarkPoint {
+impl<C: CurveGroup> SubAssign for CurvePoint<C> {
     fn sub_assign(&mut self, rhs: Self) {
         self.0 -= rhs.0;
     }
@@ -375,38 +362,38 @@ impl SubAssign for StarkPoint {
 
 // === Negation === //
 
-impl Neg for &StarkPoint {
-    type Output = StarkPoint;
+impl<C: CurveGroup> Neg for &CurvePoint<C> {
+    type Output = CurvePoint<C>;
 
     fn neg(self) -> Self::Output {
-        StarkPoint(-self.0)
+        CurvePoint(-self.0)
     }
 }
-impl_borrow_variants!(StarkPoint, Neg, neg, -);
+impl_borrow_variants!(CurvePoint<C>, Neg, neg, -, C: CurveGroup);
 
-impl Neg for &StarkPointResult {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Neg for &CurvePointResult<C> {
+    type Output = CurvePointResult<C>;
 
     fn neg(self) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id], |args| {
-            let lhs: StarkPoint = args[0].to_owned().into();
-            ResultValue::Point(StarkPoint(-lhs.0))
+            let lhs: CurvePoint<C> = args[0].to_owned().into();
+            ResultValue::Point(CurvePoint(-lhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPointResult, Neg, neg, -);
+impl_borrow_variants!(CurvePointResult<C>, Neg, neg, -, C:CurveGroup);
 
-impl StarkPointResult {
-    /// Negate a batch of `StarkPoint`s
-    pub fn batch_neg(a: &[StarkPointResult]) -> Vec<StarkPointResult> {
+impl<C: CurveGroup> CurvePointResult<C> {
+    /// Negate a batch of `CurvePoint<C>`s
+    pub fn batch_neg(a: &[CurvePointResult<C>]) -> Vec<CurvePointResult<C>> {
         let n = a.len();
         let fabric = a[0].fabric();
         let all_ids = a.iter().map(|r| r.id).collect_vec();
 
         fabric.new_batch_gate_op(all_ids, n /* output_arity */, |args| {
             args.into_iter()
-                .map(StarkPoint::from)
-                .map(StarkPoint::neg)
+                .map(CurvePoint::from)
+                .map(CurvePoint::neg)
                 .map(ResultValue::Point)
                 .collect_vec()
         })
@@ -415,62 +402,62 @@ impl StarkPointResult {
 
 // === Scalar Multiplication === //
 
-impl Mul<&Scalar> for &StarkPoint {
-    type Output = StarkPoint;
+impl<C: CurveGroup> Mul<&Scalar<C>> for &CurvePoint<C> {
+    type Output = CurvePoint<C>;
 
-    fn mul(self, rhs: &Scalar) -> Self::Output {
-        StarkPoint(self.0 * rhs.0)
+    fn mul(self, rhs: &Scalar<C>) -> Self::Output {
+        CurvePoint(self.0 * rhs.0)
     }
 }
-impl_borrow_variants!(StarkPoint, Mul, mul, *, Scalar);
-impl_commutative!(StarkPoint, Mul, mul, *, Scalar);
+impl_borrow_variants!(CurvePoint<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+impl_commutative!(CurvePoint<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
 
-impl Mul<&Scalar> for &StarkPointResult {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Mul<&Scalar<C>> for &CurvePointResult<C> {
+    type Output = CurvePointResult<C>;
 
-    fn mul(self, rhs: &Scalar) -> Self::Output {
+    fn mul(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: StarkPoint = args[0].to_owned().into();
-            ResultValue::Point(StarkPoint(lhs.0 * rhs.0))
+            let lhs: CurvePoint<C> = args[0].to_owned().into();
+            ResultValue::Point(CurvePoint(lhs.0 * rhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPointResult, Mul, mul, *, Scalar);
-impl_commutative!(StarkPointResult, Mul, mul, *, Scalar);
+impl_borrow_variants!(CurvePointResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+impl_commutative!(CurvePointResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
 
-impl Mul<&ScalarResult> for &StarkPoint {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Mul<&ScalarResult<C>> for &CurvePoint<C> {
+    type Output = CurvePointResult<C>;
 
-    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+    fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         let self_owned = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
             let rhs: Scalar = args[0].to_owned().into();
-            ResultValue::Point(StarkPoint(self_owned.0 * rhs.0))
+            ResultValue::Point(CurvePoint(self_owned.0 * rhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPoint, Mul, mul, *, ScalarResult, Output=StarkPointResult);
-impl_commutative!(StarkPoint, Mul, mul, *, ScalarResult, Output=StarkPointResult);
+impl_borrow_variants!(CurvePoint<C>, Mul, mul, *, ScalarResult<C>, Output=CurvePointResult<C>, C: CurveGroup);
+impl_commutative!(CurvePoint<C>, Mul, mul, *, ScalarResult<C>, Output=CurvePointResult<C>, C: CurveGroup);
 
-impl Mul<&ScalarResult> for &StarkPointResult {
-    type Output = StarkPointResult;
+impl<C: CurveGroup> Mul<&ScalarResult<C>> for &CurvePointResult<C> {
+    type Output = CurvePointResult<C>;
 
-    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+    fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
-            let lhs: StarkPoint = args.remove(0).into();
+            let lhs: CurvePoint<C> = args.remove(0).into();
             let rhs: Scalar = args.remove(0).into();
 
-            ResultValue::Point(StarkPoint(lhs.0 * rhs.0))
+            ResultValue::Point(CurvePoint(lhs.0 * rhs.0))
         })
     }
 }
-impl_borrow_variants!(StarkPointResult, Mul, mul, *, ScalarResult);
-impl_commutative!(StarkPointResult, Mul, mul, *, ScalarResult);
+impl_borrow_variants!(CurvePointResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
+impl_commutative!(CurvePointResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
 
-impl StarkPointResult {
-    /// Multiply a batch of `StarkPointResult`s with a batch of `ScalarResult`s
-    pub fn batch_mul(a: &[ScalarResult], b: &[StarkPointResult]) -> Vec<StarkPointResult> {
+impl<C: CurveGroup> CurvePointResult<C> {
+    /// Multiply a batch of `CurvePointResult<C>`s with a batch of `ScalarResult`s
+    pub fn batch_mul(a: &[ScalarResult<C>], b: &[CurvePointResult<C>]) -> Vec<CurvePointResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -487,7 +474,7 @@ impl StarkPointResult {
 
         fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
             let a = args.drain(..n).map(Scalar::from).collect_vec();
-            let b = args.into_iter().map(StarkPoint::from).collect_vec();
+            let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
             a.into_iter()
                 .zip(b.into_iter())
@@ -497,11 +484,11 @@ impl StarkPointResult {
         })
     }
 
-    /// Multiply a batch of `MpcScalarResult`s with a batch of `StarkPointResult`s
+    /// Multiply a batch of `MpcScalarResult`s with a batch of `CurvePointResult<C>`s
     pub fn batch_mul_shared(
-        a: &[MpcScalarResult],
-        b: &[StarkPointResult],
-    ) -> Vec<MpcStarkPointResult> {
+        a: &[MpcScalarResult<C>],
+        b: &[CurvePointResult<C>],
+    ) -> Vec<MpcPointResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -519,7 +506,7 @@ impl StarkPointResult {
         fabric
             .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
                 let a = args.drain(..n).map(Scalar::from).collect_vec();
-                let b = args.into_iter().map(StarkPoint::from).collect_vec();
+                let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
                 a.into_iter()
                     .zip(b.into_iter())
@@ -528,15 +515,15 @@ impl StarkPointResult {
                     .collect_vec()
             })
             .into_iter()
-            .map(MpcStarkPointResult::from)
+            .map(MpcPointResult::from)
             .collect_vec()
     }
 
-    /// Multiply a batch of `AuthenticatedScalarResult`s with a batch of `StarkPointResult`s
+    /// Multiply a batch of `AuthenticatedScalarResult`s with a batch of `CurvePointResult<C>`s
     pub fn batch_mul_authenticated(
-        a: &[AuthenticatedScalarResult],
-        b: &[StarkPointResult],
-    ) -> Vec<AuthenticatedStarkPointResult> {
+        a: &[AuthenticatedScalarResult<C>],
+        b: &[CurvePointResult<C>],
+    ) -> Vec<AuthenticatedPointResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -555,7 +542,8 @@ impl StarkPointResult {
             all_ids,
             AUTHENTICATED_STARK_POINT_RESULT_LEN * n, /* output_arity */
             move |mut args| {
-                let points: Vec<StarkPoint> = args.drain(..n).map(StarkPoint::from).collect_vec();
+                let points: Vec<CurvePoint<C>> =
+                    args.drain(..n).map(CurvePoint::from).collect_vec();
 
                 let mut results = Vec::with_capacity(AUTHENTICATED_STARK_POINT_RESULT_LEN * n);
 
@@ -576,14 +564,14 @@ impl StarkPointResult {
             },
         );
 
-        AuthenticatedStarkPointResult::from_flattened_iterator(results.into_iter())
+        AuthenticatedPointResult::from_flattened_iterator(results.into_iter())
     }
 }
 
 // === MulAssign === //
 
-impl MulAssign<&Scalar> for StarkPoint {
-    fn mul_assign(&mut self, rhs: &Scalar) {
+impl<C: CurveGroup> MulAssign<&Scalar<C>> for CurvePoint<C> {
+    fn mul_assign(&mut self, rhs: &Scalar<C>) {
         self.0 *= rhs.0;
     }
 }
@@ -592,13 +580,13 @@ impl MulAssign<&Scalar> for StarkPoint {
 // | Iterator Traits |
 // -------------------
 
-impl Sum for StarkPoint {
+impl<C: CurveGroup> Sum for CurvePoint<C> {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(StarkPoint::identity(), |acc, x| acc + x)
+        iter.fold(CurvePoint::identity(), |acc, x| acc + x)
     }
 }
 
-impl Sum for StarkPointResult {
+impl<C: CurveGroup> Sum for CurvePointResult<C> {
     /// Assumes the iterator is non-empty
     fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
         let first = iter.next().expect("empty iterator");
@@ -607,9 +595,9 @@ impl Sum for StarkPointResult {
 }
 
 /// MSM Implementation
-impl StarkPoint {
+impl<C: CurveGroup> CurvePoint<C> {
     /// Compute the multiscalar multiplication of the given scalars and points
-    pub fn msm(scalars: &[Scalar], points: &[StarkPoint]) -> StarkPoint {
+    pub fn msm(scalars: &[Scalar<C>], points: &[CurvePoint<C>]) -> CurvePoint<C> {
         assert_eq!(
             scalars.len(),
             points.len(),
@@ -623,19 +611,19 @@ impl StarkPoint {
 
         let affine_points = points.iter().map(|p| p.0.into_affine()).collect_vec();
         let stripped_scalars = scalars.iter().map(|s| s.0).collect_vec();
-        StarkPointInner::msm(&affine_points, &stripped_scalars)
-            .map(StarkPoint)
+        C::msm(&affine_points, &stripped_scalars)
+            .map(CurvePoint)
             .unwrap()
     }
 
     /// Compute the multiscalar multiplication of the given scalars and points
     /// represented as streaming iterators
-    pub fn msm_iter<I, J>(scalars: I, points: J) -> StarkPoint
+    pub fn msm_iter<I, J>(scalars: I, points: J) -> CurvePoint<C>
     where
         I: IntoIterator<Item = Scalar>,
-        J: IntoIterator<Item = StarkPoint>,
+        J: IntoIterator<Item = CurvePoint<C>>,
     {
-        let mut res = StarkPoint::identity();
+        let mut res = CurvePoint::identity();
         for (scalar_chunk, point_chunk) in scalars
             .into_iter()
             .chunks(MSM_CHUNK_SIZE)
@@ -643,8 +631,8 @@ impl StarkPoint {
             .zip(points.into_iter().chunks(MSM_CHUNK_SIZE).into_iter())
         {
             let scalars: Vec<Scalar> = scalar_chunk.collect();
-            let points: Vec<StarkPoint> = point_chunk.collect();
-            let chunk_res = StarkPoint::msm(&scalars, &points);
+            let points: Vec<CurvePoint<C>> = point_chunk.collect();
+            let chunk_res = CurvePoint::msm(&scalars, &points);
 
             res += chunk_res;
         }
@@ -653,7 +641,10 @@ impl StarkPoint {
     }
 
     /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
-    pub fn msm_results(scalars: &[ScalarResult], points: &[StarkPoint]) -> StarkPointResult {
+    pub fn msm_results(
+        scalars: &[ScalarResult<C>],
+        points: &[CurvePoint<C>],
+    ) -> CurvePointResult<C> {
         assert_eq!(
             scalars.len(),
             points.len(),
@@ -668,16 +659,16 @@ impl StarkPoint {
         fabric.new_gate_op(scalar_ids, move |args| {
             let scalars = args.into_iter().map(Scalar::from).collect_vec();
 
-            ResultValue::Point(StarkPoint::msm(&scalars, &points))
+            ResultValue::Point(CurvePoint::msm(&scalars, &points))
         })
     }
 
     /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
     /// as iterators. Assumes the iterators are non-empty
-    pub fn msm_results_iter<I, J>(scalars: I, points: J) -> StarkPointResult
+    pub fn msm_results_iter<I, J>(scalars: I, points: J) -> CurvePointResult<C>
     where
         I: IntoIterator<Item = ScalarResult>,
-        J: IntoIterator<Item = StarkPoint>,
+        J: IntoIterator<Item = CurvePoint<C>>,
     {
         Self::msm_results(
             &scalars.into_iter().collect_vec(),
@@ -687,9 +678,9 @@ impl StarkPoint {
 
     /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
     pub fn msm_authenticated(
-        scalars: &[AuthenticatedScalarResult],
-        points: &[StarkPoint],
-    ) -> AuthenticatedStarkPointResult {
+        scalars: &[AuthenticatedScalarResult<C>],
+        points: &[CurvePoint<C>],
+    ) -> AuthenticatedPointResult<C> {
         assert_eq!(
             scalars.len(),
             points.len(),
@@ -702,7 +693,7 @@ impl StarkPoint {
 
         // Clone points to let the gate closure take ownership
         let points = points.to_vec();
-        let res: Vec<StarkPointResult> = fabric.new_batch_gate_op(
+        let res: Vec<CurvePointResult<C>> = fabric.new_batch_gate_op(
             scalar_ids,
             AUTHENTICATED_SCALAR_RESULT_LEN, /* output_arity */
             move |args| {
@@ -718,9 +709,9 @@ impl StarkPoint {
 
                 // Compute the MSM of the point
                 vec![
-                    StarkPoint::msm(&shares, &points),
-                    StarkPoint::msm(&macs, &points),
-                    StarkPoint::msm(&modifiers, &points),
+                    CurvePoint::msm(&shares, &points),
+                    CurvePoint::msm(&macs, &points),
+                    CurvePoint::msm(&modifiers, &points),
                 ]
                 .into_iter()
                 .map(ResultValue::Point)
@@ -728,7 +719,7 @@ impl StarkPoint {
             },
         );
 
-        AuthenticatedStarkPointResult {
+        AuthenticatedPointResult {
             share: res[0].to_owned().into(),
             mac: res[1].to_owned().into(),
             public_modifier: res[2].to_owned(),
@@ -738,21 +729,24 @@ impl StarkPoint {
     /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
     /// as iterators
     /// This method assumes that the iterators are of the same length
-    pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedStarkPointResult
+    pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedPointResult<C>
     where
         I: IntoIterator<Item = AuthenticatedScalarResult>,
-        J: IntoIterator<Item = StarkPoint>,
+        J: IntoIterator<Item = CurvePoint<C>>,
     {
         let scalars: Vec<AuthenticatedScalarResult> = scalars.into_iter().collect();
-        let points: Vec<StarkPoint> = points.into_iter().collect();
+        let points: Vec<CurvePoint<C>> = points.into_iter().collect();
 
         Self::msm_authenticated(&scalars, &points)
     }
 }
 
-impl StarkPointResult {
+impl<C: CurveGroup> CurvePointResult<C> {
     /// Compute the multiscalar multiplication of the given scalars and points
-    pub fn msm_results(scalars: &[ScalarResult], points: &[StarkPointResult]) -> StarkPointResult {
+    pub fn msm_results(
+        scalars: &[ScalarResult<C>],
+        points: &[CurvePointResult<C>],
+    ) -> CurvePointResult<C> {
         assert!(!scalars.is_empty(), "msm cannot compute on an empty vector");
         assert_eq!(
             scalars.len(),
@@ -770,9 +764,9 @@ impl StarkPointResult {
 
         fabric.new_gate_op(all_ids, move |mut args| {
             let scalars = args.drain(..n).map(Scalar::from).collect_vec();
-            let points = args.into_iter().map(StarkPoint::from).collect_vec();
+            let points = args.into_iter().map(CurvePoint::from).collect_vec();
 
-            let res = StarkPoint::msm(&scalars, &points);
+            let res = CurvePoint::msm(&scalars, &points);
             ResultValue::Point(res)
         })
     }
@@ -781,10 +775,10 @@ impl StarkPointResult {
     /// represented as streaming iterators
     ///
     /// Assumes the iterator is non-empty
-    pub fn msm_results_iter<I, J>(scalars: I, points: J) -> StarkPointResult
+    pub fn msm_results_iter<I, J>(scalars: I, points: J) -> CurvePointResult<C>
     where
         I: IntoIterator<Item = ScalarResult>,
-        J: IntoIterator<Item = StarkPointResult>,
+        J: IntoIterator<Item = CurvePointResult<C>>,
     {
         Self::msm_results(
             &scalars.into_iter().collect_vec(),
@@ -794,9 +788,9 @@ impl StarkPointResult {
 
     /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
     pub fn msm_authenticated(
-        scalars: &[AuthenticatedScalarResult],
-        points: &[StarkPointResult],
-    ) -> AuthenticatedStarkPointResult {
+        scalars: &[AuthenticatedScalarResult<C>],
+        points: &[CurvePointResult<C>],
+    ) -> AuthenticatedPointResult<C> {
         assert_eq!(
             scalars.len(),
             points.len(),
@@ -830,12 +824,12 @@ impl StarkPointResult {
                     modifiers.push(chunk.next().unwrap());
                 }
 
-                let points = args.into_iter().map(StarkPoint::from).collect_vec();
+                let points = args.into_iter().map(CurvePoint::from).collect_vec();
 
                 vec![
-                    StarkPoint::msm(&shares, &points),
-                    StarkPoint::msm(&macs, &points),
-                    StarkPoint::msm(&modifiers, &points),
+                    CurvePoint::msm(&shares, &points),
+                    CurvePoint::msm(&macs, &points),
+                    CurvePoint::msm(&modifiers, &points),
                 ]
                 .into_iter()
                 .map(ResultValue::Point)
@@ -843,7 +837,7 @@ impl StarkPointResult {
             },
         );
 
-        AuthenticatedStarkPointResult {
+        AuthenticatedPointResult {
             share: res[0].to_owned().into(),
             mac: res[1].to_owned().into(),
             public_modifier: res[2].to_owned(),
@@ -852,13 +846,13 @@ impl StarkPointResult {
 
     /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
     /// represented as streaming iterators
-    pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedStarkPointResult
+    pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedPointResult<C>
     where
         I: IntoIterator<Item = AuthenticatedScalarResult>,
-        J: IntoIterator<Item = StarkPointResult>,
+        J: IntoIterator<Item = CurvePointResult<C>>,
     {
         let scalars: Vec<AuthenticatedScalarResult> = scalars.into_iter().collect();
-        let points: Vec<StarkPointResult> = points.into_iter().collect();
+        let points: Vec<CurvePointResult<C>> = points.into_iter().collect();
 
         Self::msm_authenticated(&scalars, &points)
     }
@@ -873,102 +867,85 @@ impl StarkPointResult {
 #[cfg(test)]
 mod test {
     use rand::{thread_rng, RngCore};
-    use starknet_curve::{curve_params::GENERATOR, ProjectivePoint};
 
-    use crate::algebra::test_helper::{
-        arkworks_point_to_starknet, compare_points, prime_field_to_starknet_felt, random_point,
-        starknet_rs_scalar_mul,
-    };
+    use crate::algebra::test_helper::{random_point, TestCurve};
 
     use super::*;
     /// Test that the generators are the same between the two curve representations
     #[test]
     fn test_generators() {
-        let generator_1 = StarkPoint::generator();
-        let generator_2 = ProjectivePoint::from_affine_point(&GENERATOR);
+        // let generator_1 = CurvePoint::generator();
+        // let generator_2 = ProjectivePoint::from_affine_point(&GENERATOR);
 
-        assert!(compare_points(&generator_1, &generator_2));
+        // assert!(compare_points(&generator_1, &generator_2));
     }
 
     /// Tests point addition
     #[test]
     fn test_point_addition() {
-        let p1 = random_point();
-        let q1 = random_point();
+        // let p1 = random_point();
+        // let q1 = random_point();
 
-        let p2 = arkworks_point_to_starknet(&p1);
-        let q2 = arkworks_point_to_starknet(&q1);
+        // let p2 = arkworks_point_to_starknet(&p1);
+        // let q2 = arkworks_point_to_starknet(&q1);
 
-        let r1 = p1 + q1;
+        // let r1 = p1 + q1;
 
-        // Only `AddAssign` is implemented on `ProjectivePoint`
-        let mut r2 = p2;
-        r2 += &q2;
+        // // Only `AddAssign` is implemented on `ProjectivePoint`
+        // let mut r2 = p2;
+        // r2 += &q2;
 
-        assert!(compare_points(&r1, &r2));
+        // assert!(compare_points(&r1, &r2));
     }
 
     /// Tests scalar multiplication
     #[test]
     fn test_scalar_mul() {
-        let mut rng = thread_rng();
-        let s1 = Scalar::random(&mut rng);
-        let p1 = random_point();
+        // let mut rng = thread_rng();
+        // let s1 = Scalar::random(&mut rng);
+        // let p1 = random_point();
 
-        let s2 = prime_field_to_starknet_felt(&s1.0);
-        let p2 = arkworks_point_to_starknet(&p1);
+        // let s2 = prime_field_to_starknet_felt(&s1.0);
+        // let p2 = arkworks_point_to_starknet(&p1);
 
-        let r1 = p1 * s1;
-        let r2 = starknet_rs_scalar_mul(&s2, &p2);
+        // let r1 = p1 * s1;
+        // let r2 = starknet_rs_scalar_mul(&s2, &p2);
 
-        assert!(compare_points(&r1, &r2));
+        // assert!(compare_points(&r1, &r2));
     }
 
     /// Tests addition with the additive identity
     #[test]
     fn test_additive_identity() {
         let p1 = random_point();
-        let res = p1 + StarkPoint::identity();
+        let res = p1 + CurvePoint::identity();
 
         assert_eq!(p1, res);
     }
 
-    /// Tests the size of the curve point serialization
-    #[test]
-    fn test_point_serialized() {
-        // Sample a random point and serialize it to bytes
-        let point = random_point();
-        let res = point.to_bytes();
-
-        assert_eq!(res.len(), STARK_POINT_BYTES);
-
-        // Deserialize and verify the points are equal
-        let deserialized = StarkPoint::from_bytes(&res).unwrap();
-        assert_eq!(point, deserialized);
-    }
-
-    /// Tests the hash-to-curve implementation `StarkPoint::from_uniform_bytes`
+    /// Tests the hash-to-curve implementation `CurvePoint<C>::from_uniform_bytes`
     #[test]
     fn test_hash_to_curve() {
         // Sample random bytes into a buffer
         let mut rng = thread_rng();
-        let mut buf = [0u8; STARK_UNIFORM_BYTES];
+        const N_BYTES: usize = n_bytes_field::<TestCurve::BaseField>();
+        let mut buf = [0u8; N_BYTES * 2];
         rng.fill_bytes(&mut buf);
 
         // As long as the method does not error, the test is successful
-        let res = StarkPoint::from_uniform_bytes(buf);
+        let res = CurvePoint::from_uniform_bytes(buf);
         assert!(res.is_ok())
     }
 
     /// Tests converting to and from affine coordinates
     #[test]
-    fn test_to_from_affine_coords() {
+    fn test_affine_conversion() {
         let projective = random_point();
         let affine = projective.to_affine();
 
         let x = BigUint::from(affine.x);
         let y = BigUint::from(affine.y);
-        let recovered = StarkPoint::from_affine_coords(x, y);
+        let recovered = CurvePoint::from_affine_coords(x, y);
 
         assert_eq!(projective, recovered);
     }

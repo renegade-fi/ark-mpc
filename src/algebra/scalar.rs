@@ -10,7 +10,8 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use ark_ff::{batch_inversion, Field, Fp256, MontBackend, MontConfig, PrimeField};
+use ark_ec::CurveGroup;
+use ark_ff::{batch_inversion, Field, MontConfig, PrimeField};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{CryptoRng, Rng, RngCore};
@@ -20,54 +21,43 @@ use crate::fabric::{ResultHandle, ResultValue};
 
 use super::macros::{impl_borrow_variants, impl_commutative};
 
-/// The number of bytes needed to represent an element of the base field
-pub const BASE_FIELD_BYTES: usize = 32;
-/// The number of bytes in a `Scalar`
-pub const SCALAR_BYTES: usize = 32;
+// -----------
+// | Helpers |
+// -----------
 
-/// The config for finite field that the Starknet curve is defined over
-#[derive(MontConfig)]
-#[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
-#[generator = "3"]
-pub struct StarknetFqConfig;
-/// The finite field that the Starknet curve is defined over
-pub type StarknetBaseFelt = Fp256<MontBackend<StarknetFqConfig, 4>>;
+/// Computes the number of bytes needed to represent  field element
+#[inline]
+pub const fn n_bytes_field<F: PrimeField>() -> usize {
+    // We add 7 and divide by 8 to emulate a ceiling operation considering that u32
+    // division is a floor
+    let n_bits = F::MODULUS_BIT_SIZE;
+    (n_bits + 7) / 8
+}
 
-/// The config for the scalar field of the Starknet curve
-#[derive(MontConfig)]
-#[modulus = "3618502788666131213697322783095070105526743751716087489154079457884512865583"]
-#[generator = "3"]
-pub struct StarknetFrConfig;
-/// The finite field representing the curve group of the Starknet curve
-///
-/// Note that this is not the field that the curve is defined over, but field of integers modulo
-/// the order of the curve's group, see [here](https://crypto.stackexchange.com/questions/98124/is-the-stark-curve-a-safecurve)
-/// for more information
-pub(crate) type ScalarInner = Fp256<MontBackend<StarknetFrConfig, 4>>;
+// ---------------------
+// | Scalar Definition |
+// ---------------------
+
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 /// A wrapper around the inner scalar that allows us to implement foreign traits for the `Scalar`
-pub struct Scalar(pub(crate) ScalarInner);
+pub struct Scalar<C: CurveGroup>(pub(crate) C::ScalarField);
 
-// -------------------
-// | Implementations |
-// -------------------
-
-impl Scalar {
+impl<C: CurveGroup> Scalar<C> {
     /// The underlying field that the scalar wraps
-    pub type Field = ScalarInner;
+    pub type Field = C::ScalarField;
 
     /// The scalar field's additive identity
-    pub fn zero() -> Scalar {
-        Scalar(ScalarInner::from(0))
+    pub fn zero() -> Self {
+        Scalar(Self::Field::from(0u8))
     }
 
     /// The scalar field's multiplicative identity
-    pub fn one() -> Scalar {
-        Scalar(ScalarInner::from(1))
+    pub fn one() -> Self {
+        Scalar(Self::Field::from(1))
     }
 
     /// Get the inner value of the scalar
-    pub fn inner(&self) -> ScalarInner {
+    pub fn inner(&self) -> Self::Field {
         self.0
     }
 
@@ -75,18 +65,18 @@ impl Scalar {
     ///
     /// n.b. The `rand::random` method uses `ThreadRng` type which implements
     /// the `CryptoRng` traits
-    pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Scalar {
-        let inner: ScalarInner = rng.sample(rand::distributions::Standard);
+    pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
+        let inner: Self::Field = rng.sample(rand::distributions::Standard);
         Scalar(inner)
     }
 
     /// Compute the multiplicative inverse of the scalar in its field
-    pub fn inverse(&self) -> Scalar {
+    pub fn inverse(&self) -> Self {
         Scalar(self.0.inverse().unwrap())
     }
 
     /// Compute the batch inversion of a list of Scalars
-    pub fn batch_inverse(vals: &mut [Scalar]) {
+    pub fn batch_inverse(vals: &mut [Self]) {
         let mut values = vals.iter().map(|x| x.0).collect_vec();
         batch_inversion(&mut values);
 
@@ -96,8 +86,8 @@ impl Scalar {
     }
 
     /// Construct a scalar from the given bytes and reduce modulo the field's modulus
-    pub fn from_be_bytes_mod_order(bytes: &[u8]) -> Scalar {
-        let inner = ScalarInner::from_be_bytes_mod_order(bytes);
+    pub fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
+        let inner = Self::Field::from_be_bytes_mod_order(bytes);
         Scalar(inner)
     }
 
@@ -109,7 +99,8 @@ impl Scalar {
         let val_biguint = self.to_biguint();
         let mut bytes = val_biguint.to_bytes_be();
 
-        let mut padding = vec![0u8; SCALAR_BYTES - bytes.len()];
+        let n_bytes = n_bytes_field::<Self::Field>();
+        let mut padding = vec![0u8; n_bytes - bytes.len()];
         padding.append(&mut bytes);
 
         padding
@@ -121,27 +112,27 @@ impl Scalar {
     }
 
     /// Convert from a `BigUint`
-    pub fn from_biguint(val: &BigUint) -> Scalar {
+    pub fn from_biguint(val: &BigUint) -> Self {
         let le_bytes = val.to_bytes_le();
-        let inner = ScalarInner::from_le_bytes_mod_order(&le_bytes);
+        let inner = Self::Field::from_le_bytes_mod_order(&le_bytes);
         Scalar(inner)
     }
 }
 
-impl Display for Scalar {
+impl<C: CurveGroup> Display for Scalar<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.to_biguint())
     }
 }
 
-impl Serialize for Scalar {
+impl<C: CurveGroup> Serialize for Scalar<C> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let bytes = self.to_bytes_be();
         bytes.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for Scalar {
+impl<'de, C: CurveGroup> Deserialize<'de> for Scalar<C> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let bytes = <Vec<u8>>::deserialize(deserializer)?;
         let scalar = Scalar::from_be_bytes_mod_order(&bytes);
@@ -155,60 +146,60 @@ impl<'de> Deserialize<'de> for Scalar {
 
 // === Addition === //
 
-/// A type alias for a result that resolves to a `Scalar`
-pub type ScalarResult = ResultHandle<Scalar>;
-/// A type alias for a result that resolves to a batch of `Scalar`s
-pub type BatchScalarResult = ResultHandle<Vec<Scalar>>;
-impl ScalarResult {
+/// A type alias for a result that resolves to a `Scalar<C>`
+pub type ScalarResult<C> = ResultHandle<C, Scalar<C>>;
+/// A type alias for a result that resolves to a batch of `Scalar<C>`s
+pub type BatchScalarResult<C> = ResultHandle<C, Vec<Scalar<C>>>;
+impl<C: CurveGroup> ScalarResult<C> {
     /// Compute the multiplicative inverse of the scalar in its field
-    pub fn inverse(&self) -> ScalarResult {
+    pub fn inverse(&self) -> ScalarResult<C> {
         self.fabric.new_gate_op(vec![self.id], |mut args| {
-            let val: Scalar = args.remove(0).into();
+            let val: Scalar<C> = args.remove(0).into();
             ResultValue::Scalar(Scalar(val.0.inverse().unwrap()))
         })
     }
 }
 
-impl Add<&Scalar> for &Scalar {
-    type Output = Scalar;
+impl<C: CurveGroup> Add<&Scalar<C>> for &Scalar<C> {
+    type Output = Scalar<C>;
 
-    fn add(self, rhs: &Scalar) -> Self::Output {
+    fn add(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         Scalar(self.0 + rhs.0)
     }
 }
-impl_borrow_variants!(Scalar, Add, add, +, Scalar);
+impl_borrow_variants!(Scalar<C>, Add, add, +, Scalar<C>, C: CurveGroup);
 
-impl Add<&Scalar> for &ScalarResult {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Add<&Scalar<C>> for &ScalarResult<C> {
+    type Output = ScalarResult<C>;
 
-    fn add(self, rhs: &Scalar) -> Self::Output {
+    fn add(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: Scalar = args[0].to_owned().into();
+            let lhs: Scalar<C> = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 + rhs.0))
         })
     }
 }
-impl_borrow_variants!(ScalarResult, Add, add, +, Scalar);
-impl_commutative!(ScalarResult, Add, add, +, Scalar);
+impl_borrow_variants!(ScalarResult<C>, Add, add, +, Scalar<C>, C: CurveGroup);
+impl_commutative!(ScalarResult<C>, Add, add, +, Scalar<C>, C: CurveGroup);
 
-impl Add<&ScalarResult> for &ScalarResult {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Add<&ScalarResult<C>> for &ScalarResult<C> {
+    type Output = ScalarResult<C>;
 
-    fn add(self, rhs: &ScalarResult) -> Self::Output {
+    fn add(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: Scalar = args[0].to_owned().into();
-            let rhs: Scalar = args[1].to_owned().into();
+            let lhs: Scalar<C> = args[0].to_owned().into();
+            let rhs: Scalar<C> = args[1].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 + rhs.0))
         })
     }
 }
-impl_borrow_variants!(ScalarResult, Add, add, +, ScalarResult);
+impl_borrow_variants!(ScalarResult<C>, Add, add, +, ScalarResult<C>, C: CurveGroup);
 
-impl ScalarResult {
-    /// Add two batches of `ScalarResult`s
-    pub fn batch_add(a: &[ScalarResult], b: &[ScalarResult]) -> Vec<ScalarResult> {
+impl<C: CurveGroup> ScalarResult<C> {
+    /// Add two batches of `ScalarResult<C>`s
+    pub fn batch_add(a: &[ScalarResult<C>], b: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
         assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");
 
         let n = a.len();
@@ -217,8 +208,8 @@ impl ScalarResult {
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             let mut res = Vec::with_capacity(n);
             for i in 0..n {
-                let lhs: Scalar = args[i].to_owned().into();
-                let rhs: Scalar = args[i + n].to_owned().into();
+                let lhs: Scalar<C> = args[i].to_owned().into();
+                let rhs: Scalar<C> = args[i + n].to_owned().into();
                 res.push(ResultValue::Scalar(Scalar(lhs.0 + rhs.0)));
             }
 
@@ -229,66 +220,66 @@ impl ScalarResult {
 
 // === AddAssign === //
 
-impl AddAssign for Scalar {
-    fn add_assign(&mut self, rhs: Scalar) {
+impl<C: CurveGroup> AddAssign for Scalar<C> {
+    fn add_assign(&mut self, rhs: Scalar<C>) {
         *self = *self + rhs;
     }
 }
 
 // === Subtraction === //
 
-impl Sub<&Scalar> for &Scalar {
-    type Output = Scalar;
+impl<C: CurveGroup> Sub<&Scalar<C>> for &Scalar<C> {
+    type Output = Scalar<C>;
 
-    fn sub(self, rhs: &Scalar) -> Self::Output {
+    fn sub(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         Scalar(self.0 - rhs.0)
     }
 }
-impl_borrow_variants!(Scalar, Sub, sub, -, Scalar);
+impl_borrow_variants!(Scalar<C>, Sub, sub, -, Scalar<C>, C: CurveGroup);
 
-impl Sub<&Scalar> for &ScalarResult {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Sub<&Scalar<C>> for &ScalarResult<C> {
+    type Output = ScalarResult<C>;
 
-    fn sub(self, rhs: &Scalar) -> Self::Output {
+    fn sub(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: Scalar = args[0].to_owned().into();
+            let lhs: Scalar<C> = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 - rhs.0))
         })
     }
 }
-impl_borrow_variants!(ScalarResult, Sub, sub, -, Scalar);
+impl_borrow_variants!(ScalarResult<C>, Sub, sub, -, Scalar<C>, C: CurveGroup);
 
-impl Sub<&ScalarResult> for &Scalar {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Sub<&ScalarResult<C>> for &Scalar<C> {
+    type Output = ScalarResult<C>;
 
-    fn sub(self, rhs: &ScalarResult) -> Self::Output {
+    fn sub(self, rhs: &ScalarResult<C>) -> Self::Output {
         let lhs = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let rhs: Scalar = args[0].to_owned().into();
+            let rhs: Scalar<C> = args[0].to_owned().into();
             ResultValue::Scalar(lhs - rhs)
         })
     }
 }
-impl_borrow_variants!(Scalar, Sub, sub, -, ScalarResult, Output=ScalarResult);
+impl_borrow_variants!(Scalar<C>, Sub, sub, -, ScalarResult<C>, Output=ScalarResult<C>, C: CurveGroup);
 
-impl Sub<&ScalarResult> for &ScalarResult {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Sub<&ScalarResult<C>> for &ScalarResult<C> {
+    type Output = ScalarResult<C>;
 
-    fn sub(self, rhs: &ScalarResult) -> Self::Output {
+    fn sub(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: Scalar = args[0].to_owned().into();
-            let rhs: Scalar = args[1].to_owned().into();
+            let lhs: Scalar<C> = args[0].to_owned().into();
+            let rhs: Scalar<C> = args[1].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 - rhs.0))
         })
     }
 }
-impl_borrow_variants!(ScalarResult, Sub, sub, -, ScalarResult);
+impl_borrow_variants!(ScalarResult<C>, Sub, sub, -, ScalarResult<C>, C: CurveGroup);
 
-impl ScalarResult {
-    /// Subtract two batches of `ScalarResult`s
-    pub fn batch_sub(a: &[ScalarResult], b: &[ScalarResult]) -> Vec<ScalarResult> {
+impl<C: CurveGroup> ScalarResult<C> {
+    /// Subtract two batches of `ScalarResult<C>`s
+    pub fn batch_sub(a: &[ScalarResult<C>], b: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
         assert_eq!(a.len(), b.len(), "Batch sub requires equal length inputs");
 
         let n = a.len();
@@ -297,8 +288,8 @@ impl ScalarResult {
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             let mut res = Vec::with_capacity(n);
             for i in 0..n {
-                let lhs: Scalar = args[i].to_owned().into();
-                let rhs: Scalar = args[i + n].to_owned().into();
+                let lhs: Scalar<C> = args[i].to_owned().into();
+                let rhs: Scalar<C> = args[i + n].to_owned().into();
                 res.push(ResultValue::Scalar(Scalar(lhs.0 - rhs.0)));
             }
 
@@ -309,54 +300,54 @@ impl ScalarResult {
 
 // === SubAssign === //
 
-impl SubAssign for Scalar {
-    fn sub_assign(&mut self, rhs: Scalar) {
+impl<C: CurveGroup> SubAssign for Scalar<C> {
+    fn sub_assign(&mut self, rhs: Scalar<C>) {
         *self = *self - rhs;
     }
 }
 
 // === Multiplication === //
 
-impl Mul<&Scalar> for &Scalar {
-    type Output = Scalar;
+impl<C: CurveGroup> Mul<&Scalar<C>> for &Scalar<C> {
+    type Output = Scalar<C>;
 
-    fn mul(self, rhs: &Scalar) -> Self::Output {
+    fn mul(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         Scalar(self.0 * rhs.0)
     }
 }
-impl_borrow_variants!(Scalar, Mul, mul, *, Scalar);
+impl_borrow_variants!(Scalar<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
 
-impl Mul<&Scalar> for &ScalarResult {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Mul<&Scalar<C>> for &ScalarResult<C> {
+    type Output = ScalarResult<C>;
 
-    fn mul(self, rhs: &Scalar) -> Self::Output {
+    fn mul(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: Scalar = args[0].to_owned().into();
+            let lhs: Scalar<C> = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 * rhs.0))
         })
     }
 }
-impl_borrow_variants!(ScalarResult, Mul, mul, *, Scalar);
-impl_commutative!(ScalarResult, Mul, mul, *, Scalar);
+impl_borrow_variants!(ScalarResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+impl_commutative!(ScalarResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
 
-impl Mul<&ScalarResult> for &ScalarResult {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Mul<&ScalarResult<C>> for &ScalarResult<C> {
+    type Output = ScalarResult<C>;
 
-    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+    fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: Scalar = args[0].to_owned().into();
-            let rhs: Scalar = args[1].to_owned().into();
+            let lhs: Scalar<C> = args[0].to_owned().into();
+            let rhs: Scalar<C> = args[1].to_owned().into();
             ResultValue::Scalar(Scalar(lhs.0 * rhs.0))
         })
     }
 }
-impl_borrow_variants!(ScalarResult, Mul, mul, *, ScalarResult);
+impl_borrow_variants!(ScalarResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
 
-impl ScalarResult {
-    /// Multiply two batches of `ScalarResult`s
-    pub fn batch_mul(a: &[ScalarResult], b: &[ScalarResult]) -> Vec<ScalarResult> {
+impl<C: CurveGroup> ScalarResult<C> {
+    /// Multiply two batches of `ScalarResult<C>`s
+    pub fn batch_mul(a: &[ScalarResult<C>], b: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
         assert_eq!(a.len(), b.len(), "Batch mul requires equal length inputs");
 
         let n = a.len();
@@ -365,8 +356,8 @@ impl ScalarResult {
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             let mut res = Vec::with_capacity(n);
             for i in 0..n {
-                let lhs: Scalar = args[i].to_owned().into();
-                let rhs: Scalar = args[i + n].to_owned().into();
+                let lhs: Scalar<C> = args[i].to_owned().into();
+                let rhs: Scalar<C> = args[i + n].to_owned().into();
                 res.push(ResultValue::Scalar(Scalar(lhs.0 * rhs.0)));
             }
 
@@ -375,30 +366,30 @@ impl ScalarResult {
     }
 }
 
-impl Neg for &Scalar {
-    type Output = Scalar;
+impl<C: CurveGroup> Neg for &Scalar<C> {
+    type Output = Scalar<C>;
 
     fn neg(self) -> Self::Output {
         Scalar(-self.0)
     }
 }
-impl_borrow_variants!(Scalar, Neg, neg, -);
+impl_borrow_variants!(Scalar<C>, Neg, neg, -, C: CurveGroup);
 
-impl Neg for &ScalarResult {
-    type Output = ScalarResult;
+impl<C: CurveGroup> Neg for &ScalarResult<C> {
+    type Output = ScalarResult<C>;
 
     fn neg(self) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id], |args| {
-            let lhs: Scalar = args[0].to_owned().into();
+            let lhs: Scalar<C> = args[0].to_owned().into();
             ResultValue::Scalar(Scalar(-lhs.0))
         })
     }
 }
-impl_borrow_variants!(ScalarResult, Neg, neg, -);
+impl_borrow_variants!(ScalarResult<C>, Neg, neg, -, C: CurveGroup);
 
-impl ScalarResult {
-    /// Negate a batch of `ScalarResult`s
-    pub fn batch_neg(a: &[ScalarResult]) -> Vec<ScalarResult> {
+impl<C: CurveGroup> ScalarResult<C> {
+    /// Negate a batch of `ScalarResult<C>`s
+    pub fn batch_neg(a: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
         let n = a.len();
         let fabric = &a[0].fabric;
         let ids = a.iter().map(|v| v.id).collect_vec();
@@ -414,8 +405,8 @@ impl ScalarResult {
 
 // === MulAssign === //
 
-impl MulAssign for Scalar {
-    fn mul_assign(&mut self, rhs: Scalar) {
+impl<C: CurveGroup> MulAssign for Scalar<C> {
+    fn mul_assign(&mut self, rhs: Scalar<C>) {
         *self = *self * rhs;
     }
 }
@@ -424,7 +415,7 @@ impl MulAssign for Scalar {
 // | Conversions |
 // ---------------
 
-impl<T: Into<ScalarInner>> From<T> for Scalar {
+impl<C: CurveGroup, T: Into<C::ScalarField>> From<T> for Scalar<C> {
     fn from(val: T) -> Self {
         Scalar(val.into())
     }
@@ -434,40 +425,22 @@ impl<T: Into<ScalarInner>> From<T> for Scalar {
 // | Iterator Traits |
 // -------------------
 
-impl Sum for Scalar {
-    fn sum<I: Iterator<Item = Scalar>>(iter: I) -> Self {
+impl<C: CurveGroup> Sum for Scalar<C> {
+    fn sum<I: Iterator<Item = Scalar<C>>>(iter: I) -> Self {
         iter.fold(Scalar::zero(), |acc, x| acc + x)
     }
 }
 
-impl Product for Scalar {
-    fn product<I: Iterator<Item = Scalar>>(iter: I) -> Self {
+impl<C: CurveGroup> Product for Scalar<C> {
+    fn product<I: Iterator<Item = Scalar<C>>>(iter: I) -> Self {
         iter.fold(Scalar::one(), |acc, x| acc * x)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        algebra::scalar::{Scalar, SCALAR_BYTES},
-        test_helpers::mock_fabric,
-    };
+    use crate::{algebra::scalar::Scalar, test_helpers::mock_fabric};
     use rand::thread_rng;
-
-    /// Tests serializing and deserializing a scalar
-    #[test]
-    fn test_scalar_serialize() {
-        // Sample a random scalar and convert it to bytes
-        let mut rng = thread_rng();
-        let scalar = Scalar::random(&mut rng);
-        let bytes = scalar.to_bytes_be();
-
-        assert_eq!(bytes.len(), SCALAR_BYTES);
-
-        // Deserialize and validate the scalar
-        let scalar_deserialized = Scalar::from_be_bytes_mod_order(&bytes);
-        assert_eq!(scalar, scalar_deserialized);
-    }
 
     /// Tests addition of raw scalars in a circuit
     #[tokio::test]

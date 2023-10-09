@@ -3,6 +3,7 @@
 
 use std::ops::{Add, Mul, Neg, Sub};
 
+use ark_ec::CurveGroup;
 use itertools::Itertools;
 
 use crate::{
@@ -13,29 +14,29 @@ use crate::{
 };
 
 use super::{
+    curve::{CurvePoint, CurvePointResult},
     macros::{impl_borrow_variants, impl_commutative},
-    mpc_stark_point::MpcStarkPointResult,
+    mpc_curve::MpcPointResult,
     scalar::{Scalar, ScalarResult},
-    stark_curve::{StarkPoint, StarkPointResult},
 };
 
 /// Defines a secret shared type over the `Scalar` field
 #[derive(Clone, Debug)]
-pub struct MpcScalarResult {
+pub struct MpcScalarResult<C: CurveGroup> {
     /// The underlying value held by the local party
-    pub(crate) share: ScalarResult,
+    pub(crate) share: ScalarResult<C>,
 }
 
-impl From<ScalarResult> for MpcScalarResult {
-    fn from(share: ScalarResult) -> Self {
+impl<C: CurveGroup> From<ScalarResult<C>> for MpcScalarResult<C> {
+    fn from(share: ScalarResult<C>) -> Self {
         Self { share }
     }
 }
 
-/// Defines the result handle type that represents a future result of an `MpcScalarResult`
-impl MpcScalarResult {
+/// Defines the result handle type that represents a future result of an `MpcScalarResult<C>`
+impl<C: CurveGroup> MpcScalarResult<C> {
     /// Creates an MPC scalar from a given underlying scalar assumed to be a secret share
-    pub fn new_shared(value: ScalarResult) -> MpcScalarResult {
+    pub fn new_shared(value: ScalarResult<C>) -> MpcScalarResult<C> {
         value.into()
     }
 
@@ -50,7 +51,7 @@ impl MpcScalarResult {
     }
 
     /// Open the value; both parties send their shares to the counterparty
-    pub fn open(&self) -> ResultHandle<Scalar> {
+    pub fn open(&self) -> ScalarResult<C> {
         // Party zero sends first then receives
         let (val0, val1) = if self.fabric().party_id() == PARTY0 {
             let party0_value: ResultHandle<Scalar> =
@@ -77,7 +78,7 @@ impl MpcScalarResult {
     }
 
     /// Open a batch of values
-    pub fn open_batch(values: &[MpcScalarResult]) -> Vec<ScalarResult> {
+    pub fn open_batch(values: &[MpcScalarResult<C>]) -> Vec<ScalarResult<C>> {
         if values.is_empty() {
             return vec![];
         }
@@ -93,13 +94,15 @@ impl MpcScalarResult {
         // Party zero sends first then receives
         let (party0_vals, party1_vals) = if values[0].fabric().party_id() == PARTY0 {
             // Send the local shares
-            let party0_vals: BatchScalarResult = fabric.new_network_op(my_results, send_shares_fn);
-            let party1_vals: BatchScalarResult = fabric.receive_value();
+            let party0_vals: BatchScalarResult<C> =
+                fabric.new_network_op(my_results, send_shares_fn);
+            let party1_vals: BatchScalarResult<C> = fabric.receive_value();
 
             (party0_vals, party1_vals)
         } else {
-            let party0_vals: BatchScalarResult = fabric.receive_value();
-            let party1_vals: BatchScalarResult = fabric.new_network_op(my_results, send_shares_fn);
+            let party0_vals: BatchScalarResult<C> = fabric.receive_value();
+            let party1_vals: BatchScalarResult<C> =
+                fabric.new_network_op(my_results, send_shares_fn);
 
             (party0_vals, party1_vals)
         };
@@ -119,7 +122,7 @@ impl MpcScalarResult {
     }
 
     /// Convert the underlying value to a `Scalar`
-    pub fn to_scalar(&self) -> ScalarResult {
+    pub fn to_scalar(&self) -> ScalarResult<C> {
         self.share.clone()
     }
 }
@@ -130,11 +133,11 @@ impl MpcScalarResult {
 
 // === Addition === //
 
-impl Add<&Scalar> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Add<&Scalar<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
     // Only party 0 adds the plaintext value as we do not secret share it
-    fn add(self, rhs: &Scalar) -> Self::Output {
+    fn add(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         let party_id = self.fabric().party_id();
 
@@ -151,14 +154,14 @@ impl Add<&Scalar> for &MpcScalarResult {
             .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Add, add, +, Scalar);
-impl_commutative!(MpcScalarResult, Add, add, +, Scalar);
+impl_borrow_variants!(MpcScalarResult<C>, Add, add, +, Scalar<C>, C: CurveGroup);
+impl_commutative!(MpcScalarResult<C>, Add, add, +, Scalar<C>, C: CurveGroup);
 
-impl Add<&ScalarResult> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Add<&ScalarResult<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
     // Only party 0 adds the plaintext value as we do not secret share it
-    fn add(self, rhs: &ScalarResult) -> Self::Output {
+    fn add(self, rhs: &ScalarResult<C>) -> Self::Output {
         let party_id = self.fabric().party_id();
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id], move |mut args| {
@@ -175,13 +178,13 @@ impl Add<&ScalarResult> for &MpcScalarResult {
             .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Add, add, +, ScalarResult);
-impl_commutative!(MpcScalarResult, Add, add, +, ScalarResult);
+impl_borrow_variants!(MpcScalarResult<C>, Add, add, +, ScalarResult<C>, C: CurveGroup);
+impl_commutative!(MpcScalarResult<C>, Add, add, +, ScalarResult<C>, C: CurveGroup);
 
-impl Add<&MpcScalarResult> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Add<&MpcScalarResult<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
-    fn add(self, rhs: &MpcScalarResult) -> Self::Output {
+    fn add(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], |args| {
                 // Cast the args
@@ -193,11 +196,14 @@ impl Add<&MpcScalarResult> for &MpcScalarResult {
             .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Add, add, +, MpcScalarResult);
+impl_borrow_variants!(MpcScalarResult<C>, Add, add, +, MpcScalarResult<C>, C: CurveGroup);
 
-impl MpcScalarResult {
-    /// Add two batches of `MpcScalarResult`s using a single batched gate
-    pub fn batch_add(a: &[MpcScalarResult], b: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
+impl<C: CurveGroup> MpcScalarResult<C> {
+    /// Add two batches of `MpcScalarResult<C>`s using a single batched gate
+    pub fn batch_add(
+        a: &[MpcScalarResult<C>],
+        b: &[MpcScalarResult<C>],
+    ) -> Vec<MpcScalarResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -224,8 +230,11 @@ impl MpcScalarResult {
         scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 
-    /// Add a batch of `MpcScalarResult`s to a batch of public `ScalarResult`s
-    pub fn batch_add_public(a: &[MpcScalarResult], b: &[ScalarResult]) -> Vec<MpcScalarResult> {
+    /// Add a batch of `MpcScalarResult<C>`s to a batch of public `ScalarResult<C>`s
+    pub fn batch_add_public(
+        a: &[MpcScalarResult<C>],
+        b: &[ScalarResult<C>],
+    ) -> Vec<MpcScalarResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -241,7 +250,7 @@ impl MpcScalarResult {
             .collect_vec();
 
         let party_id = fabric.party_id();
-        let scalars: Vec<ScalarResult> =
+        let scalars: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
                 if party_id == PARTY0 {
                     let mut res: Vec<ResultValue> = Vec::with_capacity(n);
@@ -265,11 +274,11 @@ impl MpcScalarResult {
 
 // === Subtraction === //
 
-impl Sub<&Scalar> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Sub<&Scalar<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
     // Only party 0 subtracts the plaintext value as we do not secret share it
-    fn sub(self, rhs: &Scalar) -> Self::Output {
+    fn sub(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         let party_id = self.fabric().party_id();
 
@@ -282,13 +291,13 @@ impl Sub<&Scalar> for &MpcScalarResult {
         .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Sub, sub, -, Scalar);
+impl_borrow_variants!(MpcScalarResult<C>, Sub, sub, -, Scalar<C>, C: CurveGroup);
 
-impl Sub<&MpcScalarResult> for &Scalar {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Sub<&MpcScalarResult<C>> for &Scalar<C> {
+    type Output = MpcScalarResult<C>;
 
     // Only party 0 subtracts the plaintext value as we do not secret share it
-    fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
+    fn sub(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         let party_id = rhs.fabric().party_id();
 
         if party_id == PARTY0 {
@@ -301,11 +310,11 @@ impl Sub<&MpcScalarResult> for &Scalar {
     }
 }
 
-impl Sub<&ScalarResult> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Sub<&ScalarResult<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
     // Only party 0 subtracts the plaintext value as we do not secret share it
-    fn sub(self, rhs: &ScalarResult) -> Self::Output {
+    fn sub(self, rhs: &ScalarResult<C>) -> Self::Output {
         let party_id = self.fabric().party_id();
 
         if party_id == PARTY0 {
@@ -317,13 +326,13 @@ impl Sub<&ScalarResult> for &MpcScalarResult {
         .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Sub, sub, -, ScalarResult);
+impl_borrow_variants!(MpcScalarResult<C>, Sub, sub, -, ScalarResult<C>, C: CurveGroup);
 
-impl Sub<&MpcScalarResult> for &ScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Sub<&MpcScalarResult<C>> for &ScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
     // Only party 0 subtracts the plaintext value as we do not secret share it
-    fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
+    fn sub(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         let party_id = rhs.fabric().party_id();
 
         if party_id == PARTY0 {
@@ -335,12 +344,12 @@ impl Sub<&MpcScalarResult> for &ScalarResult {
         .into()
     }
 }
-impl_borrow_variants!(ScalarResult, Sub, sub, -, MpcScalarResult, Output=MpcScalarResult);
+impl_borrow_variants!(ScalarResult<C>, Sub, sub, -, MpcScalarResult<C>, Output=MpcScalarResult<C>, C: CurveGroup);
 
-impl Sub<&MpcScalarResult> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Sub<&MpcScalarResult<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
-    fn sub(self, rhs: &MpcScalarResult) -> Self::Output {
+    fn sub(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], |args| {
                 // Cast the args
@@ -352,11 +361,14 @@ impl Sub<&MpcScalarResult> for &MpcScalarResult {
             .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Sub, sub, -, MpcScalarResult);
+impl_borrow_variants!(MpcScalarResult<C>, Sub, sub, -, MpcScalarResult<C>, C: CurveGroup);
 
-impl MpcScalarResult {
-    /// Subtract two batches of `MpcScalarResult`s using a single batched gate
-    pub fn batch_sub(a: &[MpcScalarResult], b: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
+impl<C: CurveGroup> MpcScalarResult<C> {
+    /// Subtract two batches of `MpcScalarResult<C>`s using a single batched gate
+    pub fn batch_sub(
+        a: &[MpcScalarResult<C>],
+        b: &[MpcScalarResult<C>],
+    ) -> Vec<MpcScalarResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -371,7 +383,7 @@ impl MpcScalarResult {
             .chain(b.iter().map(|v| v.id()))
             .collect_vec();
 
-        let scalars: Vec<ScalarResult> =
+        let scalars: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
                 // Split the args
                 let scalars = args.into_iter().map(Scalar::from).collect_vec();
@@ -388,8 +400,11 @@ impl MpcScalarResult {
         scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 
-    /// Subtract a batch of `MpcScalarResult`s from a batch of public `ScalarResult`s
-    pub fn batch_sub_public(a: &[MpcScalarResult], b: &[ScalarResult]) -> Vec<MpcScalarResult> {
+    /// Subtract a batch of `MpcScalarResult<C>`s from a batch of public `ScalarResult<C>`s
+    pub fn batch_sub_public(
+        a: &[MpcScalarResult<C>],
+        b: &[ScalarResult<C>],
+    ) -> Vec<MpcScalarResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -428,8 +443,8 @@ impl MpcScalarResult {
 
 // === Negation === //
 
-impl Neg for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Neg for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
     fn neg(self) -> Self::Output {
         self.fabric()
@@ -441,11 +456,11 @@ impl Neg for &MpcScalarResult {
             .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Neg, neg, -);
+impl_borrow_variants!(MpcScalarResult<C>, Neg, neg, -, C: CurveGroup);
 
-impl MpcScalarResult {
-    /// Negate a batch of `MpcScalarResult`s using a single batched gate
-    pub fn batch_neg(values: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
+impl<C: CurveGroup> MpcScalarResult<C> {
+    /// Negate a batch of `MpcScalarResult<C>`s using a single batched gate
+    pub fn batch_neg(values: &[MpcScalarResult<C>]) -> Vec<MpcScalarResult<C>> {
         if values.is_empty() {
             return vec![];
         }
@@ -471,10 +486,10 @@ impl MpcScalarResult {
 
 // === Multiplication === //
 
-impl Mul<&Scalar> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Mul<&Scalar<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
-    fn mul(self, rhs: &Scalar) -> Self::Output {
+    fn mul(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric()
             .new_gate_op(vec![self.id()], move |args| {
@@ -485,13 +500,13 @@ impl Mul<&Scalar> for &MpcScalarResult {
             .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Mul, mul, *, Scalar);
-impl_commutative!(MpcScalarResult, Mul, mul, *, Scalar);
+impl_borrow_variants!(MpcScalarResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+impl_commutative!(MpcScalarResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
 
-impl Mul<&ScalarResult> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Mul<&ScalarResult<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
-    fn mul(self, rhs: &ScalarResult) -> Self::Output {
+    fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
                 // Cast the args
@@ -503,14 +518,14 @@ impl Mul<&ScalarResult> for &MpcScalarResult {
             .into()
     }
 }
-impl_borrow_variants!(MpcScalarResult, Mul, mul, *, ScalarResult);
-impl_commutative!(MpcScalarResult, Mul, mul, *, ScalarResult);
+impl_borrow_variants!(MpcScalarResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
+impl_commutative!(MpcScalarResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
 
 /// Use the beaver trick if both values are shared
-impl Mul<&MpcScalarResult> for &MpcScalarResult {
-    type Output = MpcScalarResult;
+impl<C: CurveGroup> Mul<&MpcScalarResult<C>> for &MpcScalarResult<C> {
+    type Output = MpcScalarResult<C>;
 
-    fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
+    fn mul(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         // Sample a beaver triplet
         let (a, b, c) = self.fabric().next_beaver_triple();
 
@@ -525,11 +540,14 @@ impl Mul<&MpcScalarResult> for &MpcScalarResult {
         &d_open * &b + &e_open * &a + c + &d_open * &e_open
     }
 }
-impl_borrow_variants!(MpcScalarResult, Mul, mul, *, MpcScalarResult);
+impl_borrow_variants!(MpcScalarResult<C>, Mul, mul, *, MpcScalarResult<C>, C: CurveGroup);
 
-impl MpcScalarResult {
-    /// Multiply a batch of `MpcScalarResults` over a single network op
-    pub fn batch_mul(a: &[MpcScalarResult], b: &[MpcScalarResult]) -> Vec<MpcScalarResult> {
+impl<C: CurveGroup> MpcScalarResult<C> {
+    /// Multiply a batch of `MpcScalarResult<C>s` over a single network op
+    pub fn batch_mul(
+        a: &[MpcScalarResult<C>],
+        b: &[MpcScalarResult<C>],
+    ) -> Vec<MpcScalarResult<C>> {
         let n = a.len();
         assert_eq!(
             a.len(),
@@ -560,8 +578,11 @@ impl MpcScalarResult {
         MpcScalarResult::batch_add(&de_plus_db, &ea_plus_c)
     }
 
-    /// Multiply a batch of `MpcScalarResult`s by a batch of public `ScalarResult`s
-    pub fn batch_mul_public(a: &[MpcScalarResult], b: &[ScalarResult]) -> Vec<MpcScalarResult> {
+    /// Multiply a batch of `MpcScalarResult<C>`s by a batch of public `ScalarResult<C>`s
+    pub fn batch_mul_public(
+        a: &[MpcScalarResult<C>],
+        b: &[ScalarResult<C>],
+    ) -> Vec<MpcScalarResult<C>> {
         assert_eq!(
             a.len(),
             b.len(),
@@ -576,7 +597,7 @@ impl MpcScalarResult {
             .chain(b.iter().map(|v| v.id))
             .collect_vec();
 
-        let scalars: Vec<ScalarResult> =
+        let scalars: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
                 let mut res: Vec<ResultValue> = Vec::with_capacity(n);
                 for i in 0..n {
@@ -595,10 +616,10 @@ impl MpcScalarResult {
 
 // === Curve Scalar Multiplication === //
 
-impl Mul<&MpcScalarResult> for &StarkPoint {
-    type Output = MpcStarkPointResult;
+impl<C: CurveGroup> Mul<&MpcScalarResult<C>> for &CurvePoint<C> {
+    type Output = MpcPointResult<C>;
 
-    fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
+    fn mul(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         let self_owned = *self;
         rhs.fabric()
             .new_gate_op(vec![rhs.id()], move |mut args| {
@@ -609,15 +630,15 @@ impl Mul<&MpcScalarResult> for &StarkPoint {
             .into()
     }
 }
-impl_commutative!(StarkPoint, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
+impl_commutative!(CurvePoint<C>, Mul, mul, *, MpcScalarResult<C>, Output=MpcPointResult<C>, C: CurveGroup);
 
-impl Mul<&MpcScalarResult> for &StarkPointResult {
-    type Output = MpcStarkPointResult;
+impl<C: CurveGroup> Mul<&MpcScalarResult<C>> for &CurvePointResult<C> {
+    type Output = MpcPointResult<C>;
 
-    fn mul(self, rhs: &MpcScalarResult) -> Self::Output {
+    fn mul(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         self.fabric
             .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
-                let lhs: StarkPoint = args.remove(0).into();
+                let lhs: CurvePoint = args.remove(0).into();
                 let rhs: Scalar = args.remove(0).into();
 
                 ResultValue::Point(lhs * rhs)
@@ -625,8 +646,8 @@ impl Mul<&MpcScalarResult> for &StarkPointResult {
             .into()
     }
 }
-impl_borrow_variants!(StarkPointResult, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
-impl_commutative!(StarkPointResult, Mul, mul, *, MpcScalarResult, Output=MpcStarkPointResult);
+impl_borrow_variants!(CurvePointResult<C>, Mul, mul, *, MpcScalarResult<C>, Output=MpcPointResult<C>, C: CurveGroup);
+impl_commutative!(CurvePointResult<C>, Mul, mul, *, MpcScalarResult<C>, Output=MpcPointResult<C>, C: CurveGroup);
 
 #[cfg(test)]
 mod test {
