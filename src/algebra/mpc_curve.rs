@@ -210,7 +210,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
             .collect_vec()
     }
 
-    /// Add a batch of `MpcPointResult<C>s` to a batch of `CurvePointResult<C><C>`s
+    /// Add a batch of `MpcPointResults` to a batch of `CurvePointResult`s
     pub fn batch_add_public(
         a: &[MpcPointResult<C>],
         b: &[CurvePointResult<C>],
@@ -479,7 +479,7 @@ impl_borrow_variants!(MpcPointResult<C>, Mul, mul, *, MpcScalarResult<C>, C: Cur
 impl_commutative!(MpcPointResult<C>, Mul, mul, *, MpcScalarResult<C>, C:CurveGroup);
 
 impl<C: CurveGroup> MpcPointResult<C> {
-    /// Multiply a batch of `MpcPointResult<C>`s with a batch of `MpcScalarResult`s
+    /// Multiply a batch of `MpcPointResult`s with a batch of `MpcScalarResult`s
     #[allow(non_snake_case)]
     pub fn batch_mul(a: &[MpcScalarResult<C>], b: &[MpcPointResult<C>]) -> Vec<MpcPointResult<C>> {
         assert_eq!(a.len(), b.len(), "Batch add requires equal length inputs");

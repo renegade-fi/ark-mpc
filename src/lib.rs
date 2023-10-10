@@ -4,7 +4,7 @@
 #![allow(incomplete_features)]
 #![feature(inherent_associated_types)]
 
-//! Defines an MPC implementation over the Stark curve that allows for out-of-order execution of
+//! Defines an MPC implementation over the a generic Arkworks curve that allows for out-of-order execution of
 //! the underlying MPC circuit
 
 use std::sync::{Arc, RwLock};
@@ -39,7 +39,7 @@ pub const PARTY0: u64 = 0;
 pub const PARTY1: u64 = 1;
 
 /// Generate a random curve point by multiplying a random scalar with the
-/// Stark curve group generator
+/// curve group generator
 pub fn random_point<C: CurveGroup>() -> CurvePoint<C> {
     let mut rng = thread_rng();
     CurvePoint::generator() * Scalar::random(&mut rng)
@@ -63,10 +63,10 @@ pub mod test_helpers {
         MpcFabric, PARTY0, PARTY1,
     };
 
-    use ark_curve25519::EdwardsProjective as Curve25519Projective;
+    use ark_bn254::G1Projective as Bn254Projective;
 
     /// A curve used for testing algebra implementations, set to curve25519
-    pub type TestCurve = Curve25519Projective;
+    pub type TestCurve = Bn254Projective;
 
     /// Create a mock fabric
     pub fn mock_fabric() -> MpcFabric<TestCurve> {

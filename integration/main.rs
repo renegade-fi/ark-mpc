@@ -1,18 +1,17 @@
 use std::{borrow::Borrow, io::Write, net::SocketAddr, process::exit, thread, time::Duration};
 
-use ark_curve25519::Curve25519Config;
-use ark_ec::twisted_edwards::Projective;
+use ark_bn254::G1Projective as Bn254Projective;
+use ark_mpc::{
+    algebra::{curve::CurvePoint, scalar::Scalar},
+    network::{NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
+    MpcFabric, PARTY0,
+};
 use clap::Parser;
 use colored::Colorize;
 use dns_lookup::lookup_host;
 use env_logger::Builder;
 use futures::{SinkExt, StreamExt};
 use helpers::PartyIDBeaverSource;
-use mpc_stark::{
-    algebra::{curve::CurvePoint, scalar::Scalar},
-    network::{NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
-    MpcFabric, PARTY0,
-};
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use tracing::log::{self, LevelFilter};
 
@@ -28,7 +27,7 @@ mod mpc_scalar;
 const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
 
 /// The curve used for testing, set to curve25519
-pub type TestCurve = Projective<Curve25519Config>;
+pub type TestCurve = Bn254Projective;
 /// The curve point type used for testing
 pub type TestCurvePoint = CurvePoint<TestCurve>;
 /// The scalar point ype used for testing

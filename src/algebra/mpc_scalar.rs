@@ -33,7 +33,7 @@ impl<C: CurveGroup> From<ScalarResult<C>> for MpcScalarResult<C> {
     }
 }
 
-/// Defines the result handle type that represents a future result of an `MpcScalarResult<C>`
+/// Defines the result handle type that represents a future result of an `MpcScalar`
 impl<C: CurveGroup> MpcScalarResult<C> {
     /// Creates an MPC scalar from a given underlying scalar assumed to be a secret share
     pub fn new_shared(value: ScalarResult<C>) -> MpcScalarResult<C> {
@@ -199,7 +199,7 @@ impl<C: CurveGroup> Add<&MpcScalarResult<C>> for &MpcScalarResult<C> {
 impl_borrow_variants!(MpcScalarResult<C>, Add, add, +, MpcScalarResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> MpcScalarResult<C> {
-    /// Add two batches of `MpcScalarResult<C>`s using a single batched gate
+    /// Add two batches of `MpcScalarResult`s using a single batched gate
     pub fn batch_add(
         a: &[MpcScalarResult<C>],
         b: &[MpcScalarResult<C>],
@@ -230,7 +230,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 
-    /// Add a batch of `MpcScalarResult<C>`s to a batch of public `ScalarResult<C>`s
+    /// Add a batch of `MpcScalarResult`s to a batch of public `ScalarResult`s
     pub fn batch_add_public(
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],
@@ -364,7 +364,7 @@ impl<C: CurveGroup> Sub<&MpcScalarResult<C>> for &MpcScalarResult<C> {
 impl_borrow_variants!(MpcScalarResult<C>, Sub, sub, -, MpcScalarResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> MpcScalarResult<C> {
-    /// Subtract two batches of `MpcScalarResult<C>`s using a single batched gate
+    /// Subtract two batches of `MpcScalarResult`s using a single batched gate
     pub fn batch_sub(
         a: &[MpcScalarResult<C>],
         b: &[MpcScalarResult<C>],
@@ -400,7 +400,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 
-    /// Subtract a batch of `MpcScalarResult<C>`s from a batch of public `ScalarResult<C>`s
+    /// Subtract a batch of `MpcScalarResult`s from a batch of public `ScalarResult`s
     pub fn batch_sub_public(
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],
@@ -543,7 +543,7 @@ impl<C: CurveGroup> Mul<&MpcScalarResult<C>> for &MpcScalarResult<C> {
 impl_borrow_variants!(MpcScalarResult<C>, Mul, mul, *, MpcScalarResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> MpcScalarResult<C> {
-    /// Multiply a batch of `MpcScalarResult<C>s` over a single network op
+    /// Multiply a batch of `MpcScalarResult`s over a single network op
     pub fn batch_mul(
         a: &[MpcScalarResult<C>],
         b: &[MpcScalarResult<C>],
@@ -578,7 +578,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         MpcScalarResult::batch_add(&de_plus_db, &ea_plus_c)
     }
 
-    /// Multiply a batch of `MpcScalarResult<C>`s by a batch of public `ScalarResult<C>`s
+    /// Multiply a batch of `MpcScalarResult`s by a batch of public `ScalarResult`s
     pub fn batch_mul_public(
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],

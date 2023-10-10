@@ -2,11 +2,11 @@
 
 use std::time::{Duration, Instant};
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::authenticated_curve::AuthenticatedPointResult, test_helpers::execute_mock_mpc,
 };
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use itertools::Itertools;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 /// Measure the throughput and latency of a variable-sized MSM

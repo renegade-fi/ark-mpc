@@ -3,13 +3,13 @@
 
 use std::time::Instant;
 
-use clap::Parser;
-use cpuprofiler::PROFILER;
-use gperftools::HEAP_PROFILER;
-use mpc_stark::{
+use ark_mpc::{
     algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork,
     test_helpers::TestCurve, MpcFabric, PARTY0,
 };
+use clap::Parser;
+use cpuprofiler::PROFILER;
+use gperftools::HEAP_PROFILER;
 use rand::thread_rng;
 
 // -----------

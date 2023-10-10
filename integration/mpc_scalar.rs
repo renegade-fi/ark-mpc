@@ -1,12 +1,12 @@
 //! Defines unit tests for `MpcScalarResult` types
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::{
         mpc_scalar::MpcScalarResult,
         scalar::{Scalar, ScalarResult},
     },
     PARTY0, PARTY1,
 };
+use itertools::Itertools;
 use rand::thread_rng;
 use std::ops::Neg;
 

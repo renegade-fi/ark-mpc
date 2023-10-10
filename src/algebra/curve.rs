@@ -1,4 +1,5 @@
-//! Defines the `Scalar` type of the Starknet field
+//! Defines the `CurvePoint` type, a wrapper around a generic curve that allows us to
+//! bring curve arithmetic into the execution graph
 
 use std::{
     iter::Sum,
@@ -13,7 +14,7 @@ use ark_ec::{
         HashToCurveError,
     },
     short_weierstrass::Projective,
-    CurveGroup,
+    AffineRepr, CurveGroup,
 };
 use ark_ff::PrimeField;
 
@@ -23,7 +24,7 @@ use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::{
     algebra::{
-        authenticated_curve::AUTHENTICATED_STARK_POINT_RESULT_LEN,
+        authenticated_curve::AUTHENTICATED_POINT_RESULT_LEN,
         authenticated_scalar::AUTHENTICATED_SCALAR_RESULT_LEN,
     },
     fabric::{ResultHandle, ResultValue},
@@ -160,9 +161,11 @@ where
         let p1 = mapper.map_to_curve(f1)?;
         let p2 = mapper.map_to_curve(f2)?;
 
-        // The IETF spec above requires that we clear the cofactor. However, the STARK curve has cofactor
-        // h = 1, so no works needs to be done
-        Ok(CurvePoint(p1 + p2))
+        // Clear the cofactor
+        let p1_clear = p1.clear_cofactor();
+        let p2_clear = p2.clear_cofactor();
+
+        Ok(CurvePoint(p1_clear + p2_clear))
     }
 
     /// A helper that converts an arbitrarily long byte buffer to a field element
@@ -536,12 +539,12 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let results = fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_STARK_POINT_RESULT_LEN * n, /* output_arity */
+            AUTHENTICATED_POINT_RESULT_LEN * n, /* output_arity */
             move |mut args| {
                 let points: Vec<CurvePoint<C>> =
                     args.drain(..n).map(CurvePoint::from).collect_vec();
 
-                let mut results = Vec::with_capacity(AUTHENTICATED_STARK_POINT_RESULT_LEN * n);
+                let mut results = Vec::with_capacity(AUTHENTICATED_POINT_RESULT_LEN * n);
 
                 for (scalars, point) in args
                     .chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN)
@@ -782,7 +785,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
         )
     }
 
-    /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
+    /// Compute the multiscalar multiplication of the given `AuthenticatedScalarResult`s and points
     pub fn msm_authenticated(
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[CurvePointResult<C>],
@@ -803,7 +806,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let res = fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_STARK_POINT_RESULT_LEN, /* output_arity */
+            AUTHENTICATED_POINT_RESULT_LEN, /* output_arity */
             move |mut args| {
                 let mut shares = Vec::with_capacity(n);
                 let mut macs = Vec::with_capacity(n);
@@ -840,7 +843,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
         }
     }
 
-    /// Compute the multiscalar multiplication of the given `AuthenticatedScalar`s and points
+    /// Compute the multiscalar multiplication of the given `AuthenticatedScalarResult`s and points
     /// represented as streaming iterators
     pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedPointResult<C>
     where
@@ -858,8 +861,6 @@ impl<C: CurveGroup> CurvePointResult<C> {
 // | Tests |
 // ---------
 
-/// We test our config against a known implementation of the Stark curve:
-///     https://github.com/xJonathanLEI/starknet-rs
 #[cfg(test)]
 mod test {
     use rand::thread_rng;
