@@ -11,10 +11,10 @@ use std::{
 };
 
 use ark_ec::CurveGroup;
-use ark_ff::{batch_inversion, Field, MontConfig, PrimeField};
+use ark_ff::{batch_inversion, Field, PrimeField};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use rand::{CryptoRng, Rng, RngCore};
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::fabric::{ResultHandle, ResultValue};
@@ -30,7 +30,7 @@ use super::macros::{impl_borrow_variants, impl_commutative};
 pub const fn n_bytes_field<F: PrimeField>() -> usize {
     // We add 7 and divide by 8 to emulate a ceiling operation considering that u32
     // division is a floor
-    let n_bits = F::MODULUS_BIT_SIZE;
+    let n_bits = F::MODULUS_BIT_SIZE as usize;
     (n_bits + 7) / 8
 }
 
@@ -48,26 +48,28 @@ impl<C: CurveGroup> Scalar<C> {
 
     /// The scalar field's additive identity
     pub fn zero() -> Self {
-        Scalar(Self::Field::from(0u8))
+        Scalar(C::ScalarField::from(0u8))
     }
 
     /// The scalar field's multiplicative identity
     pub fn one() -> Self {
-        Scalar(Self::Field::from(1))
+        Scalar(C::ScalarField::from(1u8))
     }
 
     /// Get the inner value of the scalar
-    pub fn inner(&self) -> Self::Field {
+    pub fn inner(&self) -> C::ScalarField {
         self.0
     }
 
-    /// Generate a random scalar
+    /// Sample a random field element
     ///
-    /// n.b. The `rand::random` method uses `ThreadRng` type which implements
-    /// the `CryptoRng` traits
+    /// TODO: Validate that this gives a uniform distribution over the field
     pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
-        let inner: Self::Field = rng.sample(rand::distributions::Standard);
-        Scalar(inner)
+        let mut random_bytes = vec![0u8; n_bytes_field::<C::ScalarField>()];
+        rng.fill_bytes(&mut random_bytes);
+
+        let val = C::ScalarField::from_random_bytes(&random_bytes).unwrap();
+        Self(val)
     }
 
     /// Compute the multiplicative inverse of the scalar in its field
@@ -87,7 +89,7 @@ impl<C: CurveGroup> Scalar<C> {
 
     /// Construct a scalar from the given bytes and reduce modulo the field's modulus
     pub fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
-        let inner = Self::Field::from_be_bytes_mod_order(bytes);
+        let inner = C::ScalarField::from_be_bytes_mod_order(bytes);
         Scalar(inner)
     }
 
@@ -99,7 +101,7 @@ impl<C: CurveGroup> Scalar<C> {
         let val_biguint = self.to_biguint();
         let mut bytes = val_biguint.to_bytes_be();
 
-        let n_bytes = n_bytes_field::<Self::Field>();
+        let n_bytes = n_bytes_field::<C::ScalarField>();
         let mut padding = vec![0u8; n_bytes - bytes.len()];
         padding.append(&mut bytes);
 
@@ -114,7 +116,7 @@ impl<C: CurveGroup> Scalar<C> {
     /// Convert from a `BigUint`
     pub fn from_biguint(val: &BigUint) -> Self {
         let le_bytes = val.to_bytes_le();
-        let inner = Self::Field::from_le_bytes_mod_order(&le_bytes);
+        let inner = C::ScalarField::from_le_bytes_mod_order(&le_bytes);
         Scalar(inner)
     }
 }
@@ -415,9 +417,45 @@ impl<C: CurveGroup> MulAssign for Scalar<C> {
 // | Conversions |
 // ---------------
 
-impl<C: CurveGroup, T: Into<C::ScalarField>> From<T> for Scalar<C> {
-    fn from(val: T) -> Self {
-        Scalar(val.into())
+impl<C: CurveGroup> From<bool> for Scalar<C> {
+    fn from(value: bool) -> Self {
+        Scalar(C::ScalarField::from(value))
+    }
+}
+
+impl<C: CurveGroup> From<u8> for Scalar<C> {
+    fn from(value: u8) -> Self {
+        Scalar(C::ScalarField::from(value))
+    }
+}
+
+impl<C: CurveGroup> From<u16> for Scalar<C> {
+    fn from(value: u16) -> Self {
+        Scalar(C::ScalarField::from(value))
+    }
+}
+
+impl<C: CurveGroup> From<u32> for Scalar<C> {
+    fn from(value: u32) -> Self {
+        Scalar(C::ScalarField::from(value))
+    }
+}
+
+impl<C: CurveGroup> From<u64> for Scalar<C> {
+    fn from(value: u64) -> Self {
+        Scalar(C::ScalarField::from(value))
+    }
+}
+
+impl<C: CurveGroup> From<u128> for Scalar<C> {
+    fn from(value: u128) -> Self {
+        Scalar(C::ScalarField::from(value))
+    }
+}
+
+impl<C: CurveGroup> From<usize> for Scalar<C> {
+    fn from(value: usize) -> Self {
+        Scalar(C::ScalarField::from(value as u64))
     }
 }
 

@@ -9,14 +9,11 @@ pub mod mpc_scalar;
 pub mod scalar;
 
 /// Helpers useful for testing throughout the `algebra` module
-#[cfg(test)]
+#[cfg(any(test, feature = "test_helpers"))]
 pub(crate) mod test_helper {
-    use std::iter;
-
-    use super::scalar::Scalar;
+    use super::{curve::CurvePoint, scalar::Scalar};
 
     use ark_curve25519::EdwardsProjective as Curve25519Projective;
-    use ark_ec::CurveGroup;
     use ark_ff::PrimeField;
     use num_bigint::BigUint;
     use rand::thread_rng;
@@ -27,12 +24,14 @@ pub(crate) mod test_helper {
 
     /// A curve used for testing algebra implementations, set to curve25519
     pub type TestCurve = Curve25519Projective;
+    /// A curve point on the test curve
+    pub type TestCurvePoint = CurvePoint<TestCurve>;
 
     /// Generate a random point, by multiplying the basepoint with a random scalar
-    pub fn random_point() -> TestCurve {
+    pub fn random_point() -> TestCurvePoint {
         let mut rng = thread_rng();
         let scalar = Scalar::random(&mut rng);
-        let point = TestCurve::generator() * scalar;
+        let point = TestCurvePoint::generator() * scalar;
         point * scalar
     }
 

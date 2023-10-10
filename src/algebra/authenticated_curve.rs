@@ -116,12 +116,13 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         n: usize,
     ) -> Vec<AuthenticatedPointResult<C>> {
         // Convert to a set of scalar results
-        let scalar_results = values
-            .fabric()
-            .new_batch_gate_op(vec![values.id()], n, |mut args| {
-                let args: Vec<CurvePoint<C>> = args.pop().unwrap().into();
-                args.into_iter().map(ResultValue::Point).collect_vec()
-            });
+        let scalar_results: Vec<CurvePointResult<C>> =
+            values
+                .fabric()
+                .new_batch_gate_op(vec![values.id()], n, |mut args| {
+                    let args: Vec<CurvePoint<C>> = args.pop().unwrap().into();
+                    args.into_iter().map(ResultValue::Point).collect_vec()
+                });
 
         Self::new_shared_batch(&scalar_results)
     }
@@ -137,7 +138,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
     }
 
     /// Borrow the fabric that this result is allocated in
-    pub fn fabric(&self) -> &MpcFabric {
+    pub fn fabric(&self) -> &MpcFabric<C> {
         self.share.fabric()
     }
 
@@ -400,7 +401,10 @@ impl<C: CurveGroup> Debug for AuthenticatedPointOpenResult<C> {
     }
 }
 
-impl<C: CurveGroup> Future for AuthenticatedPointOpenResult<C> {
+impl<C: CurveGroup> Future for AuthenticatedPointOpenResult<C>
+where
+    C::ScalarField: Unpin,
+{
     type Output = Result<CurvePoint<C>, MpcError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -408,7 +412,7 @@ impl<C: CurveGroup> Future for AuthenticatedPointOpenResult<C> {
         let value = futures::ready!(self.as_mut().value.poll_unpin(cx));
         let mac_check = futures::ready!(self.as_mut().mac_check.poll_unpin(cx));
 
-        if mac_check == Scalar::from(1) {
+        if mac_check == Scalar::from(1u8) {
             Poll::Ready(Ok(value))
         } else {
             Poll::Ready(Err(MpcError::AuthenticationError))

@@ -8,7 +8,7 @@ use itertools::Itertools;
 
 use crate::{
     algebra::scalar::BatchScalarResult,
-    fabric::{MpcFabric, ResultHandle, ResultValue},
+    fabric::{MpcFabric, ResultValue},
     network::NetworkPayload,
     PARTY0,
 };
@@ -46,7 +46,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
     }
 
     /// Borrow the fabric that the result is allocated in
-    pub fn fabric(&self) -> &MpcFabric {
+    pub fn fabric(&self) -> &MpcFabric<C> {
         self.share.fabric()
     }
 
@@ -54,17 +54,17 @@ impl<C: CurveGroup> MpcScalarResult<C> {
     pub fn open(&self) -> ScalarResult<C> {
         // Party zero sends first then receives
         let (val0, val1) = if self.fabric().party_id() == PARTY0 {
-            let party0_value: ResultHandle<Scalar> =
+            let party0_value: ScalarResult<C> =
                 self.fabric().new_network_op(vec![self.id()], |args| {
-                    let share: Scalar = args[0].to_owned().into();
+                    let share: Scalar<C> = args[0].to_owned().into();
                     NetworkPayload::Scalar(share)
                 });
-            let party1_value: ResultHandle<Scalar> = self.fabric().receive_value();
+            let party1_value: ScalarResult<C> = self.fabric().receive_value();
 
             (party0_value, party1_value)
         } else {
-            let party0_value: ResultHandle<Scalar> = self.fabric().receive_value();
-            let party1_value: ResultHandle<Scalar> =
+            let party0_value: ScalarResult<C> = self.fabric().receive_value();
+            let party1_value: ScalarResult<C> =
                 self.fabric().new_network_op(vec![self.id()], |args| {
                     let share = args[0].to_owned().into();
                     NetworkPayload::Scalar(share)
@@ -86,8 +86,8 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         let n = values.len();
         let fabric = &values[0].fabric();
         let my_results = values.iter().map(|v| v.id()).collect_vec();
-        let send_shares_fn = |args: Vec<ResultValue>| {
-            let shares: Vec<Scalar> = args.into_iter().map(Scalar::from).collect();
+        let send_shares_fn = |args: Vec<ResultValue<C>>| {
+            let shares: Vec<Scalar<C>> = args.into_iter().map(Scalar::from).collect();
             NetworkPayload::ScalarBatch(shares)
         };
 
@@ -109,8 +109,8 @@ impl<C: CurveGroup> MpcScalarResult<C> {
 
         // Create the new values by combining the additive shares
         fabric.new_batch_gate_op(vec![party0_vals.id, party1_vals.id], n, move |args| {
-            let party0_vals: Vec<Scalar> = args[0].to_owned().into();
-            let party1_vals: Vec<Scalar> = args[1].to_owned().into();
+            let party0_vals: Vec<Scalar<C>> = args[0].to_owned().into();
+            let party1_vals: Vec<Scalar<C>> = args[1].to_owned().into();
 
             let mut results = Vec::with_capacity(n);
             for i in 0..n {
@@ -144,7 +144,7 @@ impl<C: CurveGroup> Add<&Scalar<C>> for &MpcScalarResult<C> {
         self.fabric()
             .new_gate_op(vec![self.id()], move |args| {
                 // Cast the args
-                let lhs_share: Scalar = args[0].to_owned().into();
+                let lhs_share: Scalar<C> = args[0].to_owned().into();
                 if party_id == PARTY0 {
                     ResultValue::Scalar(lhs_share + rhs)
                 } else {
@@ -166,8 +166,8 @@ impl<C: CurveGroup> Add<&ScalarResult<C>> for &MpcScalarResult<C> {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id], move |mut args| {
                 // Cast the args
-                let lhs: Scalar = args.remove(0).into();
-                let rhs: Scalar = args.remove(0).into();
+                let lhs: Scalar<C> = args.remove(0).into();
+                let rhs: Scalar<C> = args.remove(0).into();
 
                 if party_id == PARTY0 {
                     ResultValue::Scalar(lhs + rhs)
@@ -188,8 +188,8 @@ impl<C: CurveGroup> Add<&MpcScalarResult<C>> for &MpcScalarResult<C> {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], |args| {
                 // Cast the args
-                let lhs: Scalar = args[0].to_owned().into();
-                let rhs: Scalar = args[1].to_owned().into();
+                let lhs: Scalar<C> = args[0].to_owned().into();
+                let rhs: Scalar<C> = args[1].to_owned().into();
 
                 ResultValue::Scalar(lhs + rhs)
             })
@@ -253,11 +253,11 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         let scalars: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
                 if party_id == PARTY0 {
-                    let mut res: Vec<ResultValue> = Vec::with_capacity(n);
+                    let mut res: Vec<ResultValue<C>> = Vec::with_capacity(n);
 
                     for i in 0..n {
-                        let lhs: Scalar = args[i].to_owned().into();
-                        let rhs: Scalar = args[i + n].to_owned().into();
+                        let lhs: Scalar<C> = args[i].to_owned().into();
+                        let rhs: Scalar<C> = args[i + n].to_owned().into();
 
                         res.push(ResultValue::Scalar(lhs + rhs));
                     }
@@ -353,8 +353,8 @@ impl<C: CurveGroup> Sub<&MpcScalarResult<C>> for &MpcScalarResult<C> {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], |args| {
                 // Cast the args
-                let lhs: Scalar = args[0].to_owned().into();
-                let rhs: Scalar = args[1].to_owned().into();
+                let lhs: Scalar<C> = args[0].to_owned().into();
+                let rhs: Scalar<C> = args[1].to_owned().into();
 
                 ResultValue::Scalar(lhs - rhs)
             })
@@ -422,11 +422,11 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         let party_id = fabric.party_id();
         let scalars = fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             if party_id == PARTY0 {
-                let mut res: Vec<ResultValue> = Vec::with_capacity(n);
+                let mut res: Vec<ResultValue<C>> = Vec::with_capacity(n);
 
                 for i in 0..n {
-                    let lhs: Scalar = args[i].to_owned().into();
-                    let rhs: Scalar = args[i + n].to_owned().into();
+                    let lhs: Scalar<C> = args[i].to_owned().into();
+                    let rhs: Scalar<C> = args[i + n].to_owned().into();
 
                     res.push(ResultValue::Scalar(lhs - rhs));
                 }
@@ -450,7 +450,7 @@ impl<C: CurveGroup> Neg for &MpcScalarResult<C> {
         self.fabric()
             .new_gate_op(vec![self.id()], |args| {
                 // Cast the args
-                let lhs: Scalar = args[0].to_owned().into();
+                let lhs: Scalar<C> = args[0].to_owned().into();
                 ResultValue::Scalar(-lhs)
             })
             .into()
@@ -494,7 +494,7 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &MpcScalarResult<C> {
         self.fabric()
             .new_gate_op(vec![self.id()], move |args| {
                 // Cast the args
-                let lhs: Scalar = args[0].to_owned().into();
+                let lhs: Scalar<C> = args[0].to_owned().into();
                 ResultValue::Scalar(lhs * rhs)
             })
             .into()
@@ -510,8 +510,8 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &MpcScalarResult<C> {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
                 // Cast the args
-                let lhs: Scalar = args.remove(0).into();
-                let rhs: Scalar = args.remove(0).into();
+                let lhs: Scalar<C> = args.remove(0).into();
+                let rhs: Scalar<C> = args.remove(0).into();
 
                 ResultValue::Scalar(lhs * rhs)
             })
@@ -599,10 +599,10 @@ impl<C: CurveGroup> MpcScalarResult<C> {
 
         let scalars: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-                let mut res: Vec<ResultValue> = Vec::with_capacity(n);
+                let mut res: Vec<ResultValue<C>> = Vec::with_capacity(n);
                 for i in 0..n {
-                    let lhs: Scalar = args[i].to_owned().into();
-                    let rhs: Scalar = args[i + n].to_owned().into();
+                    let lhs: Scalar<C> = args[i].to_owned().into();
+                    let rhs: Scalar<C> = args[i + n].to_owned().into();
 
                     res.push(ResultValue::Scalar(lhs * rhs));
                 }
@@ -623,7 +623,7 @@ impl<C: CurveGroup> Mul<&MpcScalarResult<C>> for &CurvePoint<C> {
         let self_owned = *self;
         rhs.fabric()
             .new_gate_op(vec![rhs.id()], move |mut args| {
-                let rhs: Scalar = args.remove(0).into();
+                let rhs: Scalar<C> = args.remove(0).into();
 
                 ResultValue::Point(self_owned * rhs)
             })
@@ -638,8 +638,8 @@ impl<C: CurveGroup> Mul<&MpcScalarResult<C>> for &CurvePointResult<C> {
     fn mul(self, rhs: &MpcScalarResult<C>) -> Self::Output {
         self.fabric
             .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
-                let lhs: CurvePoint = args.remove(0).into();
-                let rhs: Scalar = args.remove(0).into();
+                let lhs: CurvePoint<C> = args.remove(0).into();
+                let rhs: Scalar<C> = args.remove(0).into();
 
                 ResultValue::Point(lhs * rhs)
             })

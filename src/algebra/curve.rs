@@ -12,14 +12,13 @@ use ark_ec::{
         map_to_curve_hasher::MapToCurve,
         HashToCurveError,
     },
-    short_weierstrass::{Affine, Projective, SWCurveConfig},
-    CurveConfig, CurveGroup, Group, VariableBaseMSM,
+    short_weierstrass::Projective,
+    CurveGroup,
 };
-use ark_ff::{BigInt, MontFp, PrimeField, Zero};
+use ark_ff::PrimeField;
 
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_serialize::SerializationError;
 use itertools::Itertools;
-use num_bigint::BigUint;
 use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::{
@@ -54,6 +53,7 @@ pub const HASH_TO_CURVE_SECURITY: usize = 16; // 128 bit security
 /// A wrapper around the inner point that allows us to define foreign traits on the point
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct CurvePoint<C: CurveGroup>(pub(crate) C);
+impl<C: CurveGroup> Unpin for CurvePoint<C> {}
 
 impl<C: CurveGroup> Serialize for CurvePoint<C> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -96,22 +96,6 @@ impl<C: CurveGroup> CurvePoint<C> {
         self.0.into_affine()
     }
 
-    /// Construct a `CurvePoint<C>` from its affine coordinates
-    pub fn from_affine_coords(x: BigUint, y: BigUint) -> Self {
-        let x_bigint = BigInt::try_from(x).unwrap();
-        let y_bigint = BigInt::try_from(y).unwrap();
-        let x = Self::BaseField::from(x_bigint);
-        let y = Self::BaseField::from(y_bigint);
-
-        let aff = Affine {
-            x,
-            y,
-            infinity: false,
-        };
-
-        Self(aff.into())
-    }
-
     /// The group generator
     pub fn generator() -> CurvePoint<C> {
         CurvePoint(C::generator())
@@ -132,13 +116,24 @@ impl<C: CurveGroup> CurvePoint<C> {
         let point = C::deserialize_compressed(bytes)?;
         Ok(CurvePoint(point))
     }
+}
 
+impl<C: CurveGroup> CurvePoint<C>
+where
+    C::BaseField: PrimeField,
+{
     /// Get the number of bytes needed to represent a point, this is exactly the number of bytes
     /// for one base field element, as we can simply use the x-coordinate and set a high bit for the `y`
     pub fn n_bytes() -> usize {
-        n_bytes_field::<Self::BaseField>()
+        n_bytes_field::<C::BaseField>()
     }
+}
 
+impl<C: CurveGroup> CurvePoint<C>
+where
+    C::Config: SWUConfig,
+    C::BaseField: PrimeField,
+{
     /// Convert a uniform byte buffer to a `CurvePoint<C>` via the SWU map-to-curve approach:
     ///
     /// See https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-hash-to-curve-09#simple-swu
@@ -146,7 +141,9 @@ impl<C: CurveGroup> CurvePoint<C> {
     /// result of an `extend_message` implementation that gives us its uniform digest. From here
     /// we construct two field elements, map to curve, and add the points to give a uniformly
     /// distributed curve point
-    pub fn from_uniform_bytes(buf: Vec<u8>) -> Result<CurvePoint<C>, HashToCurveError> {
+    pub fn from_uniform_bytes(
+        buf: Vec<u8>,
+    ) -> Result<CurvePoint<Projective<C::Config>>, HashToCurveError> {
         let n_bytes = Self::n_bytes();
         assert_eq!(
             buf.len(),
@@ -169,7 +166,7 @@ impl<C: CurveGroup> CurvePoint<C> {
     }
 
     /// A helper that converts an arbitrarily long byte buffer to a field element
-    fn hash_to_field(buf: &[u8]) -> Self::BaseField {
+    fn hash_to_field(buf: &[u8]) -> C::BaseField {
         Self::BaseField::from_be_bytes_mod_order(buf)
     }
 }
@@ -194,7 +191,6 @@ impl<C: CurveGroup> Add<&C> for &CurvePoint<C> {
     }
 }
 impl_borrow_variants!(CurvePoint<C>, Add, add, +, C, C: CurveGroup);
-impl_commutative!(CurvePoint<C>, Add, add, +, C, C: CurveGroup);
 
 impl<C: CurveGroup> Add<&CurvePoint<C>> for &CurvePoint<C> {
     type Output = CurvePoint<C>;
@@ -432,7 +428,7 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &CurvePoint<C> {
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         let self_owned = *self;
         rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let rhs: Scalar = args[0].to_owned().into();
+            let rhs: Scalar<C> = args[0].to_owned().into();
             ResultValue::Point(CurvePoint(self_owned.0 * rhs.0))
         })
     }
@@ -446,7 +442,7 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &CurvePointResult<C> {
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
             let lhs: CurvePoint<C> = args.remove(0).into();
-            let rhs: Scalar = args.remove(0).into();
+            let rhs: Scalar<C> = args.remove(0).into();
 
             ResultValue::Point(CurvePoint(lhs.0 * rhs.0))
         })
@@ -620,7 +616,7 @@ impl<C: CurveGroup> CurvePoint<C> {
     /// represented as streaming iterators
     pub fn msm_iter<I, J>(scalars: I, points: J) -> CurvePoint<C>
     where
-        I: IntoIterator<Item = Scalar>,
+        I: IntoIterator<Item = Scalar<C>>,
         J: IntoIterator<Item = CurvePoint<C>>,
     {
         let mut res = CurvePoint::identity();
@@ -630,7 +626,7 @@ impl<C: CurveGroup> CurvePoint<C> {
             .into_iter()
             .zip(points.into_iter().chunks(MSM_CHUNK_SIZE).into_iter())
         {
-            let scalars: Vec<Scalar> = scalar_chunk.collect();
+            let scalars: Vec<Scalar<C>> = scalar_chunk.collect();
             let points: Vec<CurvePoint<C>> = point_chunk.collect();
             let chunk_res = CurvePoint::msm(&scalars, &points);
 
@@ -667,7 +663,7 @@ impl<C: CurveGroup> CurvePoint<C> {
     /// as iterators. Assumes the iterators are non-empty
     pub fn msm_results_iter<I, J>(scalars: I, points: J) -> CurvePointResult<C>
     where
-        I: IntoIterator<Item = ScalarResult>,
+        I: IntoIterator<Item = ScalarResult<C>>,
         J: IntoIterator<Item = CurvePoint<C>>,
     {
         Self::msm_results(
@@ -731,10 +727,10 @@ impl<C: CurveGroup> CurvePoint<C> {
     /// This method assumes that the iterators are of the same length
     pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedPointResult<C>
     where
-        I: IntoIterator<Item = AuthenticatedScalarResult>,
+        I: IntoIterator<Item = AuthenticatedScalarResult<C>>,
         J: IntoIterator<Item = CurvePoint<C>>,
     {
-        let scalars: Vec<AuthenticatedScalarResult> = scalars.into_iter().collect();
+        let scalars: Vec<AuthenticatedScalarResult<C>> = scalars.into_iter().collect();
         let points: Vec<CurvePoint<C>> = points.into_iter().collect();
 
         Self::msm_authenticated(&scalars, &points)
@@ -777,7 +773,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
     /// Assumes the iterator is non-empty
     pub fn msm_results_iter<I, J>(scalars: I, points: J) -> CurvePointResult<C>
     where
-        I: IntoIterator<Item = ScalarResult>,
+        I: IntoIterator<Item = ScalarResult<C>>,
         J: IntoIterator<Item = CurvePointResult<C>>,
     {
         Self::msm_results(
@@ -848,10 +844,10 @@ impl<C: CurveGroup> CurvePointResult<C> {
     /// represented as streaming iterators
     pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedPointResult<C>
     where
-        I: IntoIterator<Item = AuthenticatedScalarResult>,
+        I: IntoIterator<Item = AuthenticatedScalarResult<C>>,
         J: IntoIterator<Item = CurvePointResult<C>>,
     {
-        let scalars: Vec<AuthenticatedScalarResult> = scalars.into_iter().collect();
+        let scalars: Vec<AuthenticatedScalarResult<C>> = scalars.into_iter().collect();
         let points: Vec<CurvePointResult<C>> = points.into_iter().collect();
 
         Self::msm_authenticated(&scalars, &points)
@@ -866,11 +862,10 @@ impl<C: CurveGroup> CurvePointResult<C> {
 ///     https://github.com/xJonathanLEI/starknet-rs
 #[cfg(test)]
 mod test {
-    use rand::{thread_rng, RngCore};
-
-    use crate::algebra::test_helper::{random_point, TestCurve};
+    use crate::algebra::test_helper::random_point;
 
     use super::*;
+
     /// Test that the generators are the same between the two curve representations
     #[test]
     fn test_generators() {
@@ -921,32 +916,5 @@ mod test {
         let res = p1 + CurvePoint::identity();
 
         assert_eq!(p1, res);
-    }
-
-    /// Tests the hash-to-curve implementation `CurvePoint<C>::from_uniform_bytes`
-    #[test]
-    fn test_hash_to_curve() {
-        // Sample random bytes into a buffer
-        let mut rng = thread_rng();
-        const N_BYTES: usize = n_bytes_field::<TestCurve::BaseField>();
-        let mut buf = [0u8; N_BYTES * 2];
-        rng.fill_bytes(&mut buf);
-
-        // As long as the method does not error, the test is successful
-        let res = CurvePoint::from_uniform_bytes(buf);
-        assert!(res.is_ok())
-    }
-
-    /// Tests converting to and from affine coordinates
-    #[test]
-    fn test_affine_conversion() {
-        let projective = random_point();
-        let affine = projective.to_affine();
-
-        let x = BigUint::from(affine.x);
-        let y = BigUint::from(affine.y);
-        let recovered = CurvePoint::from_affine_coords(x, y);
-
-        assert_eq!(projective, recovered);
     }
 }

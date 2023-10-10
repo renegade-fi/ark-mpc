@@ -7,16 +7,11 @@
 //! Defines an MPC implementation over the Stark curve that allows for out-of-order execution of
 //! the underlying MPC circuit
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
-use algebra::{scalar::Scalar, stark_curve::StarkPoint};
-use beaver::SharedValueSource;
+use algebra::{curve::CurvePoint, scalar::Scalar};
+use ark_ec::CurveGroup;
 
-use network::MpcNetwork;
 use rand::thread_rng;
 
 pub mod algebra;
@@ -45,9 +40,9 @@ pub const PARTY1: u64 = 1;
 
 /// Generate a random curve point by multiplying a random scalar with the
 /// Stark curve group generator
-pub fn random_point() -> StarkPoint {
+pub fn random_point<C: CurveGroup>() -> CurvePoint<C> {
     let mut rng = thread_rng();
-    StarkPoint::generator() * Scalar::random(&mut rng)
+    CurvePoint::generator() * Scalar::random(&mut rng)
 }
 
 // --------------------
@@ -57,27 +52,20 @@ pub fn random_point() -> StarkPoint {
 /// A type alias for a shared locked value
 type Shared<T> = Arc<RwLock<T>>;
 
-/// SharedNetwork wraps a network implementation in a borrow-safe container
-/// while providing interior mutability
-#[allow(type_alias_bounds)]
-pub type SharedNetwork<N: MpcNetwork + Send> = Rc<RefCell<N>>;
-/// A type alias for a shared, mutable reference to an underlying beaver source
-#[allow(type_alias_bounds)]
-pub type BeaverSource<S: SharedValueSource> = Rc<RefCell<S>>;
-
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     //! Defines test helpers for use in unit and integration tests, as well as benchmarks
     use futures::Future;
 
     use crate::{
+        algebra::test_helper::TestCurve,
         beaver::PartyIDBeaverSource,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
         MpcFabric, PARTY0, PARTY1,
     };
 
     /// Create a mock fabric
-    pub fn mock_fabric() -> MpcFabric {
+    pub fn mock_fabric() -> MpcFabric<TestCurve> {
         let network = NoRecvNetwork::default();
         let beaver_source = PartyIDBeaverSource::default();
 
@@ -93,7 +81,7 @@ pub mod test_helpers {
     where
         T: Send + 'static,
         S: Future<Output = T> + Send + 'static,
-        F: FnMut(MpcFabric) -> S,
+        F: FnMut(MpcFabric<TestCurve>) -> S,
     {
         // Build a duplex stream to broker communication between the two parties
         let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();

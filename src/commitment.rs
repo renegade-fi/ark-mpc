@@ -1,13 +1,14 @@
 //! Defines Pedersen commitments over the Stark curve used to commit to a value
 //! before opening it
 
+use ark_ec::CurveGroup;
 use rand::thread_rng;
 use sha3::{Digest, Sha3_256};
 
 use crate::{
     algebra::{
+        curve::{CurvePoint, CurvePointResult},
         scalar::{Scalar, ScalarResult},
-        stark_curve::{StarkPoint, StarkPointResult},
     },
     fabric::ResultValue,
 };
@@ -15,19 +16,19 @@ use crate::{
 /// A handle on the result of a Pedersen commitment, including the committed secret
 ///
 /// Of the form `value * G + blinder * H`
-pub(crate) struct PedersenCommitment {
+pub(crate) struct PedersenCommitment<C: CurveGroup> {
     /// The committed value
-    pub(crate) value: Scalar,
+    pub(crate) value: Scalar<C>,
     /// The commitment blinder
-    pub(crate) blinder: Scalar,
+    pub(crate) blinder: Scalar<C>,
     /// The value of the commitment
-    pub(crate) commitment: StarkPoint,
+    pub(crate) commitment: CurvePoint<C>,
 }
 
-impl PedersenCommitment {
+impl<C: CurveGroup> PedersenCommitment<C> {
     /// Verify that the given commitment is valid
     pub(crate) fn verify(&self) -> bool {
-        let generator = StarkPoint::generator();
+        let generator = CurvePoint::generator();
         let commitment = generator * self.value + generator * self.blinder;
 
         commitment == self.commitment
@@ -35,23 +36,23 @@ impl PedersenCommitment {
 }
 
 /// A Pedersen commitment that has been allocated in an MPC computation graph
-pub(crate) struct PedersenCommitmentResult {
+pub(crate) struct PedersenCommitmentResult<C: CurveGroup> {
     /// The committed value
-    pub(crate) value: ScalarResult,
+    pub(crate) value: ScalarResult<C>,
     /// The commitment blinder
-    pub(crate) blinder: Scalar,
+    pub(crate) blinder: Scalar<C>,
     /// The value of the commitment
-    pub(crate) commitment: StarkPointResult,
+    pub(crate) commitment: CurvePointResult<C>,
 }
 
-impl PedersenCommitmentResult {
+impl<C: CurveGroup> PedersenCommitmentResult<C> {
     /// Create a new Pedersen commitment to an underlying value
-    pub(crate) fn commit(value: ScalarResult) -> PedersenCommitmentResult {
+    pub(crate) fn commit(value: ScalarResult<C>) -> PedersenCommitmentResult<C> {
         // Concretely, we use the curve generator for both `G` and `H` as is done
         // in dalek-cryptography: https://github.com/dalek-cryptography/bulletproofs/blob/main/src/generators.rs#L44-L53
         let mut rng = thread_rng();
         let blinder = Scalar::random(&mut rng);
-        let generator = StarkPoint::generator();
+        let generator = CurvePoint::generator();
         let commitment = generator * &value + generator * blinder;
 
         PedersenCommitmentResult {
@@ -69,16 +70,16 @@ impl PedersenCommitmentResult {
 /// We use hash commitments to commit to curve points before opening them. There is no straightforward
 /// way to adapt Pedersen commitments to curve points, and we do not need the homomorphic properties
 /// of a Pedersen commitment
-pub(crate) struct HashCommitment {
+pub(crate) struct HashCommitment<C: CurveGroup> {
     /// The committed value
-    pub(crate) value: StarkPoint,
+    pub(crate) value: CurvePoint<C>,
     /// The blinder used in the commitment
-    pub(crate) blinder: Scalar,
+    pub(crate) blinder: Scalar<C>,
     /// The value of the commitment
-    pub(crate) commitment: Scalar,
+    pub(crate) commitment: Scalar<C>,
 }
 
-impl HashCommitment {
+impl<C: CurveGroup> HashCommitment<C> {
     /// Verify that the given commitment is valid
     pub(crate) fn verify(&self) -> bool {
         // Create the bytes buffer
@@ -97,22 +98,22 @@ impl HashCommitment {
 }
 
 /// A hash commitment that has been allocated in an MPC computation graph
-pub(crate) struct HashCommitmentResult {
+pub(crate) struct HashCommitmentResult<C: CurveGroup> {
     /// The committed value
-    pub(crate) value: StarkPointResult,
+    pub(crate) value: CurvePointResult<C>,
     /// The blinder used in the commitment
-    pub(crate) blinder: Scalar,
+    pub(crate) blinder: Scalar<C>,
     /// The value of the commitment
-    pub(crate) commitment: ScalarResult,
+    pub(crate) commitment: ScalarResult<C>,
 }
 
-impl HashCommitmentResult {
+impl<C: CurveGroup> HashCommitmentResult<C> {
     /// Create a new hash commitment to an underlying value
-    pub(crate) fn commit(value: StarkPointResult) -> HashCommitmentResult {
+    pub(crate) fn commit(value: CurvePointResult<C>) -> HashCommitmentResult<C> {
         let mut rng = thread_rng();
         let blinder = Scalar::random(&mut rng);
         let comm = value.fabric.new_gate_op(vec![value.id], move |mut args| {
-            let value: StarkPoint = args.remove(0).into();
+            let value: CurvePoint<C> = args.remove(0).into();
 
             // Create the bytes buffer
             let mut bytes = value.to_bytes();

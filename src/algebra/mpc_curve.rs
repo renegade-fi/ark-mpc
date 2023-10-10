@@ -41,14 +41,14 @@ impl<C: CurveGroup> MpcPointResult<C> {
     }
 
     /// Borrow the fabric that this result is allocated in
-    pub fn fabric(&self) -> &MpcFabric {
+    pub fn fabric(&self) -> &MpcFabric<C> {
         self.share.fabric()
     }
 
     /// Open the value; both parties send their shares to the counterparty
     pub fn open(&self) -> CurvePointResult<C> {
         let send_my_share =
-            |args: Vec<ResultValue>| NetworkPayload::Point(args[0].to_owned().into());
+            |args: Vec<ResultValue<C>>| NetworkPayload::Point(args[0].to_owned().into());
 
         // Party zero sends first then receives
         let (share0, share1): (CurvePointResult<C>, CurvePointResult<C>) =
@@ -76,7 +76,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
         let n = values.len();
         let fabric = &values[0].fabric();
         let all_ids = values.iter().map(|v| v.id()).collect_vec();
-        let send_my_shares = |args: Vec<ResultValue>| {
+        let send_my_shares = |args: Vec<ResultValue<C>>| {
             NetworkPayload::PointBatch(args.into_iter().map(|arg| arg.into()).collect_vec())
         };
 
@@ -444,8 +444,8 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &MpcPointResult<C> {
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
-                let lhs: CurvePoint = args.remove(0).into();
-                let rhs: Scalar = args.remove(0).into();
+                let lhs: CurvePoint<C> = args.remove(0).into();
+                let rhs: Scalar<C> = args.remove(0).into();
 
                 ResultValue::Point(lhs * rhs)
             })

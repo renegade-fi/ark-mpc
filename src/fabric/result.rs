@@ -10,10 +10,11 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+use ark_ec::CurveGroup;
 use futures::Future;
 
 use crate::{
-    algebra::{scalar::Scalar, stark_curve::StarkPoint},
+    algebra::{curve::CurvePoint, scalar::Scalar},
     network::NetworkPayload,
     Shared,
 };
@@ -32,29 +33,29 @@ pub type ResultId = usize;
 
 /// The result of an MPC operation
 #[derive(Clone, Debug)]
-pub struct OpResult {
+pub struct OpResult<C: CurveGroup> {
     /// The ID of the result's output
     pub id: ResultId,
     /// The result's value
-    pub value: ResultValue,
+    pub value: ResultValue<C>,
 }
 
 /// The value of a result
 #[derive(Clone)]
-pub enum ResultValue {
+pub enum ResultValue<C: CurveGroup> {
     /// A byte value
     Bytes(Vec<u8>),
     /// A scalar value
-    Scalar(Scalar),
+    Scalar(Scalar<C>),
     /// A batch of scalars
-    ScalarBatch(Vec<Scalar>),
+    ScalarBatch(Vec<Scalar<C>>),
     /// A point on the curve
-    Point(StarkPoint),
+    Point(CurvePoint<C>),
     /// A batch of points on the curve
-    PointBatch(Vec<StarkPoint>),
+    PointBatch(Vec<CurvePoint<C>>),
 }
 
-impl Debug for ResultValue {
+impl<C: CurveGroup> Debug for ResultValue<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             ResultValue::Bytes(bytes) => f.debug_tuple("Bytes").field(bytes).finish(),
@@ -68,8 +69,8 @@ impl Debug for ResultValue {
     }
 }
 
-impl From<NetworkPayload> for ResultValue {
-    fn from(value: NetworkPayload) -> Self {
+impl<C: CurveGroup> From<NetworkPayload<C>> for ResultValue<C> {
+    fn from(value: NetworkPayload<C>) -> Self {
         match value {
             NetworkPayload::Bytes(bytes) => ResultValue::Bytes(bytes),
             NetworkPayload::Scalar(scalar) => ResultValue::Scalar(scalar),
@@ -80,8 +81,8 @@ impl From<NetworkPayload> for ResultValue {
     }
 }
 
-impl From<ResultValue> for NetworkPayload {
-    fn from(value: ResultValue) -> Self {
+impl<C: CurveGroup> From<ResultValue<C>> for NetworkPayload<C> {
+    fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::Bytes(bytes) => NetworkPayload::Bytes(bytes),
             ResultValue::Scalar(scalar) => NetworkPayload::Scalar(scalar),
@@ -93,8 +94,8 @@ impl From<ResultValue> for NetworkPayload {
 }
 
 // -- Coercive Casts to Concrete Types -- //
-impl From<ResultValue> for Vec<u8> {
-    fn from(value: ResultValue) -> Self {
+impl<C: CurveGroup> From<ResultValue<C>> for Vec<u8> {
+    fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::Bytes(bytes) => bytes,
             _ => panic!("Cannot cast {:?} to bytes", value),
@@ -102,8 +103,8 @@ impl From<ResultValue> for Vec<u8> {
     }
 }
 
-impl From<ResultValue> for Scalar {
-    fn from(value: ResultValue) -> Self {
+impl<C: CurveGroup> From<ResultValue<C>> for Scalar<C> {
+    fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::Scalar(scalar) => scalar,
             _ => panic!("Cannot cast {:?} to scalar", value),
@@ -111,8 +112,8 @@ impl From<ResultValue> for Scalar {
     }
 }
 
-impl From<&ResultValue> for Scalar {
-    fn from(value: &ResultValue) -> Self {
+impl<C: CurveGroup> From<&ResultValue<C>> for Scalar<C> {
+    fn from(value: &ResultValue<C>) -> Self {
         match value {
             ResultValue::Scalar(scalar) => *scalar,
             _ => panic!("Cannot cast {:?} to scalar", value),
@@ -120,8 +121,8 @@ impl From<&ResultValue> for Scalar {
     }
 }
 
-impl From<ResultValue> for Vec<Scalar> {
-    fn from(value: ResultValue) -> Self {
+impl<C: CurveGroup> From<ResultValue<C>> for Vec<Scalar<C>> {
+    fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::ScalarBatch(scalars) => scalars,
             _ => panic!("Cannot cast {:?} to scalar batch", value),
@@ -129,8 +130,8 @@ impl From<ResultValue> for Vec<Scalar> {
     }
 }
 
-impl From<ResultValue> for StarkPoint {
-    fn from(value: ResultValue) -> Self {
+impl<C: CurveGroup> From<ResultValue<C>> for CurvePoint<C> {
+    fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::Point(point) => point,
             _ => panic!("Cannot cast {:?} to point", value),
@@ -138,8 +139,8 @@ impl From<ResultValue> for StarkPoint {
     }
 }
 
-impl From<&ResultValue> for StarkPoint {
-    fn from(value: &ResultValue) -> Self {
+impl<C: CurveGroup> From<&ResultValue<C>> for CurvePoint<C> {
+    fn from(value: &ResultValue<C>) -> Self {
         match value {
             ResultValue::Point(point) => *point,
             _ => panic!("Cannot cast {:?} to point", value),
@@ -147,8 +148,8 @@ impl From<&ResultValue> for StarkPoint {
     }
 }
 
-impl From<ResultValue> for Vec<StarkPoint> {
-    fn from(value: ResultValue) -> Self {
+impl<C: CurveGroup> From<ResultValue<C>> for Vec<CurvePoint<C>> {
+    fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::PointBatch(points) => points,
             _ => panic!("Cannot cast {:?} to point batch", value),
@@ -168,32 +169,32 @@ impl From<ResultValue> for Vec<StarkPoint> {
 /// This allows for construction of the graph concurrently with execution, giving the
 /// fabric the opportunity to schedule all results onto the network optimistically
 #[derive(Clone, Debug)]
-pub struct ResultHandle<T: From<ResultValue>> {
+pub struct ResultHandle<C: CurveGroup, T: From<ResultValue<C>>> {
     /// The id of the result
     pub(crate) id: ResultId,
     /// The buffer that the result will be written to when it becomes available
-    pub(crate) result_buffer: Shared<Option<ResultValue>>,
+    pub(crate) result_buffer: Shared<Option<ResultValue<C>>>,
     /// The underlying fabric
-    pub(crate) fabric: MpcFabric,
+    pub(crate) fabric: MpcFabric<C>,
     /// A phantom for the type of the result
     phantom: PhantomData<T>,
 }
 
-impl<T: From<ResultValue>> ResultHandle<T> {
+impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
     /// Get the id of the result
     pub fn id(&self) -> ResultId {
         self.id
     }
 
     /// Borrow the fabric that this result is allocated within
-    pub fn fabric(&self) -> &MpcFabric {
+    pub fn fabric(&self) -> &MpcFabric<C> {
         &self.fabric
     }
 }
 
-impl<T: From<ResultValue>> ResultHandle<T> {
+impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
     /// Constructor
-    pub(crate) fn new(id: ResultId, fabric: MpcFabric) -> Self {
+    pub(crate) fn new(id: ResultId, fabric: MpcFabric<C>) -> Self {
         Self {
             id,
             result_buffer: Arc::new(RwLock::new(None)),
@@ -209,16 +210,16 @@ impl<T: From<ResultValue>> ResultHandle<T> {
 }
 
 /// A struct describing an async task that is waiting on a result
-pub struct ResultWaiter {
+pub struct ResultWaiter<C: CurveGroup> {
     /// The id of the result that the task is waiting on
     pub result_id: ResultId,
     /// The buffer that the result will be written to when it becomes available
-    pub result_buffer: Shared<Option<ResultValue>>,
+    pub result_buffer: Shared<Option<ResultValue<C>>>,
     /// The waker of the task
     pub waker: Waker,
 }
 
-impl Debug for ResultWaiter {
+impl<C: CurveGroup> Debug for ResultWaiter<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("ResultWaiter")
             .field("id", &self.result_id)
@@ -226,7 +227,7 @@ impl Debug for ResultWaiter {
     }
 }
 
-impl<T: From<ResultValue> + Debug> Future for ResultHandle<T> {
+impl<C: CurveGroup, T: From<ResultValue<C>> + Debug> Future for ResultHandle<C, T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
