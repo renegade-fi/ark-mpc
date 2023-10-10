@@ -1,8 +1,11 @@
 //! Defines unit tests for `MpcScalarResult` types
 use itertools::Itertools;
 use mpc_stark::{
-    algebra::{mpc_scalar::MpcScalarResult, scalar::Scalar},
-    ResultHandle, PARTY0, PARTY1,
+    algebra::{
+        mpc_scalar::MpcScalarResult,
+        scalar::{Scalar, ScalarResult},
+    },
+    PARTY0, PARTY1,
 };
 use rand::thread_rng;
 use std::ops::Neg;
@@ -12,7 +15,7 @@ use crate::{
         assert_scalar_batches_eq, assert_scalars_eq, await_result, await_result_batch,
         share_plaintext_value, share_plaintext_values_batch, share_scalar, share_scalar_batch,
     },
-    IntegrationTest, IntegrationTestArgs,
+    IntegrationTest, IntegrationTestArgs, TestCurve,
 };
 
 /// Test addition of `MpcScalarResult` types
@@ -20,7 +23,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party allocates a random value
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
-    let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_scalar(val);
+    let my_value: ScalarResult<TestCurve> = test_args.fabric.allocate_scalar(val);
 
     // Share the value with the counterparty
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
@@ -46,7 +49,7 @@ fn test_add_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), Strin
     // Each party allocates a random value
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
-    let my_value: ResultHandle<Scalar> = test_args.fabric.allocate_scalar(val);
+    let my_value: ScalarResult<TestCurve> = test_args.fabric.allocate_scalar(val);
 
     // Share the value with the counterparty
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);

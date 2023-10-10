@@ -40,6 +40,7 @@ pub struct NetworkStats {
     pub messages_received: AtomicUsize,
 }
 
+#[allow(unused)]
 impl NetworkStats {
     /// Increment the number of bytes sent
     pub fn increment_bytes_sent(&self, bytes: usize) {
@@ -140,7 +141,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + 'static> NetworkSender<C, N> {
     async fn read_loop(
         mut network_stream: SplitStream<N>,
         result_queue: Arc<SegQueue<ExecutorMessage<C>>>,
-        stats: Arc<NetworkStats>,
+        #[allow(unused)] stats: Arc<NetworkStats>,
     ) -> MpcNetworkError {
         while let Some(Ok(msg)) = network_stream.next().await {
             #[cfg(feature = "stats")]
@@ -164,7 +165,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + 'static> NetworkSender<C, N> {
     async fn write_loop(
         outbound_stream: KanalReceiver<NetworkOutbound<C>>,
         mut network: SplitSink<N, NetworkOutbound<C>>,
-        stats: Arc<NetworkStats>,
+        #[allow(unused)] stats: Arc<NetworkStats>,
     ) -> MpcNetworkError {
         while let Ok(msg) = outbound_stream.recv().await {
             #[cfg(feature = "stats")]

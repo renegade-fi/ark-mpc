@@ -862,59 +862,74 @@ impl<C: CurveGroup> CurvePointResult<C> {
 ///     https://github.com/xJonathanLEI/starknet-rs
 #[cfg(test)]
 mod test {
-    use crate::algebra::test_helper::random_point;
+    use rand::thread_rng;
+
+    use crate::{algebra::test_helper::TestCurve, test_helpers::mock_fabric};
 
     use super::*;
 
-    /// Test that the generators are the same between the two curve representations
-    #[test]
-    fn test_generators() {
-        // let generator_1 = CurvePoint::generator();
-        // let generator_2 = ProjectivePoint::from_affine_point(&GENERATOR);
+    /// A curve point on the test curve
+    pub type TestCurvePoint = CurvePoint<TestCurve>;
 
-        // assert!(compare_points(&generator_1, &generator_2));
+    /// Generate a random point, by multiplying the basepoint with a random scalar
+    pub fn random_point() -> TestCurvePoint {
+        let mut rng = thread_rng();
+        let scalar = Scalar::random(&mut rng);
+        let point = TestCurvePoint::generator() * scalar;
+        point * scalar
     }
 
     /// Tests point addition
-    #[test]
-    fn test_point_addition() {
-        // let p1 = random_point();
-        // let q1 = random_point();
+    #[tokio::test]
+    async fn test_point_addition() {
+        let fabric = mock_fabric();
 
-        // let p2 = arkworks_point_to_starknet(&p1);
-        // let q2 = arkworks_point_to_starknet(&q1);
+        let p1 = random_point();
+        let p2 = random_point();
 
-        // let r1 = p1 + q1;
+        let p1_res = fabric.allocate_point(p1);
+        let p2_res = fabric.allocate_point(p2);
 
-        // // Only `AddAssign` is implemented on `ProjectivePoint`
-        // let mut r2 = p2;
-        // r2 += &q2;
+        let res = (p1_res + p2_res).await;
+        let expected_res = p1 + p2;
 
-        // assert!(compare_points(&r1, &r2));
+        assert_eq!(res, expected_res);
+        fabric.shutdown();
     }
 
     /// Tests scalar multiplication
-    #[test]
-    fn test_scalar_mul() {
-        // let mut rng = thread_rng();
-        // let s1 = Scalar::random(&mut rng);
-        // let p1 = random_point();
+    #[tokio::test]
+    async fn test_scalar_mul() {
+        let fabric = mock_fabric();
 
-        // let s2 = prime_field_to_starknet_felt(&s1.0);
-        // let p2 = arkworks_point_to_starknet(&p1);
+        let mut rng = thread_rng();
+        let s1 = Scalar::<TestCurve>::random(&mut rng);
+        let p1 = random_point();
 
-        // let r1 = p1 * s1;
-        // let r2 = starknet_rs_scalar_mul(&s2, &p2);
+        let s1_res = fabric.allocate_scalar(s1);
+        let p1_res = fabric.allocate_point(p1);
 
-        // assert!(compare_points(&r1, &r2));
+        let res = (s1_res * p1_res).await;
+        let expected_res = s1 * p1;
+
+        assert_eq!(res, expected_res);
+        fabric.shutdown();
     }
 
     /// Tests addition with the additive identity
-    #[test]
-    fn test_additive_identity() {
-        let p1 = random_point();
-        let res = p1 + CurvePoint::identity();
+    #[tokio::test]
+    async fn test_additive_identity() {
+        let fabric = mock_fabric();
 
-        assert_eq!(p1, res);
+        let p1 = random_point();
+
+        let p1_res = fabric.allocate_point(p1);
+        let identity_res = fabric.curve_identity();
+
+        let res = (p1_res + identity_res).await;
+        let expected_res = p1;
+
+        assert_eq!(res, expected_res);
+        fabric.shutdown();
     }
 }

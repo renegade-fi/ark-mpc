@@ -1,5 +1,7 @@
 use std::{borrow::Borrow, io::Write, net::SocketAddr, process::exit, thread, time::Duration};
 
+use ark_curve25519::Curve25519Config;
+use ark_ec::twisted_edwards::Projective;
 use clap::Parser;
 use colored::Colorize;
 use dns_lookup::lookup_host;
@@ -7,28 +9,36 @@ use env_logger::Builder;
 use futures::{SinkExt, StreamExt};
 use helpers::PartyIDBeaverSource;
 use mpc_stark::{
+    algebra::{curve::CurvePoint, scalar::Scalar},
     network::{NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
     MpcFabric, PARTY0,
 };
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use tracing::log::{self, LevelFilter};
 
+mod authenticated_curve;
 mod authenticated_scalar;
-mod authenticated_stark_point;
 mod circuits;
 mod fabric;
 mod helpers;
+mod mpc_curve;
 mod mpc_scalar;
-mod mpc_stark_point;
 
 /// The amount of time to sleep after sending a shutdown
 const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
+
+/// The curve used for testing, set to curve25519
+pub type TestCurve = Projective<Curve25519Config>;
+/// The curve point type used for testing
+pub type TestCurvePoint = CurvePoint<TestCurve>;
+/// The scalar point ype used for testing
+pub type TestScalar = Scalar<TestCurve>;
 
 /// Integration test arguments, common to all tests
 #[derive(Clone, Debug)]
 struct IntegrationTestArgs {
     party_id: u64,
-    fabric: MpcFabric,
+    fabric: MpcFabric<TestCurve>,
 }
 
 /// Integration test format

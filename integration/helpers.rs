@@ -6,9 +6,9 @@ use futures::{future::join_all, Future};
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointResult, mpc_scalar::MpcScalarResult,
-        mpc_stark_point::MpcStarkPointResult, scalar::Scalar, stark_curve::StarkPoint,
+        authenticated_curve::AuthenticatedPointResult,
+        authenticated_scalar::AuthenticatedScalarResult, mpc_curve::MpcPointResult,
+        mpc_scalar::MpcScalarResult, scalar::Scalar,
     },
     beaver::SharedValueSource,
     network::{NetworkPayload, PartyId},
@@ -20,11 +20,11 @@ use tokio::runtime::Handle;
 // | Helpers |
 // -----------
 
-use crate::IntegrationTestArgs;
+use crate::{IntegrationTestArgs, TestCurve, TestCurvePoint, TestScalar};
 
 /// Compares two scalars, returning a result that can be propagated up an integration test
 /// stack in the case that the scalars are not equal
-pub(crate) fn assert_scalars_eq(a: Scalar, b: Scalar) -> Result<(), String> {
+pub(crate) fn assert_scalars_eq(a: TestScalar, b: TestScalar) -> Result<(), String> {
     if a == b {
         Ok(())
     } else {
@@ -33,7 +33,10 @@ pub(crate) fn assert_scalars_eq(a: Scalar, b: Scalar) -> Result<(), String> {
 }
 
 /// Assert a batch of scalars equal one another
-pub(crate) fn assert_scalar_batches_eq(a: Vec<Scalar>, b: Vec<Scalar>) -> Result<(), String> {
+pub(crate) fn assert_scalar_batches_eq(
+    a: Vec<TestScalar>,
+    b: Vec<TestScalar>,
+) -> Result<(), String> {
     if a.len() != b.len() {
         return Err(format!("Lengths differ: {a:?} != {b:?}"));
     }
@@ -47,7 +50,7 @@ pub(crate) fn assert_scalar_batches_eq(a: Vec<Scalar>, b: Vec<Scalar>) -> Result
 
 /// Compares two points, returning a result that can be propagated up an integration test
 /// stack in the case that the points are not equal
-pub(crate) fn assert_points_eq(a: StarkPoint, b: StarkPoint) -> Result<(), String> {
+pub(crate) fn assert_points_eq(a: TestCurvePoint, b: TestCurvePoint) -> Result<(), String> {
     if a == b {
         Ok(())
     } else {
@@ -57,8 +60,8 @@ pub(crate) fn assert_points_eq(a: StarkPoint, b: StarkPoint) -> Result<(), Strin
 
 /// Compares two batches of points
 pub(crate) fn assert_point_batches_eq(
-    a: Vec<StarkPoint>,
-    b: Vec<StarkPoint>,
+    a: Vec<TestCurvePoint>,
+    b: Vec<TestCurvePoint>,
 ) -> Result<(), String> {
     if a.len() != b.len() {
         return Err(format!("Lengths differ: {a:?} != {b:?}"));
@@ -116,20 +119,20 @@ where
 
 /// Send or receive a secret shared scalar from the given party
 pub(crate) fn share_scalar(
-    value: Scalar,
+    value: TestScalar,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> MpcScalarResult {
+) -> MpcScalarResult<TestCurve> {
     let authenticated_value = test_args.fabric.share_scalar(value, sender);
     authenticated_value.mpc_share()
 }
 
 /// Share a batch of scalars
 pub(crate) fn share_scalar_batch(
-    values: Vec<Scalar>,
+    values: Vec<TestScalar>,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> Vec<MpcScalarResult> {
+) -> Vec<MpcScalarResult<TestCurve>> {
     test_args
         .fabric
         .batch_share_scalar(values, sender)
@@ -140,10 +143,10 @@ pub(crate) fn share_scalar_batch(
 
 /// Send or receive a secret shared point from the given party
 pub(crate) fn share_point(
-    value: StarkPoint,
+    value: TestCurvePoint,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> MpcStarkPointResult {
+) -> MpcPointResult<TestCurve> {
     // Share the point then cast to an `MpcStarkPoint`
     let authenticated_point = share_authenticated_point(value, sender, test_args);
     authenticated_point.mpc_share()
@@ -151,10 +154,10 @@ pub(crate) fn share_point(
 
 /// Share a batch of points
 pub(crate) fn share_point_batch(
-    values: Vec<StarkPoint>,
+    values: Vec<TestCurvePoint>,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> Vec<MpcStarkPointResult> {
+) -> Vec<MpcPointResult<TestCurve>> {
     values
         .into_iter()
         .map(|point| share_point(point, sender, test_args))
@@ -163,46 +166,48 @@ pub(crate) fn share_point_batch(
 
 /// Send or receive a secret shared scalar from the given party and allocate it as an authenticated value
 pub(crate) fn share_authenticated_scalar(
-    value: Scalar,
+    value: TestScalar,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> AuthenticatedScalarResult {
+) -> AuthenticatedScalarResult<TestCurve> {
     test_args.fabric.share_scalar(value, sender)
 }
 
 /// Send or receive a batch of secret shared scalars from the given party and allocate them as authenticated values
 pub(crate) fn share_authenticated_scalar_batch(
-    values: Vec<Scalar>,
+    values: Vec<TestScalar>,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> Vec<AuthenticatedScalarResult> {
+) -> Vec<AuthenticatedScalarResult<TestCurve>> {
     test_args.fabric.batch_share_scalar(values, sender)
 }
 
 /// Send or receive a secret shared point from the given party and allocate it as an authenticated value
 pub(crate) fn share_authenticated_point(
-    value: StarkPoint,
+    value: TestCurvePoint,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> AuthenticatedStarkPointResult {
+) -> AuthenticatedPointResult<TestCurve> {
     test_args.fabric.share_point(value, sender)
 }
 
 /// Send or receive a batch of secret shared points from the given party and allocate them as authenticated values
 pub(crate) fn share_authenticated_point_batch(
-    values: Vec<StarkPoint>,
+    values: Vec<TestCurvePoint>,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> Vec<AuthenticatedStarkPointResult> {
+) -> Vec<AuthenticatedPointResult<TestCurve>> {
     test_args.fabric.batch_share_point(values, sender)
 }
 
 /// Share a value with the counterparty by sender ID, the sender sends and the receiver receives
-pub(crate) fn share_plaintext_value<T: From<ResultValue> + Into<NetworkPayload>>(
-    value: ResultHandle<T>,
+pub(crate) fn share_plaintext_value<
+    T: From<ResultValue<TestCurve>> + Into<NetworkPayload<TestCurve>>,
+>(
+    value: ResultHandle<TestCurve, T>,
     sender: PartyId,
-    fabric: &MpcFabric,
-) -> ResultHandle<T> {
+    fabric: &MpcFabric<TestCurve>,
+) -> ResultHandle<TestCurve, T> {
     if fabric.party_id() == sender {
         fabric.send_value(value)
     } else {
@@ -211,11 +216,13 @@ pub(crate) fn share_plaintext_value<T: From<ResultValue> + Into<NetworkPayload>>
 }
 
 /// Share a batch of values in the plaintext
-pub(crate) fn share_plaintext_values_batch<T: From<ResultValue> + Into<NetworkPayload> + Clone>(
-    values: &[ResultHandle<T>],
+pub(crate) fn share_plaintext_values_batch<
+    T: From<ResultValue<TestCurve>> + Into<NetworkPayload<TestCurve>> + Clone,
+>(
+    values: &[ResultHandle<TestCurve, T>],
     sender: PartyId,
-    fabric: &MpcFabric,
-) -> Vec<ResultHandle<T>> {
+    fabric: &MpcFabric<TestCurve>,
+) -> Vec<ResultHandle<TestCurve, T>> {
     values
         .iter()
         .map(|v| share_plaintext_value(v.clone(), sender, fabric))
@@ -240,14 +247,14 @@ impl PartyIDBeaverSource {
 
 /// The PartyIDBeaverSource returns beaver triplets split statically between the
 /// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] = (2, 4)
-impl SharedValueSource for PartyIDBeaverSource {
-    fn next_shared_bit(&mut self) -> Scalar {
+impl SharedValueSource<TestCurve> for PartyIDBeaverSource {
+    fn next_shared_bit(&mut self) -> TestScalar {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
         Scalar::from(self.party_id)
     }
 
-    fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
+    fn next_triplet(&mut self) -> (TestScalar, TestScalar, TestScalar) {
         if self.party_id == 0 {
             (Scalar::from(1u64), Scalar::from(3u64), Scalar::from(2u64))
         } else {
@@ -255,11 +262,11 @@ impl SharedValueSource for PartyIDBeaverSource {
         }
     }
 
-    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (Scalar::from(1), Scalar::from(1))
+    fn next_shared_inverse_pair(&mut self) -> (TestScalar, TestScalar) {
+        (Scalar::from(1u8), Scalar::from(1u8))
     }
 
-    fn next_shared_value(&mut self) -> Scalar {
+    fn next_shared_value(&mut self) -> TestScalar {
         Scalar::from(self.party_id)
     }
 }

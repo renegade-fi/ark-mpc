@@ -3,9 +3,8 @@
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{
-        authenticated_scalar::AuthenticatedScalarResult,
-        authenticated_stark_point::AuthenticatedStarkPointResult, scalar::Scalar,
-        stark_curve::StarkPoint,
+        authenticated_curve::AuthenticatedPointResult,
+        authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar,
     },
     random_point, PARTY0, PARTY1,
 };
@@ -16,7 +15,7 @@ use crate::{
         assert_points_eq, assert_scalars_eq, await_result, await_result_batch,
         share_plaintext_value, share_plaintext_values_batch,
     },
-    IntegrationTest, IntegrationTestArgs,
+    IntegrationTest, IntegrationTestArgs, TestCurve, TestCurvePoint, TestScalar,
 };
 
 /// Tests an inner product between two vectors of shared scalars
@@ -40,7 +39,7 @@ fn test_inner_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let b_plaintext =
         await_result_batch(&share_plaintext_values_batch(&allocd_vals, PARTY1, fabric));
 
-    let expected_res: Scalar = a_plaintext
+    let expected_res: TestScalar = a_plaintext
         .iter()
         .zip(b_plaintext)
         .map(|(a, b)| a * b)
@@ -57,7 +56,8 @@ fn test_inner_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .collect_vec();
 
     // Compute the inner product
-    let res: AuthenticatedScalarResult = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum();
+    let res: AuthenticatedScalarResult<TestCurve> =
+        a.iter().zip(b.iter()).map(|(a, b)| a * b).sum();
     let res_open = await_result(res.open_authenticated())
         .map_err(|err| format!("error opening result: {err:?}"))?;
 
@@ -96,7 +96,7 @@ fn test_msm(test_args: &IntegrationTestArgs) -> Result<(), String> {
         fabric,
     ));
 
-    let expected_res = StarkPoint::msm(&plaintext_scalars, &plaintext_points);
+    let expected_res = TestCurvePoint::msm(&plaintext_scalars, &plaintext_points);
 
     // Share the values in an MPC circuit
     let shared_scalars = my_scalars
@@ -109,7 +109,7 @@ fn test_msm(test_args: &IntegrationTestArgs) -> Result<(), String> {
         .collect_vec();
 
     // Compare results
-    let res = AuthenticatedStarkPointResult::msm(&shared_scalars, &shared_points);
+    let res = AuthenticatedPointResult::msm(&shared_scalars, &shared_points);
     let res_open = await_result(res.open_authenticated())
         .map_err(|err| format!("error opening msm result: {err:?}"))?;
 
