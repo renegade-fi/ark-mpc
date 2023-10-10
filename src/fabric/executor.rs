@@ -5,6 +5,9 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+#[cfg(feature = "stats")]
+use std::fmt::{Formatter, Result as FmtResult};
+
 use ark_ec::CurveGroup;
 use crossbeam::queue::SegQueue;
 use itertools::Itertools;
@@ -63,7 +66,7 @@ impl ExecutorStats {
     }
 
     /// Add an operation to the executor's depth map
-    pub fn new_operation(&mut self, op: &Operation, from_network_op: bool) {
+    pub fn new_operation<C: CurveGroup>(&mut self, op: &Operation<C>, from_network_op: bool) {
         let max_dep = op
             .args
             .iter()
@@ -274,7 +277,7 @@ impl<C: CurveGroup> Executor<C> {
 
     /// Record the depth of an operation in the circuit
     #[cfg(feature = "stats")]
-    fn record_op_depth(&mut self, op: &Operation) {
+    fn record_op_depth(&mut self, op: &Operation<C>) {
         let is_network_op = matches!(op.op_type, OperationType::Network { .. });
         self.stats.new_operation(op, is_network_op);
     }

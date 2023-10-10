@@ -3,9 +3,9 @@
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{
-        authenticated_stark_point::{
+        authenticated_curve::{
             test_helpers::{modify_mac, modify_public_modifier, modify_share},
-            AuthenticatedStarkPointResult,
+            AuthenticatedPointResult,
         },
         scalar::Scalar,
     },
@@ -144,10 +144,9 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let party0_values = share_authenticated_point_batch(my_vals.clone(), PARTY0, test_args);
     let party1_values = share_authenticated_point_batch(my_vals, PARTY1, test_args);
 
-    let res = AuthenticatedStarkPointResult::batch_add(&party0_values, &party1_values);
-    let res_open = await_batch_result_with_error(
-        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
-    )?;
+    let res = AuthenticatedPointResult::batch_add(&party0_values, &party1_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedPointResult::open_authenticated_batch(&res))?;
 
     assert_point_batches_eq(res_open, expected_result)
 }
@@ -172,10 +171,9 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     // Add the points in the MPC circuit
     let party0_values = share_authenticated_point_batch(my_vals, PARTY0, test_args);
 
-    let res = AuthenticatedStarkPointResult::batch_add_public(&party0_values, &plaintext_values);
-    let res_open = await_batch_result_with_error(
-        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
-    )?;
+    let res = AuthenticatedPointResult::batch_add_public(&party0_values, &plaintext_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedPointResult::open_authenticated_batch(&res))?;
 
     assert_point_batches_eq(res_open, expected_result)
 }
@@ -240,10 +238,9 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let party0_values = share_authenticated_point_batch(my_vals.clone(), PARTY0, test_args);
     let party1_values = share_authenticated_point_batch(my_vals, PARTY1, test_args);
 
-    let res = AuthenticatedStarkPointResult::batch_sub(&party0_values, &party1_values);
-    let res_open = await_batch_result_with_error(
-        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
-    )?;
+    let res = AuthenticatedPointResult::batch_sub(&party0_values, &party1_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedPointResult::open_authenticated_batch(&res))?;
 
     assert_point_batches_eq(res_open, expected_result)
 }
@@ -268,10 +265,9 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     // Add the points in the MPC circuit
     let party0_values = share_authenticated_point_batch(my_vals, PARTY0, test_args);
 
-    let res = AuthenticatedStarkPointResult::batch_sub_public(&party0_values, &plaintext_values);
-    let res_open = await_batch_result_with_error(
-        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
-    )?;
+    let res = AuthenticatedPointResult::batch_sub_public(&party0_values, &plaintext_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedPointResult::open_authenticated_batch(&res))?;
 
     assert_point_batches_eq(res_open, expected_result)
 }
@@ -310,10 +306,9 @@ fn test_batch_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Compute the expected result in an MPC circuit
     let party0_values = share_authenticated_point_batch(my_values, PARTY0, test_args);
-    let res = AuthenticatedStarkPointResult::batch_neg(&party0_values);
-    let res_open = await_batch_result_with_error(
-        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
-    )?;
+    let res = AuthenticatedPointResult::batch_neg(&party0_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedPointResult::open_authenticated_batch(&res))?;
 
     assert_point_batches_eq(expected_res, res_open)
 }
@@ -382,10 +377,9 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let party0_values = share_authenticated_point_batch(my_vals.clone(), PARTY0, test_args);
     let party1_values = share_authenticated_point_batch(my_vals, PARTY1, test_args);
 
-    let res = AuthenticatedStarkPointResult::batch_sub(&party0_values, &party1_values);
-    let res_open = await_batch_result_with_error(
-        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
-    )?;
+    let res = AuthenticatedPointResult::batch_sub(&party0_values, &party1_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedPointResult::open_authenticated_batch(&res))?;
 
     assert_point_batches_eq(res_open, expected_result)
 }
@@ -410,10 +404,9 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     // Add the points in the MPC circuit
     let party0_values = share_authenticated_point_batch(my_vals, PARTY0, test_args);
 
-    let res = AuthenticatedStarkPointResult::batch_sub_public(&party0_values, &plaintext_values);
-    let res_open = await_batch_result_with_error(
-        AuthenticatedStarkPointResult::open_authenticated_batch(&res),
-    )?;
+    let res = AuthenticatedPointResult::batch_sub_public(&party0_values, &plaintext_values);
+    let res_open =
+        await_batch_result_with_error(AuthenticatedPointResult::open_authenticated_batch(&res))?;
 
     assert_point_batches_eq(res_open, expected_result)
 }

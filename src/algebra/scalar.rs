@@ -12,6 +12,7 @@ use std::{
 
 use ark_ec::CurveGroup;
 use ark_ff::{batch_inversion, Field, PrimeField};
+use ark_std::UniformRand;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
@@ -65,11 +66,7 @@ impl<C: CurveGroup> Scalar<C> {
     ///
     /// TODO: Validate that this gives a uniform distribution over the field
     pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
-        let mut random_bytes = vec![0u8; n_bytes_field::<C::ScalarField>()];
-        rng.fill_bytes(&mut random_bytes);
-
-        let val = C::ScalarField::from_random_bytes(&random_bytes).unwrap();
-        Self(val)
+        Self(C::ScalarField::rand(rng))
     }
 
     /// Compute the multiplicative inverse of the scalar in its field
