@@ -7,7 +7,8 @@ use clap::Parser;
 use cpuprofiler::PROFILER;
 use gperftools::HEAP_PROFILER;
 use mpc_stark::{
-    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork, MpcFabric, PARTY0,
+    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork,
+    test_helpers::TestCurve, MpcFabric, PARTY0,
 };
 use rand::thread_rng;
 
@@ -19,7 +20,7 @@ use rand::thread_rng;
 const NUM_GATES: usize = 10_000_000;
 
 /// Create a mock fabric for testing
-pub fn mock_fabric(size_hint: usize) -> MpcFabric {
+pub fn mock_fabric(size_hint: usize) -> MpcFabric<TestCurve> {
     let network = NoRecvNetwork::default();
     let beaver_source = PartyIDBeaverSource::new(PARTY0);
     MpcFabric::new_with_size_hint(size_hint, network, beaver_source)

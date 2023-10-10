@@ -23,7 +23,7 @@ pub fn bench_mul_throughput(c: &mut Criterion) {
                 let mut total_time = Duration::from_millis(0);
                 for _ in 0..n_iters {
                     let (elapsed1, elapsed2) = execute_mock_mpc(|fabric| async move {
-                        let mut res = fabric.share_scalar(1, PARTY0);
+                        let mut res = fabric.share_scalar(1u8, PARTY0);
 
                         let start_time = Instant::now();
                         for _ in 0..circuit_size {

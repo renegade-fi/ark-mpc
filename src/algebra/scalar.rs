@@ -63,8 +63,6 @@ impl<C: CurveGroup> Scalar<C> {
     }
 
     /// Sample a random field element
-    ///
-    /// TODO: Validate that this gives a uniform distribution over the field
     pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
         Self(C::ScalarField::rand(rng))
     }
