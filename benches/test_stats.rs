@@ -1,6 +1,6 @@
 //! A simple benchmark for testing that stats collection is properly working
 
-use mpc_stark::{algebra::scalar::Scalar, test_helpers::execute_mock_mpc, PARTY0, PARTY1};
+use ark_mpc::{algebra::scalar::Scalar, test_helpers::execute_mock_mpc, PARTY0, PARTY1};
 use rand::{distributions::uniform::SampleRange, thread_rng};
 
 #[tokio::main]

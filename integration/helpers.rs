@@ -1,10 +1,8 @@
-//! Defines testing mocks
+//! Defines testing mocks and helpers for integration tests
 
 use std::fmt::Debug;
 
-use futures::{future::join_all, Future};
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::{
         authenticated_curve::AuthenticatedPointResult,
         authenticated_scalar::AuthenticatedScalarResult, mpc_curve::MpcPointResult,
@@ -14,6 +12,8 @@ use mpc_stark::{
     network::{NetworkPayload, PartyId},
     {MpcFabric, ResultHandle, ResultValue},
 };
+use futures::{future::join_all, Future};
+use itertools::Itertools;
 use tokio::runtime::Handle;
 
 // -----------
@@ -147,7 +147,7 @@ pub(crate) fn share_point(
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> MpcPointResult<TestCurve> {
-    // Share the point then cast to an `MpcStarkPoint`
+    // Share the point then cast to an `MpcPointResult`
     let authenticated_point = share_authenticated_point(value, sender, test_args);
     authenticated_point.mpc_share()
 }

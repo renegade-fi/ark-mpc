@@ -1,6 +1,6 @@
 //! Defines tests for the fabric directly
 
-use mpc_stark::{algebra::scalar::Scalar, PARTY0, PARTY1};
+use ark_mpc::{algebra::scalar::Scalar, PARTY0, PARTY1};
 
 use crate::{
     helpers::{assert_scalars_eq, await_result, share_scalar},

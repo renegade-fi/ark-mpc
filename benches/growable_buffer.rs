@@ -1,5 +1,5 @@
+use ark_mpc::{algebra::scalar::Scalar, buffer::GrowableBuffer, test_helpers::TestCurve};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use mpc_stark::{algebra::scalar::Scalar, buffer::GrowableBuffer, test_helpers::TestCurve};
 
 // --------------
 // | Benchmarks |

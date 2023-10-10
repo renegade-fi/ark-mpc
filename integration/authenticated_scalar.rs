@@ -1,14 +1,14 @@
-//! Integration tests for arithmetic on the `AuthenticatedScalar` type which provides
+//! Integration tests for arithmetic on the `AuthenticatedScalarResult` type which provides
 //! a malicious-secure primitive
 
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::{
         authenticated_scalar::{test_helpers::*, AuthenticatedScalarResult},
         scalar::Scalar,
     },
     ResultValue, PARTY0, PARTY1,
 };
+use itertools::Itertools;
 use rand::thread_rng;
 use std::ops::Neg;
 

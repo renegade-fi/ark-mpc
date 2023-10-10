@@ -1,12 +1,12 @@
-//! Defines a benchmark for native multiscalar-multiplication on `Scalar` and `StarkPoint` types
+//! Defines a benchmark for native multiscalar-multiplication on `Scalar` and `CurvePoint` types
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::{curve::CurvePoint, scalar::Scalar},
     random_point,
     test_helpers::TestCurve,
 };
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use itertools::Itertools;
 use rand::thread_rng;
 
 /// The maximum power of two to scale the MSM benchmark to
