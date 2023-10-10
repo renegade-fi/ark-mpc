@@ -864,7 +864,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
 mod test {
     use rand::thread_rng;
 
-    use crate::{algebra::test_helper::TestCurve, test_helpers::mock_fabric};
+    use crate::{test_helpers::mock_fabric, test_helpers::TestCurve};
 
     use super::*;
 

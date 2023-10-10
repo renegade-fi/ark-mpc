@@ -58,11 +58,15 @@ pub mod test_helpers {
     use futures::Future;
 
     use crate::{
-        algebra::test_helper::TestCurve,
         beaver::PartyIDBeaverSource,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
         MpcFabric, PARTY0, PARTY1,
     };
+
+    use ark_curve25519::EdwardsProjective as Curve25519Projective;
+
+    /// A curve used for testing algebra implementations, set to curve25519
+    pub type TestCurve = Curve25519Projective;
 
     /// Create a mock fabric
     pub fn mock_fabric() -> MpcFabric<TestCurve> {

@@ -6,7 +6,8 @@ use criterion::{
     Criterion, Throughput,
 };
 use mpc_stark::{
-    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork, MpcFabric, PARTY0,
+    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork,
+    test_helpers::TestCurve, MpcFabric, PARTY0,
 };
 use rand::{rngs::OsRng, thread_rng};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -41,7 +42,7 @@ pub fn config() -> Criterion {
 }
 
 /// Create a mock fabric for testing
-pub fn mock_fabric(size_hint: usize) -> MpcFabric {
+pub fn mock_fabric(size_hint: usize) -> MpcFabric<TestCurve> {
     let network = NoRecvNetwork::default();
     let beaver_source = PartyIDBeaverSource::new(PARTY0);
     MpcFabric::new_with_size_hint(size_hint, network, beaver_source)
@@ -54,7 +55,7 @@ pub fn mock_fabric(size_hint: usize) -> MpcFabric {
 /// Measures the raw throughput of scalar addition
 pub fn scalar_addition(c: &mut Criterion) {
     let mut rng = thread_rng();
-    let mut res = Scalar::random(&mut rng);
+    let mut res = Scalar::<TestCurve>::random(&mut rng);
 
     let mut group = c.benchmark_group("raw_scalar_addition");
 

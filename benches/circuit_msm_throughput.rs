@@ -5,8 +5,7 @@ use std::time::{Duration, Instant};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itertools::Itertools;
 use mpc_stark::{
-    algebra::authenticated_stark_point::AuthenticatedStarkPointResult,
-    test_helpers::execute_mock_mpc,
+    algebra::authenticated_curve::AuthenticatedPointResult, test_helpers::execute_mock_mpc,
 };
 use tokio::runtime::Builder as RuntimeBuilder;
 
@@ -36,7 +35,7 @@ pub fn bench_msm_throughput(c: &mut Criterion) {
 
                         let start_time = Instant::now();
 
-                        let res = AuthenticatedStarkPointResult::msm(&scalars, &points);
+                        let res = AuthenticatedPointResult::msm(&scalars, &points);
                         black_box(res.open().await);
 
                         start_time.elapsed()

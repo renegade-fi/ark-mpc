@@ -3,8 +3,9 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itertools::Itertools;
 use mpc_stark::{
-    algebra::{scalar::Scalar, stark_curve::StarkPoint},
+    algebra::{curve::CurvePoint, scalar::Scalar},
     random_point,
+    test_helpers::TestCurve,
 };
 use rand::thread_rng;
 
@@ -22,7 +23,7 @@ pub fn bench_native_msm(c: &mut Criterion) {
             let scalars = (0..n_elems).map(|_| Scalar::random(&mut rng)).collect_vec();
             let points = (0..n_elems).map(|_| random_point()).collect_vec();
             b.iter(|| {
-                black_box(StarkPoint::msm(&scalars, &points));
+                black_box(CurvePoint::<TestCurve>::msm(&scalars, &points));
             })
         });
     }
