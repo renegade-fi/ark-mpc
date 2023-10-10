@@ -17,7 +17,7 @@ path = "src/lib.rs"
 [features]
 benchmarks = []
 stats = ["benchmarks"]
-test_helpers = []
+test_helpers = ["ark-curve25519"]
 
 [[test]]
 name = "integration"
@@ -73,6 +73,7 @@ kanal = "0.1.0-pre8"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 
 # == Arithemtic + Crypto == #
+ark-curve25519 = { version = "0.4", optional = true }
 ark-ec = { version = "0.4", features = ["parallel"] }
 ark-ff = "0.4"
 ark-serialize = "0.4"

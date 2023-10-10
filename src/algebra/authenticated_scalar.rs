@@ -16,7 +16,7 @@ use crate::{
     commitment::{PedersenCommitment, PedersenCommitmentResult},
     error::MpcError,
     fabric::{MpcFabric, ResultId, ResultValue},
-    ResultHandle, PARTY0,
+    PARTY0,
 };
 
 use super::{
@@ -34,7 +34,7 @@ pub const AUTHENTICATED_SCALAR_RESULT_LEN: usize = 3;
 /// SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
 /// that ensures security against a malicious adversary
 #[derive(Clone)]
-pub struct AuthenticatedScalarResult<C> {
+pub struct AuthenticatedScalarResult<C: CurveGroup> {
     /// The secret shares of the underlying value
     pub(crate) share: MpcScalarResult<C>,
     /// The SPDZ style, unconditionally secure MAC of the value
@@ -119,12 +119,13 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         n: usize,
     ) -> Vec<AuthenticatedScalarResult<C>> {
         // Convert to a set of scalar results
-        let scalar_results = values
-            .fabric()
-            .new_batch_gate_op(vec![values.id()], n, |mut args| {
-                let scalars: Vec<Scalar<C>> = args.pop().unwrap().into();
-                scalars.into_iter().map(ResultValue::Scalar).collect()
-            });
+        let scalar_results: Vec<ScalarResult<C>> =
+            values
+                .fabric()
+                .new_batch_gate_op(vec![values.id()], n, |mut args| {
+                    let scalars: Vec<Scalar<C>> = args.pop().unwrap().into();
+                    scalars.into_iter().map(ResultValue::Scalar).collect()
+                });
 
         Self::new_shared_batch(&scalar_results)
     }
@@ -141,7 +142,7 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
     }
 
     /// Get a reference to the underlying MPC fabric
-    pub fn fabric(&self) -> &MpcFabric {
+    pub fn fabric(&self) -> &MpcFabric<C> {
         self.share.fabric()
     }
 
@@ -198,7 +199,7 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         }
 
         // Sum of the commitments should be zero
-        if peer_mac_share + my_mac_share != Scalar::from(0) {
+        if peer_mac_share + my_mac_share != Scalar::zero() {
             return false;
         }
 
@@ -396,7 +397,10 @@ pub struct AuthenticatedScalarOpenResult<C: CurveGroup> {
     pub mac_check: ScalarResult<C>,
 }
 
-impl<C: CurveGroup> Future for AuthenticatedScalarOpenResult<C> {
+impl<C: CurveGroup> Future for AuthenticatedScalarOpenResult<C>
+where
+    C::ScalarField: Unpin,
+{
     type Output = Result<Scalar<C>, MpcError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -404,7 +408,7 @@ impl<C: CurveGroup> Future for AuthenticatedScalarOpenResult<C> {
         let value = futures::ready!(self.as_mut().value.poll_unpin(cx));
         let mac_check = futures::ready!(self.as_mut().mac_check.poll_unpin(cx));
 
-        if mac_check == Scalar::from(1) {
+        if mac_check == Scalar::from(1u8) {
             Poll::Ready(Ok(value))
         } else {
             Poll::Ready(Err(MpcError::AuthenticationError))
@@ -425,7 +429,7 @@ impl<C: CurveGroup> Add<&Scalar<C>> for &AuthenticatedScalarResult<C> {
         let new_share = if self.fabric().party_id() == PARTY0 {
             &self.share + rhs
         } else {
-            &self.share + Scalar::from(0)
+            &self.share + Scalar::zero()
         };
 
         // Both parties add the public value to their modifier, and the MACs do not change
@@ -452,7 +456,7 @@ impl<C: CurveGroup> Add<&ScalarResult<C>> for &AuthenticatedScalarResult<C> {
         let new_share = if self.fabric().party_id() == PARTY0 {
             &self.share + rhs
         } else {
-            &self.share + Scalar::from(0)
+            &self.share + Scalar::zero()
         };
 
         let new_modifier = &self.public_modifier - rhs;
@@ -1144,6 +1148,6 @@ mod tests {
         })
         .await;
 
-        assert_eq!(res.unwrap(), 0.into());
+        assert_eq!(res.unwrap(), 0u8.into());
     }
 }

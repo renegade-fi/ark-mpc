@@ -1,6 +1,7 @@
 //! Defines the Beaver value generation interface
 //! as well as a dummy beaver interface for testing
 
+use ark_ec::CurveGroup;
 use itertools::Itertools;
 
 use crate::algebra::scalar::Scalar;
@@ -10,38 +11,42 @@ use crate::algebra::scalar::Scalar;
 ///        x_1 and party 2 holds x_2 such that x_1 + x_2 = x
 ///     2. Beaver triplets; additively shared values [a], [b], [c] such
 ///        that a * b = c
-pub trait SharedValueSource: Send + Sync {
+pub trait SharedValueSource<C: CurveGroup>: Send + Sync {
     /// Fetch the next shared single bit
-    fn next_shared_bit(&mut self) -> Scalar;
+    fn next_shared_bit(&mut self) -> Scalar<C>;
     /// Fetch the next shared batch of bits
-    fn next_shared_bit_batch(&mut self, num_values: usize) -> Vec<Scalar> {
+    fn next_shared_bit_batch(&mut self, num_values: usize) -> Vec<Scalar<C>> {
         (0..num_values)
             .map(|_| self.next_shared_bit())
             .collect_vec()
     }
     /// Fetch the next shared single value
-    fn next_shared_value(&mut self) -> Scalar;
+    fn next_shared_value(&mut self) -> Scalar<C>;
     /// Fetch a batch of shared single values
-    fn next_shared_value_batch(&mut self, num_values: usize) -> Vec<Scalar> {
+    fn next_shared_value_batch(&mut self, num_values: usize) -> Vec<Scalar<C>> {
         (0..num_values)
             .map(|_| self.next_shared_value())
             .collect_vec()
     }
     /// Fetch the next pair of values that are multiplicative inverses of one another
-    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar);
+    fn next_shared_inverse_pair(&mut self) -> (Scalar<C>, Scalar<C>);
     /// Fetch the next batch of multiplicative inverse pairs
-    fn next_shared_inverse_pair_batch(&mut self, num_pairs: usize) -> (Vec<Scalar>, Vec<Scalar>) {
+    fn next_shared_inverse_pair_batch(
+        &mut self,
+        num_pairs: usize,
+    ) -> (Vec<Scalar<C>>, Vec<Scalar<C>>) {
         (0..num_pairs)
             .map(|_| self.next_shared_inverse_pair())
             .unzip()
     }
     /// Fetch the next beaver triplet
-    fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar);
+    fn next_triplet(&mut self) -> (Scalar<C>, Scalar<C>, Scalar<C>);
     /// Fetch a batch of beaver triplets
+    #[allow(clippy::type_complexity)]
     fn next_triplet_batch(
         &mut self,
         num_triplets: usize,
-    ) -> (Vec<Scalar>, Vec<Scalar>, Vec<Scalar>) {
+    ) -> (Vec<Scalar<C>>, Vec<Scalar<C>>, Vec<Scalar<C>>) {
         let mut a_vals = Vec::with_capacity(num_triplets);
         let mut b_vals = Vec::with_capacity(num_triplets);
         let mut c_vals = Vec::with_capacity(num_triplets);
@@ -76,14 +81,14 @@ impl PartyIDBeaverSource {
 /// The PartyIDBeaverSource returns beaver triplets split statically between the
 /// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] = (2, 4)
 #[cfg(any(feature = "test_helpers", test))]
-impl SharedValueSource for PartyIDBeaverSource {
-    fn next_shared_bit(&mut self) -> Scalar {
+impl<C: CurveGroup> SharedValueSource<C> for PartyIDBeaverSource {
+    fn next_shared_bit(&mut self) -> Scalar<C> {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
         Scalar::from(self.party_id)
     }
 
-    fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
+    fn next_triplet(&mut self) -> (Scalar<C>, Scalar<C>, Scalar<C>) {
         if self.party_id == 0 {
             (Scalar::from(1u64), Scalar::from(3u64), Scalar::from(2u64))
         } else {
@@ -91,11 +96,11 @@ impl SharedValueSource for PartyIDBeaverSource {
         }
     }
 
-    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
+    fn next_shared_inverse_pair(&mut self) -> (Scalar<C>, Scalar<C>) {
         (Scalar::from(self.party_id), Scalar::from(self.party_id))
     }
 
-    fn next_shared_value(&mut self) -> Scalar {
+    fn next_shared_value(&mut self) -> Scalar<C> {
         Scalar::from(self.party_id)
     }
 }

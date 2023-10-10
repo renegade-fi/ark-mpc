@@ -1,9 +1,11 @@
 //! Defines the central implementation of an `MpcNetwork` over the QUIC transport
 
+use ark_ec::CurveGroup;
 use async_trait::async_trait;
 use futures::{Future, Sink, Stream};
 use quinn::{Endpoint, RecvStream, SendStream};
 use std::{
+    marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
@@ -36,7 +38,7 @@ const ERR_SEND_BUFFER_FULL: &str = "send buffer full";
 // -----------------------
 
 /// Implements an MpcNetwork on top of QUIC
-pub struct QuicTwoPartyNet {
+pub struct QuicTwoPartyNet<C: CurveGroup> {
     /// The index of the local party in the participants
     party_id: PartyId,
     /// Whether the network has been bootstrapped yet
@@ -64,10 +66,12 @@ pub struct QuicTwoPartyNet {
     send_stream: Option<SendStream>,
     /// The receive side of the bidirectional stream
     recv_stream: Option<RecvStream>,
+    /// The phantom on the curve group
+    _phantom: PhantomData<C>,
 }
 
 #[allow(clippy::redundant_closure)] // For readability of error handling
-impl<'a> QuicTwoPartyNet {
+impl<'a, C: CurveGroup> QuicTwoPartyNet<C> {
     /// Create a new network, do not connect the network yet
     pub fn new(party_id: PartyId, local_addr: SocketAddr, peer_addr: SocketAddr) -> Self {
         // Construct the QUIC net
@@ -81,12 +85,13 @@ impl<'a> QuicTwoPartyNet {
             buffered_outbound: None,
             send_stream: None,
             recv_stream: None,
+            _phantom: PhantomData,
         }
     }
 
     /// Returns true if the local party is party 0
     fn local_party0(&self) -> bool {
-        self.party_id() == PARTY0
+        self.party_id == PARTY0
     }
 
     /// Returns an error if the network is not connected
@@ -226,7 +231,7 @@ impl<'a> QuicTwoPartyNet {
     }
 
     /// Receive a message from the peer
-    async fn receive_message(&mut self) -> Result<NetworkOutbound, MpcNetworkError> {
+    async fn receive_message(&mut self) -> Result<NetworkOutbound<C>, MpcNetworkError> {
         // Read the message length from the buffer if available
         if self.buffered_message_length.is_none() {
             self.buffered_message_length = Some(self.read_message_length().await?);
@@ -246,7 +251,10 @@ impl<'a> QuicTwoPartyNet {
 }
 
 #[async_trait]
-impl MpcNetwork for QuicTwoPartyNet {
+impl<C: CurveGroup> MpcNetwork<C> for QuicTwoPartyNet<C>
+where
+    C: Unpin,
+{
     fn party_id(&self) -> PartyId {
         self.party_id
     }
@@ -263,18 +271,27 @@ impl MpcNetwork for QuicTwoPartyNet {
     }
 }
 
-impl Stream for QuicTwoPartyNet {
-    type Item = Result<NetworkOutbound, MpcNetworkError>;
+impl<C: CurveGroup> Stream for QuicTwoPartyNet<C>
+where
+    C: Unpin,
+{
+    type Item = Result<NetworkOutbound<C>, MpcNetworkError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Box::pin(self.receive_message()).as_mut().poll(cx).map(Some)
+        Box::pin(self.get_mut().receive_message())
+            .as_mut()
+            .poll(cx)
+            .map(Some)
     }
 }
 
-impl Sink<NetworkOutbound> for QuicTwoPartyNet {
+impl<C: CurveGroup> Sink<NetworkOutbound<C>> for QuicTwoPartyNet<C>
+where
+    C: Unpin,
+{
     type Error = MpcNetworkError;
 
-    fn start_send(mut self: Pin<&mut Self>, msg: NetworkOutbound) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, msg: NetworkOutbound<C>) -> Result<(), Self::Error> {
         if !self.connected {
             return Err(MpcNetworkError::NetworkUninitialized);
         }
@@ -290,7 +307,7 @@ impl Sink<NetworkOutbound> for QuicTwoPartyNet {
         let mut payload = (bytes.len() as u64).to_le_bytes().to_vec();
         payload.extend_from_slice(&bytes);
 
-        self.buffered_outbound = Some(BufferWithCursor::new(payload));
+        self.get_mut().buffered_outbound = Some(BufferWithCursor::new(payload));
         Ok(())
     }
 

@@ -2,9 +2,10 @@
 //! them, and places the result back into the fabric for further executions
 
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::fmt::Debug;
 use std::sync::Arc;
 
+use ark_ec::CurveGroup;
 use crossbeam::queue::SegQueue;
 use itertools::Itertools;
 use tracing::log;
@@ -107,19 +108,19 @@ impl Debug for ExecutorStats {
 
 /// The executor is responsible for executing operation that are ready for execution, either
 /// passed explicitly by the fabric or as a result of a dependency being satisfied
-pub struct Executor {
+pub struct Executor<C: CurveGroup> {
     /// The job queue for the executor
-    job_queue: Arc<SegQueue<ExecutorMessage>>,
+    job_queue: Arc<SegQueue<ExecutorMessage<C>>>,
     /// The operation buffer, stores in-flight operations
-    operations: GrowableBuffer<Operation>,
+    operations: GrowableBuffer<Operation<C>>,
     /// The dependency map; maps in-flight results to operations that are waiting for them
     dependencies: GrowableBuffer<Vec<ResultId>>,
     /// The completed results of operations
-    results: GrowableBuffer<OpResult>,
+    results: GrowableBuffer<OpResult<C>>,
     /// An index of waiters for incomplete results
-    waiters: HashMap<ResultId, Vec<ResultWaiter>>,
+    waiters: HashMap<ResultId, Vec<ResultWaiter<C>>>,
     /// The underlying fabric that the executor is a part of
-    fabric: FabricInner,
+    fabric: FabricInner<C>,
     /// The collected statistics of the executor
     #[cfg(feature = "stats")]
     stats: ExecutorStats,
@@ -132,23 +133,23 @@ pub struct Executor {
 ///  arguments are ready
 /// - A new waiter for a result, which the executor will add to its waiter map
 #[derive(Debug)]
-pub enum ExecutorMessage {
+pub enum ExecutorMessage<C: CurveGroup> {
     /// A result of an operation
-    Result(OpResult),
+    Result(OpResult<C>),
     /// An operation that is ready for execution
-    Op(Operation),
+    Op(Operation<C>),
     /// A new waiter has registered itself for a result
-    NewWaiter(ResultWaiter),
+    NewWaiter(ResultWaiter<C>),
     /// Indicates that the executor should shut down
     Shutdown,
 }
 
-impl Executor {
+impl<C: CurveGroup> Executor<C> {
     /// Constructor
     pub fn new(
         circuit_size_hint: usize,
-        job_queue: Arc<SegQueue<ExecutorMessage>>,
-        fabric: FabricInner,
+        job_queue: Arc<SegQueue<ExecutorMessage<C>>>,
+        fabric: FabricInner<C>,
     ) -> Self {
         #[cfg(feature = "stats")]
         {
@@ -202,7 +203,7 @@ impl Executor {
     }
 
     /// Handle a new result
-    fn handle_new_result(&mut self, result: OpResult) {
+    fn handle_new_result(&mut self, result: OpResult<C>) {
         let id = result.id;
         let prev = self.results.insert(result.id, result);
         assert!(prev.is_none(), "duplicate result id: {id:?}");
@@ -232,7 +233,7 @@ impl Executor {
     }
 
     /// Handle a new operation
-    fn handle_new_operation(&mut self, mut op: Operation) {
+    fn handle_new_operation(&mut self, mut op: Operation<C>) {
         #[cfg(feature = "stats")]
         {
             self.record_op_depth(&op);
@@ -279,7 +280,7 @@ impl Executor {
     }
 
     /// Executes an operation whose arguments are ready
-    fn execute_operation(&mut self, op: Operation) {
+    fn execute_operation(&mut self, op: Operation<C>) {
         let result_ids = op.result_ids();
 
         // Collect the inputs to the operation
@@ -332,7 +333,7 @@ impl Executor {
     }
 
     /// Handle a new waiter for a result
-    pub fn handle_new_waiter(&mut self, waiter: ResultWaiter) {
+    pub fn handle_new_waiter(&mut self, waiter: ResultWaiter<C>) {
         let id = waiter.result_id;
 
         // Insert the new waiter to the queue

@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use ark_ec::CurveGroup;
 use crossbeam::queue::SegQueue;
 use futures::stream::SplitSink;
 use futures::SinkExt;
@@ -71,22 +72,22 @@ impl NetworkStats {
 
 /// The network sender sits behind the scheduler and is responsible for forwarding messages
 /// onto the network and pulling results off the network, re-enqueuing them for processing
-pub(crate) struct NetworkSender<N: MpcNetwork> {
+pub(crate) struct NetworkSender<C: CurveGroup, N: MpcNetwork<C>> {
     /// The outbound queue of messages to send
-    outbound: KanalReceiver<NetworkOutbound>,
+    outbound: KanalReceiver<NetworkOutbound<C>>,
     /// The queue of completed results
-    result_queue: Arc<SegQueue<ExecutorMessage>>,
+    result_queue: Arc<SegQueue<ExecutorMessage<C>>>,
     /// The underlying network connection
     network: N,
     /// The broadcast channel on which shutdown signals are sent
     shutdown: BroadcastReceiver<()>,
 }
 
-impl<N: MpcNetwork + 'static> NetworkSender<N> {
+impl<C: CurveGroup, N: MpcNetwork<C> + 'static> NetworkSender<C, N> {
     /// Creates a new network sender
     pub fn new(
-        outbound: KanalReceiver<NetworkOutbound>,
-        result_queue: Arc<SegQueue<ExecutorMessage>>,
+        outbound: KanalReceiver<NetworkOutbound<C>>,
+        result_queue: Arc<SegQueue<ExecutorMessage<C>>>,
         network: N,
         shutdown: BroadcastReceiver<()>,
     ) -> Self {
@@ -112,7 +113,7 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
         let stats = Arc::new(NetworkStats::default());
 
         // Start a read and write loop separately
-        let (send, recv): (SplitSink<N, NetworkOutbound>, SplitStream<N>) = network.split();
+        let (send, recv): (SplitSink<N, NetworkOutbound<C>>, SplitStream<N>) = network.split();
         let read_loop_fut = tokio::spawn(Self::read_loop(recv, result_queue, stats.clone()));
         let write_loop_fut = tokio::spawn(Self::write_loop(outbound, send, stats.clone()));
 
@@ -138,7 +139,7 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
     /// with the executor
     async fn read_loop(
         mut network_stream: SplitStream<N>,
-        result_queue: Arc<SegQueue<ExecutorMessage>>,
+        result_queue: Arc<SegQueue<ExecutorMessage<C>>>,
         stats: Arc<NetworkStats>,
     ) -> MpcNetworkError {
         while let Some(Ok(msg)) = network_stream.next().await {
@@ -161,8 +162,8 @@ impl<N: MpcNetwork + 'static> NetworkSender<N> {
     /// The write loop for the network, reads messages from the outbound queue and sends them
     /// onto the network
     async fn write_loop(
-        outbound_stream: KanalReceiver<NetworkOutbound>,
-        mut network: SplitSink<N, NetworkOutbound>,
+        outbound_stream: KanalReceiver<NetworkOutbound<C>>,
+        mut network: SplitSink<N, NetworkOutbound<C>>,
         stats: Arc<NetworkStats>,
     ) -> MpcNetworkError {
         while let Ok(msg) = outbound_stream.recv().await {
