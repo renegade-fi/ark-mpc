@@ -1,7 +1,6 @@
-//! Defines tests for the `MpcStarkPoint` type and arithmetic on this type
+//! Defines tests for the `MpcPointResult` type and arithmetic on this type
 
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::{
         curve::CurvePointResult,
         mpc_curve::MpcPointResult,
@@ -9,6 +8,7 @@ use mpc_stark::{
     },
     random_point, PARTY0, PARTY1,
 };
+use itertools::Itertools;
 use rand::thread_rng;
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
     IntegrationTest, IntegrationTestArgs, TestCurve,
 };
 
-/// Test addition of `MpcStarkPoint` types
+/// Test addition of `MpcPointResult` types
 fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
     let my_value = test_args.fabric.allocate_point(val);
@@ -42,7 +42,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(opened_res, expected_result)
 }
 
-/// Test addition of `MpcStarkPoint` with `StarkPoint`
+/// Test addition of `MpcPointResult` with `CurvePoint`
 ///
 /// Party 0 chooses an MPC point and party 1 chooses a plaintext point
 fn test_add_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -67,7 +67,7 @@ fn test_add_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String
     assert_points_eq(opened_res, expected_result)
 }
 
-/// Test adding a batch of `MpcStarkPoint` types
+/// Test adding a batch of `MpcPointResult` types
 fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -95,7 +95,7 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(opened_res, expected_result)
 }
 
-/// Tests addition between a batch of `MpcPointResult`s and `StarkPointResult`s
+/// Tests addition between a batch of `MpcPointResult`s and `CurvePointResult`s
 fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -120,7 +120,7 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test subtraction of `MpcStarkPoint` types
+/// Test subtraction of `MpcPointResult` types
 fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
     let my_value = test_args.fabric.allocate_point(val);
@@ -142,7 +142,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(opened_res, expected_result)
 }
 
-/// Test subtraction of `MpcStarkPoint` with `StarkPoint`
+/// Test subtraction of `MpcPointResult` with `PointResult`
 ///
 /// Party 0 chooses an MPC point and party 1 chooses a plaintext point
 fn test_sub_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -167,7 +167,7 @@ fn test_sub_point_constant(test_args: &IntegrationTestArgs) -> Result<(), String
     assert_points_eq(opened_res, expected_result)
 }
 
-/// Test subtracting a batch of `MpcStarkPoint` types
+/// Test subtracting a batch of `MpcPointResult` types
 fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -195,7 +195,7 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(opened_res, expected_result)
 }
 
-/// Test subtracting a batch of `MpcStarkPoint` types and `StarkPointResult`s
+/// Test subtracting a batch of `MpcPointResult` types and `CurvePointResult`s
 fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -220,7 +220,7 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test negation of `MpcStarkPoint` types
+/// Test negation of `MpcPointResult` types
 fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let val = random_point();
     let my_value = test_args.fabric.allocate_point(val);
@@ -240,7 +240,7 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_points_eq(opened_res, expected_result)
 }
 
-/// Test negating a batch of `MpcStarkPoint` types
+/// Test negating a batch of `MpcPointResult` types
 fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -264,7 +264,7 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(opened_res, expected_result)
 }
 
-/// Test multiplication of an `MpcStarkPoint` type with an `MpcScalarResult` type
+/// Test multiplication of an `MpcPointResult` type with an `MpcScalarResult` type
 ///
 /// Party 0 chooses the point, party 1 chooses the scalar
 fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -331,7 +331,7 @@ fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), Strin
     assert_points_eq(opened_res, expected_result)
 }
 
-/// Test multiplying a batch of `MpcStarkPoint` types
+/// Test multiplying a batch of `MpcPointResult` types
 ///
 /// Party 0 chooses the points and party 1 chooses the scalars
 fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -397,71 +397,71 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_add",
+    name: "mpc_point::test_add",
     test_fn: test_add,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_add_point_constant",
+    name: "mpc_point::test_add_point_constant",
     test_fn: test_add_point_constant,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_batch_add",
+    name: "mpc_point::test_batch_add",
     test_fn: test_batch_add,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_batch_add_public",
+    name: "mpc_point::test_batch_add_public",
     test_fn: test_batch_add_public,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_sub",
+    name: "mpc_point::test_sub",
     test_fn: test_sub,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_sub_point_constant",
+    name: "mpc_point::test_sub_point_constant",
     test_fn: test_sub_point_constant,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_batch_sub",
+    name: "mpc_point::test_batch_sub",
     test_fn: test_batch_sub,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_batch_sub_public",
+    name: "mpc_point::test_batch_sub_public",
     test_fn: test_batch_sub_public,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_neg",
+    name: "mpc_point::test_neg",
     test_fn: test_neg,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_batch_neg",
+    name: "mpc_point::test_batch_neg",
     test_fn: test_batch_neg,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_mul",
+    name: "mpc_point::test_mul",
     test_fn: test_mul,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_mul_scalar_constant",
+    name: "mpc_point::test_mul_scalar_constant",
     test_fn: test_mul_scalar_constant,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_batch_mul",
+    name: "mpc_point::test_batch_mul",
     test_fn: test_batch_mul,
 });
 
 inventory::submit!(IntegrationTest {
-    name: "mpc_stark_point::test_batch_mul_public",
+    name: "mpc_point::test_batch_mul_public",
     test_fn: test_batch_mul_public,
 });

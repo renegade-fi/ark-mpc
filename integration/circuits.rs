@@ -1,13 +1,13 @@
 //! Tests for more complicated operations (i.e. circuits)
 
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::{
         authenticated_curve::AuthenticatedPointResult,
         authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar,
     },
     random_point, PARTY0, PARTY1,
 };
+use itertools::Itertools;
 use rand::thread_rng;
 
 use crate::{

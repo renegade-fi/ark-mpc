@@ -1,7 +1,6 @@
-//! Integration tests for the `AuthenticatedStarkPoint` type
+//! Integration tests for the `AuthenticatedPointResult` type
 
-use itertools::Itertools;
-use mpc_stark::{
+use ark_mpc::{
     algebra::{
         authenticated_curve::{
             test_helpers::{modify_mac, modify_public_modifier, modify_share},
@@ -11,6 +10,7 @@ use mpc_stark::{
     },
     random_point, PARTY0, PARTY1,
 };
+use itertools::Itertools;
 use rand::thread_rng;
 
 use crate::{
@@ -151,7 +151,7 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test addition between a batch of `AuthenticatedStarkPoint`s and `StarkPoint`s
+/// Test addition between a batch of `AuthenticatedPointResult`s and `CurvePoint`s
 fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -245,7 +245,7 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test addition between a batch of `AuthenticatedStarkPoint`s and `StarkPoint`s
+/// Test addition between a batch of `AuthenticatedPointResult`s and `CurvePoint`s
 fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -384,7 +384,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test addition between a batch of `AuthenticatedStarkPoint`s and `StarkPoint`s
+/// Test addition between a batch of `AuthenticatedPointResult`s and `CurvePoint`s
 fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -412,91 +412,91 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_open_authenticated",
+    name: "authenticated_curve_point::test_open_authenticated",
     test_fn: test_open_authenticated
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_open_authenticated__bad_mac",
+    name: "authenticated_curve_point::test_open_authenticated__bad_mac",
     test_fn: test_open_authenticated__bad_mac
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_open_authenticated__bad_share",
+    name: "authenticated_curve_point::test_open_authenticated__bad_share",
     test_fn: test_open_authenticated__bad_share
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_open_authenticated__bad_public_modifier",
+    name: "authenticated_curve_point::test_open_authenticated__bad_public_modifier",
     test_fn: test_open_authenticated__bad_public_modifier
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_addition_public_point",
+    name: "authenticated_curve_point::test_addition_public_point",
     test_fn: test_addition_public_point
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_add",
+    name: "authenticated_curve_point::test_add",
     test_fn: test_add
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_batch_add",
+    name: "authenticated_curve_point::test_batch_add",
     test_fn: test_batch_add
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_batch_add_public",
+    name: "authenticated_curve_point::test_batch_add_public",
     test_fn: test_batch_add_public
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_sub_public_point",
+    name: "authenticated_curve_point::test_sub_public_point",
     test_fn: test_sub_public_point
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_sub",
+    name: "authenticated_curve_point::test_sub",
     test_fn: test_sub
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_batch_sub",
+    name: "authenticated_curve_point::test_batch_sub",
     test_fn: test_batch_sub
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_batch_sub_public",
+    name: "authenticated_curve_point::test_batch_sub_public",
     test_fn: test_batch_sub_public
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_negation",
+    name: "authenticated_curve_point::test_negation",
     test_fn: test_negation
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_batch_negation",
+    name: "authenticated_curve_point::test_batch_negation",
     test_fn: test_batch_negation
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_multiplication_public_scalar",
+    name: "authenticated_curve_point::test_multiplication_public_scalar",
     test_fn: test_multiplication_public_scalar
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_multiplication",
+    name: "authenticated_curve_point::test_multiplication",
     test_fn: test_multiplication
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_batch_mul",
+    name: "authenticated_curve_point::test_batch_mul",
     test_fn: test_batch_mul
 });
 
 inventory::submit!(IntegrationTest {
-    name: "authenticated_stark_point::test_batch_mul_public",
+    name: "authenticated_curve_point::test_batch_mul_public",
     test_fn: test_batch_mul_public
 });

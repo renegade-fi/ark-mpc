@@ -1,4 +1,4 @@
-//! Defines the scalar types that form the basis of the Starknet algebra
+//! Defines the scalar types that form the basis of the MPC algebra
 
 // ----------------------------
 // | Scalar Field Definitions |
@@ -143,9 +143,9 @@ impl<'de, C: CurveGroup> Deserialize<'de> for Scalar<C> {
 
 // === Addition === //
 
-/// A type alias for a result that resolves to a `Scalar<C>`
+/// A type alias for a result that resolves to a `Scalar`
 pub type ScalarResult<C> = ResultHandle<C, Scalar<C>>;
-/// A type alias for a result that resolves to a batch of `Scalar<C>`s
+/// A type alias for a result that resolves to a batch of `Scalar`s
 pub type BatchScalarResult<C> = ResultHandle<C, Vec<Scalar<C>>>;
 impl<C: CurveGroup> ScalarResult<C> {
     /// Compute the multiplicative inverse of the scalar in its field
@@ -275,7 +275,7 @@ impl<C: CurveGroup> Sub<&ScalarResult<C>> for &ScalarResult<C> {
 impl_borrow_variants!(ScalarResult<C>, Sub, sub, -, ScalarResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> ScalarResult<C> {
-    /// Subtract two batches of `ScalarResult<C>`s
+    /// Subtract two batches of `ScalarResult`s
     pub fn batch_sub(a: &[ScalarResult<C>], b: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
         assert_eq!(a.len(), b.len(), "Batch sub requires equal length inputs");
 
@@ -343,7 +343,7 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &ScalarResult<C> {
 impl_borrow_variants!(ScalarResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> ScalarResult<C> {
-    /// Multiply two batches of `ScalarResult<C>`s
+    /// Multiply two batches of `ScalarResult`s
     pub fn batch_mul(a: &[ScalarResult<C>], b: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
         assert_eq!(a.len(), b.len(), "Batch mul requires equal length inputs");
 
@@ -385,7 +385,7 @@ impl<C: CurveGroup> Neg for &ScalarResult<C> {
 impl_borrow_variants!(ScalarResult<C>, Neg, neg, -, C: CurveGroup);
 
 impl<C: CurveGroup> ScalarResult<C> {
-    /// Negate a batch of `ScalarResult<C>`s
+    /// Negate a batch of `ScalarResult`s
     pub fn batch_neg(a: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
         let n = a.len();
         let fabric = &a[0].fabric;
