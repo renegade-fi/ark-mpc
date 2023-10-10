@@ -2,8 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+use ark_mpc::{test_helpers::execute_mock_mpc, PARTY0};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use mpc_stark::{test_helpers::execute_mock_mpc, PARTY0};
 use tokio::runtime::Builder as RuntimeBuilder;
 
 /// Measure the throughput and latency of a set of sequential multiplication gates

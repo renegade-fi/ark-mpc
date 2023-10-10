@@ -540,17 +540,17 @@ impl<C: CurveGroup> MpcFabric<C> {
         (0..n).map(|_| val.clone()).collect_vec()
     }
 
-    /// Get the hardcoded curve identity wire as a raw `StarkPoint`
+    /// Get the hardcoded curve identity wire as a raw `CurvePointResult`
     pub fn curve_identity(&self) -> CurvePointResult<C> {
         ResultHandle::new(self.inner.curve_identity(), self.clone())
     }
 
-    /// Get the hardcoded shared curve identity wire as an `MpcStarkPointResult`
+    /// Get the hardcoded shared curve identity wire as an `MpcPointResult`
     fn curve_identity_shared(&self) -> MpcPointResult<C> {
         MpcPointResult::new_shared(self.curve_identity())
     }
 
-    /// Get the hardcoded curve identity wire as an `AuthenticatedStarkPointResult`
+    /// Get the hardcoded curve identity wire as an `AuthenticatedPointResult`
     ///
     /// Both parties hold the identity point directly in this case
     pub fn curve_identity_authenticated(&self) -> AuthenticatedPointResult<C> {
@@ -633,7 +633,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         AuthenticatedScalarResult::new_shared_from_batch_result(shares, n)
     }
 
-    /// Share a `StarkPoint` value with the counterparty
+    /// Share a `CurvePoint` value with the counterparty
     pub fn share_point(&self, val: CurvePoint<C>, sender: PartyId) -> AuthenticatedPointResult<C> {
         let point: CurvePointResult<C> = if self.party_id() == sender {
             // As mentioned in https://eprint.iacr.org/2009/226.pdf
@@ -657,7 +657,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         AuthenticatedPointResult::new_shared(point)
     }
 
-    /// Share a batch of `StarkPoint`s with the counterparty
+    /// Share a batch of `CurvePoint`s with the counterparty
     pub fn batch_share_point(
         &self,
         vals: Vec<CurvePoint<C>>,

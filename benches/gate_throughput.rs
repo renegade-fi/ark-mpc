@@ -1,13 +1,13 @@
 use std::{path::Path, sync::Mutex};
 
+use ark_mpc::{
+    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork,
+    test_helpers::TestCurve, MpcFabric, PARTY0,
+};
 use cpuprofiler::{Profiler as CpuProfiler, PROFILER};
 use criterion::{
     criterion_group, criterion_main, profiler::Profiler as CriterionProfiler, BenchmarkId,
     Criterion, Throughput,
-};
-use mpc_stark::{
-    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork,
-    test_helpers::TestCurve, MpcFabric, PARTY0,
 };
 use rand::{rngs::OsRng, thread_rng};
 use tokio::runtime::Builder as RuntimeBuilder;

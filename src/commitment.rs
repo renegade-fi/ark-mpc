@@ -1,4 +1,4 @@
-//! Defines Pedersen commitments over the Stark curve used to commit to a value
+//! Defines Pedersen commitments over the system curve used to commit to a value
 //! before opening it
 
 use ark_ec::CurveGroup;
