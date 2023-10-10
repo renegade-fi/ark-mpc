@@ -18,7 +18,7 @@ use crate::{
         await_result, await_result_batch, await_result_with_error, share_authenticated_scalar,
         share_authenticated_scalar_batch, share_plaintext_value, share_plaintext_values_batch,
     },
-    IntegrationTest, IntegrationTestArgs,
+    IntegrationTest, IntegrationTestArgs, TestScalar,
 };
 
 // -----------
@@ -108,7 +108,7 @@ fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> 
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
     let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
 
-    let plaintext_constant: Scalar = await_result(party1_value);
+    let plaintext_constant: TestScalar = await_result(party1_value);
     let expected_result = await_result(party0_value) + plaintext_constant;
 
     // Compute the result in the MPC circuit
@@ -213,7 +213,7 @@ fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
     let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
 
-    let plaintext_constant: Scalar = await_result(party1_value);
+    let plaintext_constant: TestScalar = await_result(party1_value);
     let expected_result = await_result(party0_value) - plaintext_constant;
 
     // Compute the result in the MPC circuit
@@ -365,7 +365,7 @@ fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
     let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
 
-    let plaintext_constant: Scalar = await_result(party1_value);
+    let plaintext_constant: TestScalar = await_result(party1_value);
     let expected_result = await_result(party0_value) * plaintext_constant;
 
     // Compute the result in the MPC circuit

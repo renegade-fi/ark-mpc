@@ -21,14 +21,14 @@ fn test_fabric_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), Str
     let party0_value_opened = party0_value.open();
     let party0_res = await_result(party0_value_opened);
 
-    assert_scalars_eq(party0_res, Scalar::from(0))?;
+    assert_scalars_eq(party0_res, Scalar::from(0u8))?;
 
     // Party 1
     let party1_value = share_scalar(my_party_id, PARTY1, test_args);
     let party1_value_opened = party1_value.open();
     let party1_res = await_result(party1_value_opened);
 
-    assert_scalars_eq(party1_res, Scalar::from(1))
+    assert_scalars_eq(party1_res, Scalar::from(1u8))
 }
 
 inventory::submit!(IntegrationTest {

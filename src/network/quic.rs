@@ -277,7 +277,7 @@ where
 {
     type Item = Result<NetworkOutbound<C>, MpcNetworkError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Box::pin(self.get_mut().receive_message())
             .as_mut()
             .poll(cx)
@@ -291,7 +291,7 @@ where
 {
     type Error = MpcNetworkError;
 
-    fn start_send(mut self: Pin<&mut Self>, msg: NetworkOutbound<C>) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, msg: NetworkOutbound<C>) -> Result<(), Self::Error> {
         if !self.connected {
             return Err(MpcNetworkError::NetworkUninitialized);
         }

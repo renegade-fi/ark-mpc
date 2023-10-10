@@ -3,9 +3,9 @@
 use itertools::Itertools;
 use mpc_stark::{
     algebra::{
-        mpc_stark_point::MpcStarkPointResult,
+        curve::CurvePointResult,
+        mpc_curve::MpcPointResult,
         scalar::{Scalar, ScalarResult},
-        stark_curve::StarkPointResult,
     },
     random_point, PARTY0, PARTY1,
 };
@@ -17,7 +17,7 @@ use crate::{
         share_plaintext_value, share_plaintext_values_batch, share_point, share_point_batch,
         share_scalar, share_scalar_batch,
     },
-    IntegrationTest, IntegrationTestArgs,
+    IntegrationTest, IntegrationTestArgs, TestCurve,
 };
 
 /// Test addition of `MpcStarkPoint` types
@@ -89,13 +89,13 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let party0_values = share_point_batch(points.clone(), PARTY0, test_args);
     let party1_values = share_point_batch(points, PARTY1, test_args);
 
-    let res = MpcStarkPointResult::batch_add(&party0_values, &party1_values);
-    let opened_res = await_result_batch(&MpcStarkPointResult::open_batch(&res));
+    let res = MpcPointResult::batch_add(&party0_values, &party1_values);
+    let opened_res = await_result_batch(&MpcPointResult::open_batch(&res));
 
     assert_point_batches_eq(opened_res, expected_result)
 }
 
-/// Tests addition between a batch of `MpcStarkPointResult`s and `StarkPointResult`s
+/// Tests addition between a batch of `MpcPointResult`s and `StarkPointResult`s
 fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -114,8 +114,8 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
     // Secret share the values and add them together in the MPC circuit
     let party0_values = share_point_batch(points, PARTY0, test_args);
-    let res = MpcStarkPointResult::batch_add_public(&party0_values, &plaintext_values);
-    let res_open = await_result_batch(&MpcStarkPointResult::open_batch(&res));
+    let res = MpcPointResult::batch_add_public(&party0_values, &plaintext_values);
+    let res_open = await_result_batch(&MpcPointResult::open_batch(&res));
 
     assert_point_batches_eq(res_open, expected_result)
 }
@@ -189,8 +189,8 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let party0_values = share_point_batch(points.clone(), PARTY0, test_args);
     let party1_values = share_point_batch(points, PARTY1, test_args);
 
-    let res = MpcStarkPointResult::batch_sub(&party0_values, &party1_values);
-    let opened_res = await_result_batch(&MpcStarkPointResult::open_batch(&res));
+    let res = MpcPointResult::batch_sub(&party0_values, &party1_values);
+    let opened_res = await_result_batch(&MpcPointResult::open_batch(&res));
 
     assert_point_batches_eq(opened_res, expected_result)
 }
@@ -214,8 +214,8 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
     // Secret share the values and add them together in the MPC circuit
     let party0_values = share_point_batch(points, PARTY0, test_args);
-    let res = MpcStarkPointResult::batch_sub_public(&party0_values, &plaintext_values);
-    let res_open = await_result_batch(&MpcStarkPointResult::open_batch(&res));
+    let res = MpcPointResult::batch_sub_public(&party0_values, &plaintext_values);
+    let res_open = await_result_batch(&MpcPointResult::open_batch(&res));
 
     assert_point_batches_eq(res_open, expected_result)
 }
@@ -258,8 +258,8 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Secret share the values and add them together in the MPC circuit
     let party0_values = share_point_batch(points, PARTY0, test_args);
-    let res = MpcStarkPointResult::batch_neg(&party0_values);
-    let opened_res = await_result_batch(&MpcStarkPointResult::open_batch(&res));
+    let res = MpcPointResult::batch_neg(&party0_values);
+    let opened_res = await_result_batch(&MpcPointResult::open_batch(&res));
 
     assert_point_batches_eq(opened_res, expected_result)
 }
@@ -273,12 +273,12 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let scalar = Scalar::random(&mut rng);
 
     // Share the values with the counterparty
-    let plaintext_point: StarkPointResult = share_plaintext_value(
+    let plaintext_point: CurvePointResult<TestCurve> = share_plaintext_value(
         test_args.fabric.allocate_point(point),
         PARTY0,
         &test_args.fabric,
     );
-    let plaintext_scalar: ScalarResult = share_plaintext_value(
+    let plaintext_scalar: ScalarResult<TestCurve> = share_plaintext_value(
         test_args.fabric.allocate_scalar(scalar),
         PARTY1,
         &test_args.fabric,
@@ -311,7 +311,7 @@ fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), Strin
         PARTY0,
         &test_args.fabric,
     );
-    let plaintext_scalar: ScalarResult = share_plaintext_value(
+    let plaintext_scalar: ScalarResult<TestCurve> = share_plaintext_value(
         test_args.fabric.allocate_scalar(scalar),
         PARTY1,
         &test_args.fabric,
@@ -361,13 +361,13 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let party0_values = share_point_batch(points, PARTY0, test_args);
     let party1_values = share_scalar_batch(scalars, PARTY1, test_args);
 
-    let res = MpcStarkPointResult::batch_mul(&party1_values, &party0_values);
-    let opened_res = await_result_batch(&MpcStarkPointResult::open_batch(&res));
+    let res = MpcPointResult::batch_mul(&party1_values, &party0_values);
+    let opened_res = await_result_batch(&MpcPointResult::open_batch(&res));
 
     assert_point_batches_eq(opened_res, expected_result)
 }
 
-/// Test multiplication of a batch of `MpcStarkPointResult`s with `ScalarResult`s
+/// Test multiplication of a batch of `MpcPointResult`s with `ScalarResult`s
 fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let mut rng = thread_rng();
@@ -390,8 +390,8 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
     // Secret share the values and add them together in the MPC circuit
     let party0_values = share_point_batch(points, PARTY0, test_args);
-    let res = MpcStarkPointResult::batch_mul_public(&plaintext_values, &party0_values);
-    let res_open = await_result_batch(&MpcStarkPointResult::open_batch(&res));
+    let res = MpcPointResult::batch_mul_public(&plaintext_values, &party0_values);
+    let res_open = await_result_batch(&MpcPointResult::open_batch(&res));
 
     assert_point_batches_eq(res_open, expected_result)
 }
