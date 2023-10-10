@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use mpc_stark::{algebra::scalar::Scalar, buffer::GrowableBuffer};
+use mpc_stark::{algebra::scalar::Scalar, buffer::GrowableBuffer, test_helpers::TestCurve};
 
 // --------------
 // | Benchmarks |
@@ -11,7 +11,7 @@ pub fn buffer_read__sequential(c: &mut Criterion) {
     let mut group = c.benchmark_group("buffer_read__sequential");
 
     for buffer_size in [1_000, 10_000, 100_000, 1_000_000] {
-        let buffer: GrowableBuffer<Scalar> = GrowableBuffer::new(buffer_size);
+        let buffer: GrowableBuffer<Scalar<TestCurve>> = GrowableBuffer::new(buffer_size);
 
         group.throughput(Throughput::Elements(buffer_size as u64));
         group.bench_function(BenchmarkId::from_parameter(buffer_size), |b| {
