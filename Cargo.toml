@@ -18,6 +18,7 @@ path = "src/lib.rs"
 benchmarks = []
 stats = ["benchmarks"]
 test_helpers = ["ark-bn254"]
+poly = []
 
 [[test]]
 name = "integration"

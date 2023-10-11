@@ -1,11 +1,7 @@
 //! Defines tests for the `MpcPointResult` type and arithmetic on this type
 
 use ark_mpc::{
-    algebra::{
-        curve::CurvePointResult,
-        mpc_curve::MpcPointResult,
-        scalar::{Scalar, ScalarResult},
-    },
+    algebra::{CurvePointResult, MpcPointResult, Scalar, ScalarResult},
     random_point, PARTY0, PARTY1,
 };
 use itertools::Itertools;

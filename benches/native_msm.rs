@@ -1,7 +1,7 @@
 //! Defines a benchmark for native multiscalar-multiplication on `Scalar` and `CurvePoint` types
 
 use ark_mpc::{
-    algebra::{curve::CurvePoint, scalar::Scalar},
+    algebra::{CurvePoint, Scalar},
     random_point,
     test_helpers::TestCurve,
 };

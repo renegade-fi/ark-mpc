@@ -2,10 +2,7 @@
 //! a malicious-secure primitive
 
 use ark_mpc::{
-    algebra::{
-        authenticated_scalar::{test_helpers::*, AuthenticatedScalarResult},
-        scalar::Scalar,
-    },
+    algebra::{scalar_test_helpers::*, AuthenticatedScalarResult, Scalar},
     ResultValue, PARTY0, PARTY1,
 };
 use itertools::Itertools;

@@ -6,14 +6,12 @@ use std::ops::{Add, Mul, Neg, Sub};
 use ark_ec::CurveGroup;
 use itertools::Itertools;
 
-use crate::{fabric::ResultValue, network::NetworkPayload, MpcFabric, ResultId, PARTY0};
-
-use super::{
-    curve::{BatchCurvePointResult, CurvePoint, CurvePointResult},
-    macros::{impl_borrow_variants, impl_commutative},
-    mpc_scalar::MpcScalarResult,
-    scalar::{Scalar, ScalarResult},
+use crate::{
+    algebra::macros::*, algebra::scalar::*, fabric::ResultValue, network::NetworkPayload,
+    MpcFabric, ResultId, PARTY0,
 };
+
+use super::curve::{BatchCurvePointResult, CurvePoint, CurvePointResult};
 
 /// Defines a secret shared type of a curve point
 #[derive(Clone, Debug)]

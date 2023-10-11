@@ -14,7 +14,7 @@ use ark_ec::CurveGroup;
 use futures::Future;
 
 use crate::{
-    algebra::{curve::CurvePoint, scalar::Scalar},
+    algebra::{CurvePoint, Scalar},
     network::NetworkPayload,
     Shared,
 };

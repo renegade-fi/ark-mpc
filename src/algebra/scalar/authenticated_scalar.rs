@@ -13,6 +13,7 @@ use futures::{Future, FutureExt};
 use itertools::{izip, Itertools};
 
 use crate::{
+    algebra::{macros::*, AuthenticatedPointResult, CurvePoint, CurvePointResult},
     commitment::{PedersenCommitment, PedersenCommitmentResult},
     error::MpcError,
     fabric::{MpcFabric, ResultId, ResultValue},
@@ -20,9 +21,6 @@ use crate::{
 };
 
 use super::{
-    authenticated_curve::AuthenticatedPointResult,
-    curve::{CurvePoint, CurvePointResult},
-    macros::{impl_borrow_variants, impl_commutative},
     mpc_scalar::MpcScalarResult,
     scalar::{BatchScalarResult, Scalar, ScalarResult},
 };

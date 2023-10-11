@@ -9,7 +9,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use algebra::{curve::CurvePoint, scalar::Scalar};
+use algebra::{CurvePoint, Scalar};
 use ark_ec::CurveGroup;
 
 use rand::thread_rng;
