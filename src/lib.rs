@@ -65,7 +65,7 @@ pub mod test_helpers {
 
     use ark_bn254::G1Projective as Bn254Projective;
 
-    /// A curve used for testing algebra implementations, set to curve25519
+    /// A curve used for testing algebra implementations, set to bn254
     pub type TestCurve = Bn254Projective;
 
     /// Create a mock fabric

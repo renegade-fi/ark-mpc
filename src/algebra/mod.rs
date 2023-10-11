@@ -2,9 +2,12 @@
 
 mod curve;
 mod macros;
-mod poly;
 mod scalar;
 
-pub use curve::*;
+#[cfg(feature = "poly")]
+mod poly;
+#[cfg(feature = "poly")]
 pub use poly::*;
+
+pub use curve::*;
 pub use scalar::*;
