@@ -24,20 +24,13 @@ use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::{
     algebra::{
-        authenticated_curve::AUTHENTICATED_POINT_RESULT_LEN,
-        authenticated_scalar::AUTHENTICATED_SCALAR_RESULT_LEN,
+        macros::*, n_bytes_field, scalar::*, AUTHENTICATED_POINT_RESULT_LEN,
+        AUTHENTICATED_SCALAR_RESULT_LEN,
     },
     fabric::{ResultHandle, ResultValue},
 };
 
-use super::{
-    authenticated_curve::AuthenticatedPointResult,
-    authenticated_scalar::AuthenticatedScalarResult,
-    macros::{impl_borrow_variants, impl_commutative},
-    mpc_curve::MpcPointResult,
-    mpc_scalar::MpcScalarResult,
-    scalar::{n_bytes_field, Scalar, ScalarResult},
-};
+use super::{authenticated_curve::AuthenticatedPointResult, mpc_curve::MpcPointResult};
 
 /// The number of points and scalars to pull from an iterated MSM when
 /// performing a multiscalar multiplication

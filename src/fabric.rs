@@ -35,12 +35,9 @@ use itertools::Itertools;
 
 use crate::{
     algebra::{
-        authenticated_curve::AuthenticatedPointResult,
-        authenticated_scalar::AuthenticatedScalarResult,
-        curve::{BatchCurvePointResult, CurvePoint, CurvePointResult},
-        mpc_curve::MpcPointResult,
-        mpc_scalar::MpcScalarResult,
-        scalar::{BatchScalarResult, Scalar, ScalarResult},
+        AuthenticatedPointResult, AuthenticatedScalarResult, BatchCurvePointResult,
+        BatchScalarResult, CurvePoint, CurvePointResult, MpcPointResult, MpcScalarResult, Scalar,
+        ScalarResult,
     },
     beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},

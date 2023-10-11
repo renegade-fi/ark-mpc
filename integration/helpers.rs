@@ -4,9 +4,8 @@ use std::fmt::Debug;
 
 use ark_mpc::{
     algebra::{
-        authenticated_curve::AuthenticatedPointResult,
-        authenticated_scalar::AuthenticatedScalarResult, mpc_curve::MpcPointResult,
-        mpc_scalar::MpcScalarResult, scalar::Scalar,
+        AuthenticatedPointResult, AuthenticatedScalarResult, MpcPointResult, MpcScalarResult,
+        Scalar,
     },
     beaver::SharedValueSource,
     network::{NetworkPayload, PartyId},

@@ -7,18 +7,15 @@ use ark_ec::CurveGroup;
 use itertools::Itertools;
 
 use crate::{
-    algebra::scalar::BatchScalarResult,
+    algebra::macros::*,
+    algebra::BatchScalarResult,
+    algebra::{CurvePoint, CurvePointResult, MpcPointResult},
     fabric::{MpcFabric, ResultValue},
     network::NetworkPayload,
     PARTY0,
 };
 
-use super::{
-    curve::{CurvePoint, CurvePointResult},
-    macros::{impl_borrow_variants, impl_commutative},
-    mpc_curve::MpcPointResult,
-    scalar::{Scalar, ScalarResult},
-};
+use super::scalar::{Scalar, ScalarResult};
 
 /// Defines a secret shared type over the `Scalar` field
 #[derive(Clone, Debug)]

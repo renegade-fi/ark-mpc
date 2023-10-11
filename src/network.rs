@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    algebra::{curve::CurvePoint, scalar::Scalar},
+    algebra::{CurvePoint, Scalar},
     error::MpcNetworkError,
     fabric::ResultId,
 };

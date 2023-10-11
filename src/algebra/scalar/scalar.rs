@@ -18,9 +18,8 @@ use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
+use crate::algebra::macros::*;
 use crate::fabric::{ResultHandle, ResultValue};
-
-use super::macros::{impl_borrow_variants, impl_commutative};
 
 // -----------
 // | Helpers |

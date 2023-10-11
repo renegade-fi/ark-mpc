@@ -1,8 +1,8 @@
 use std::{path::Path, sync::Mutex};
 
 use ark_mpc::{
-    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork,
-    test_helpers::TestCurve, MpcFabric, PARTY0,
+    algebra::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork, test_helpers::TestCurve,
+    MpcFabric, PARTY0,
 };
 use cpuprofiler::{Profiler as CpuProfiler, PROFILER};
 use criterion::{

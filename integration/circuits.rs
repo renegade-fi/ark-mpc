@@ -1,10 +1,7 @@
 //! Tests for more complicated operations (i.e. circuits)
 
 use ark_mpc::{
-    algebra::{
-        authenticated_curve::AuthenticatedPointResult,
-        authenticated_scalar::AuthenticatedScalarResult, scalar::Scalar,
-    },
+    algebra::{AuthenticatedPointResult, AuthenticatedScalarResult, Scalar},
     random_point, PARTY0, PARTY1,
 };
 use itertools::Itertools;

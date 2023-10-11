@@ -4,8 +4,8 @@
 use std::time::Instant;
 
 use ark_mpc::{
-    algebra::scalar::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork,
-    test_helpers::TestCurve, MpcFabric, PARTY0,
+    algebra::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork, test_helpers::TestCurve,
+    MpcFabric, PARTY0,
 };
 use clap::Parser;
 use cpuprofiler::PROFILER;

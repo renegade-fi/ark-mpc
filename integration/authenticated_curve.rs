@@ -2,11 +2,8 @@
 
 use ark_mpc::{
     algebra::{
-        authenticated_curve::{
-            test_helpers::{modify_mac, modify_public_modifier, modify_share},
-            AuthenticatedPointResult,
-        },
-        scalar::Scalar,
+        curve_test_helpers::{modify_mac, modify_public_modifier, modify_share},
+        AuthenticatedPointResult, Scalar,
     },
     random_point, PARTY0, PARTY1,
 };

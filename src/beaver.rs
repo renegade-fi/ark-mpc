@@ -4,7 +4,7 @@
 use ark_ec::CurveGroup;
 use itertools::Itertools;
 
-use crate::algebra::scalar::Scalar;
+use crate::algebra::Scalar;
 
 /// SharedValueSource implements both the functionality for:
 ///     1. Single additively shared values [x] where party 1 holds

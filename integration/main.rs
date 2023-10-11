@@ -2,7 +2,7 @@ use std::{borrow::Borrow, io::Write, net::SocketAddr, process::exit, thread, tim
 
 use ark_bn254::G1Projective as Bn254Projective;
 use ark_mpc::{
-    algebra::{curve::CurvePoint, scalar::Scalar},
+    algebra::{CurvePoint, Scalar},
     network::{NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
     MpcFabric, PARTY0,
 };

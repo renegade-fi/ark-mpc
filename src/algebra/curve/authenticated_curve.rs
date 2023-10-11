@@ -14,6 +14,8 @@ use futures::{Future, FutureExt};
 use itertools::{izip, Itertools};
 
 use crate::{
+    algebra::macros::*,
+    algebra::scalar::*,
     commitment::{HashCommitment, HashCommitmentResult},
     error::MpcError,
     fabric::{MpcFabric, ResultValue},
@@ -21,11 +23,8 @@ use crate::{
 };
 
 use super::{
-    authenticated_scalar::AuthenticatedScalarResult,
     curve::{BatchCurvePointResult, CurvePoint, CurvePointResult},
-    macros::{impl_borrow_variants, impl_commutative},
     mpc_curve::MpcPointResult,
-    scalar::{Scalar, ScalarResult},
 };
 
 /// The number of underlying results in an `AuthenticatedPointResult`

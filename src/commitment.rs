@@ -6,10 +6,7 @@ use rand::thread_rng;
 use sha3::{Digest, Sha3_256};
 
 use crate::{
-    algebra::{
-        curve::{CurvePoint, CurvePointResult},
-        scalar::{Scalar, ScalarResult},
-    },
+    algebra::{CurvePoint, CurvePointResult, Scalar, ScalarResult},
     fabric::ResultValue,
 };
 
