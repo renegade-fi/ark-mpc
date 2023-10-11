@@ -26,7 +26,7 @@ mod mpc_scalar;
 /// The amount of time to sleep after sending a shutdown
 const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
 
-/// The curve used for testing, set to curve25519
+/// The curve used for testing, set to bn254
 pub type TestCurve = Bn254Projective;
 /// The curve point type used for testing
 pub type TestCurvePoint = CurvePoint<TestCurve>;
