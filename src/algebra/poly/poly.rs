@@ -11,13 +11,14 @@ use ark_ec::CurveGroup;
 use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
 use futures::FutureExt;
 use futures::{ready, Future};
+use itertools::Itertools;
 
 use crate::{
     algebra::{
         macros::{impl_borrow_variants, impl_commutative},
         Scalar, ScalarResult,
     },
-    MpcFabric,
+    MpcFabric, ResultValue,
 };
 
 /// A dense polynomial representation allocated in an MPC circuit
@@ -47,6 +48,31 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
     /// Returns the degree of the polynomial
     pub fn degree(&self) -> usize {
         self.coeffs.len() - 1
+    }
+
+    /// Get a reference to the fabric that the polynomial is allocated within
+    pub(crate) fn fabric(&self) -> &MpcFabric<C> {
+        self.coeffs[0].fabric()
+    }
+
+    /// Evaluate the polynomial at a given point
+    pub fn eval(&self, point: ScalarResult<C>) -> ScalarResult<C> {
+        let fabric = self.fabric();
+        let mut deps = self.coeffs.iter().map(|coeff| coeff.id()).collect_vec();
+        deps.push(point.id());
+
+        let n_coeffs = self.coeffs.len();
+        fabric.new_gate_op(deps, move |mut args| {
+            let coeffs: Vec<Scalar<C>> = args.drain(..n_coeffs).map(|res| res.into()).collect_vec();
+            let point: Scalar<C> = args.pop().unwrap().into();
+
+            let mut res = Scalar::zero();
+            for coeff in coeffs.iter().rev() {
+                res = res * point + coeff;
+            }
+
+            ResultValue::Scalar(res)
+        })
     }
 }
 
@@ -218,13 +244,14 @@ impl_borrow_variants!(DensePolynomialResult<C>, Mul, mul, *, DensePolynomialResu
 
 #[cfg(test)]
 mod test {
-    use ark_ec::Group;
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
-    use ark_std::UniformRand;
-    use rand::{thread_rng, Rng};
+    use rand::thread_rng;
 
     use crate::{
-        algebra::Scalar,
+        algebra::{
+            poly_test_helpers::{random_poly, TestPolyField},
+            Scalar,
+        },
         test_helpers::{execute_mock_mpc, TestCurve},
         MpcFabric,
     };
@@ -233,23 +260,6 @@ mod test {
 
     /// Degree bound on polynomials used for testing
     const DEGREE_BOUND: usize = 100;
-    /// The scalar field testing polynomials are defined over
-    type TestPolyField = <TestCurve as Group>::ScalarField;
-
-    /// Generate a random polynomial given a degree bound
-    fn random_poly(degree_bound: usize) -> DensePolynomial<TestPolyField> {
-        let mut rng = thread_rng();
-
-        // Sample a random degree below the bound
-        let degree = rng.gen_range(1..degree_bound);
-        let mut coeffs = Vec::with_capacity(degree + 1);
-        for _ in 0..degree {
-            // Sample a random coefficient
-            coeffs.push(<TestCurve as Group>::ScalarField::rand(&mut rng));
-        }
-
-        DensePolynomial::from_coefficients_vec(coeffs)
-    }
 
     /// Allocate a polynomial in an MPC fabric
     fn allocate_poly(
@@ -411,5 +421,29 @@ mod test {
         .await;
 
         assert_eq!(res, expected_res);
+    }
+
+    /// Test evaluating a polynomial in the computation graph
+    #[tokio::test]
+    async fn test_eval() {
+        let poly = random_poly(DEGREE_BOUND);
+
+        let mut rng = thread_rng();
+        let eval_point = Scalar::random(&mut rng);
+
+        let expected_eval = poly.evaluate(&eval_point.inner());
+
+        let (eval, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let point_res = fabric.allocate_scalar(eval_point);
+                let poly = allocate_poly(&poly, &fabric);
+
+                poly.eval(point_res).await
+            }
+        })
+        .await;
+
+        assert_eq!(eval.inner(), expected_eval);
     }
 }
