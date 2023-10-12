@@ -16,10 +16,12 @@ use itertools::Itertools;
 use crate::{
     algebra::{
         macros::{impl_borrow_variants, impl_commutative},
-        Scalar, ScalarResult,
+        AuthenticatedScalarResult, Scalar, ScalarResult,
     },
     MpcFabric, ResultValue,
 };
+
+use super::AuthenticatedDensePoly;
 
 /// A dense polynomial representation allocated in an MPC circuit
 #[derive(Clone)]
@@ -242,6 +244,40 @@ impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 }
 impl_borrow_variants!(DensePolynomialResult<C>, Mul, mul, *, DensePolynomialResult<C>, C: CurveGroup);
 
+// --- Scalar Multiplication --- //
+impl<C: CurveGroup> Mul<&Scalar<C>> for &DensePolynomialResult<C> {
+    type Output = DensePolynomialResult<C>;
+
+    fn mul(self, rhs: &Scalar<C>) -> Self::Output {
+        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        DensePolynomialResult::from_coeffs(new_coeffs)
+    }
+}
+impl_borrow_variants!(DensePolynomialResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+impl_commutative!(DensePolynomialResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+
+impl<C: CurveGroup> Mul<&ScalarResult<C>> for &DensePolynomialResult<C> {
+    type Output = DensePolynomialResult<C>;
+
+    fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
+        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        DensePolynomialResult::from_coeffs(new_coeffs)
+    }
+}
+impl_borrow_variants!(DensePolynomialResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
+impl_commutative!(DensePolynomialResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
+
+impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &DensePolynomialResult<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
+        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        AuthenticatedDensePoly::from_coeffs(new_coeffs)
+    }
+}
+impl_borrow_variants!(DensePolynomialResult<C>, Mul, mul, *, AuthenticatedScalarResult<C>, Output=AuthenticatedDensePoly<C>, C: CurveGroup);
+impl_commutative!(DensePolynomialResult<C>, Mul, mul, *, AuthenticatedScalarResult<C>, Output=AuthenticatedDensePoly<C>, C: CurveGroup);
+
 // --- Division --- //
 
 // Floor division, i.e. truncated remainder
@@ -289,36 +325,21 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 }
 
 #[cfg(test)]
-mod test {
-    use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
+pub(crate) mod test {
+    use ark_poly::Polynomial;
     use rand::thread_rng;
 
     use crate::{
         algebra::{
-            poly_test_helpers::{random_poly, TestPolyField},
+            poly_test_helpers::{allocate_poly, random_poly},
             Scalar,
         },
-        test_helpers::{execute_mock_mpc, TestCurve},
-        MpcFabric,
+        test_helpers::execute_mock_mpc,
+        PARTY0,
     };
-
-    use super::DensePolynomialResult;
 
     /// Degree bound on polynomials used for testing
     const DEGREE_BOUND: usize = 100;
-
-    /// Allocate a polynomial in an MPC fabric
-    fn allocate_poly(
-        poly: &DensePolynomial<TestPolyField>,
-        fabric: &MpcFabric<TestCurve>,
-    ) -> DensePolynomialResult<TestCurve> {
-        let mut allocated_coeffs = Vec::with_capacity(poly.degree() + 1);
-        for coeff in poly.coeffs().iter() {
-            allocated_coeffs.push(fabric.allocate_scalar(Scalar::new(*coeff)));
-        }
-
-        DensePolynomialResult::from_coeffs(allocated_coeffs)
-    }
 
     /// Test addition between a constant and result polynomial
     ///
@@ -492,6 +513,78 @@ mod test {
         .await;
 
         assert_eq!(res, expected_res);
+    }
+
+    /// Tests scalar multiplication with a constant value
+    #[tokio::test]
+    async fn test_scalar_mul_constant() {
+        let poly = random_poly(DEGREE_BOUND);
+
+        let mut rng = thread_rng();
+        let scaling_factor = Scalar::random(&mut rng);
+
+        let expected_res = &poly * scaling_factor.inner();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let poly = allocate_poly(&poly, &fabric);
+
+                (poly * scaling_factor).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
+    }
+
+    /// Tests scalar multiplication with a public result value
+    #[tokio::test]
+    async fn test_scalar_mul() {
+        let poly = random_poly(DEGREE_BOUND);
+
+        let mut rng = thread_rng();
+        let scaling_factor = Scalar::random(&mut rng);
+
+        let expected_res = &poly * scaling_factor.inner();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let poly = allocate_poly(&poly, &fabric);
+                let scaling_factor = fabric.allocate_scalar(scaling_factor);
+
+                (poly * scaling_factor).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
+    }
+
+    /// Tests scalar multiplication with a shared result value
+    #[tokio::test]
+    async fn test_scalar_mul_shared() {
+        let poly = random_poly(DEGREE_BOUND);
+
+        let mut rng = thread_rng();
+        let scaling_factor = Scalar::random(&mut rng);
+
+        let expected_res = &poly * scaling_factor.inner();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let poly = allocate_poly(&poly, &fabric);
+                let scaling_factor = fabric.share_scalar(scaling_factor, PARTY0);
+
+                (poly * scaling_factor).open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
     }
 
     /// Test evaluating a polynomial in the computation graph
