@@ -13,11 +13,14 @@ pub use poly::*;
 #[cfg(test)]
 pub mod poly_test_helpers {
     use ark_ec::Group;
-    use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
+    use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
     use ark_std::UniformRand;
+    use itertools::Itertools;
     use rand::{thread_rng, Rng};
 
-    use crate::test_helpers::TestCurve;
+    use crate::{algebra::Scalar, network::PartyId, test_helpers::TestCurve, MpcFabric};
+
+    use super::{AuthenticatedDensePoly, DensePolynomialResult};
 
     /// The scalar field testing polynomials are defined over
     pub type TestPolyField = <TestCurve as Group>::ScalarField;
@@ -35,5 +38,30 @@ pub mod poly_test_helpers {
         }
 
         DensePolynomial::from_coefficients_vec(coeffs)
+    }
+
+    /// Allocate a polynomial in an MPC fabric
+    pub fn allocate_poly(
+        poly: &DensePolynomial<TestPolyField>,
+        fabric: &MpcFabric<TestCurve>,
+    ) -> DensePolynomialResult<TestCurve> {
+        let mut allocated_coeffs = Vec::with_capacity(poly.degree() + 1);
+        for coeff in poly.coeffs().iter() {
+            allocated_coeffs.push(fabric.allocate_scalar(Scalar::new(*coeff)));
+        }
+
+        DensePolynomialResult::from_coeffs(allocated_coeffs)
+    }
+
+    /// Allocate an authenticated polynomial in the given fabric
+    pub fn share_poly(
+        poly: DensePolynomial<TestPolyField>,
+        sender: PartyId,
+        fabric: &MpcFabric<TestCurve>,
+    ) -> AuthenticatedDensePoly<TestCurve> {
+        let coeffs = poly.coeffs.iter().copied().map(Scalar::new).collect_vec();
+        let shared_coeffs = fabric.batch_share_scalar(coeffs, sender);
+
+        AuthenticatedDensePoly::from_coeffs(shared_coeffs)
     }
 }

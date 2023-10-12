@@ -3,7 +3,7 @@
 use std::{
     fmt::Debug,
     iter::Sum,
-    ops::{Add, Mul, Neg, Sub},
+    ops::{Add, Div, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -1004,7 +1004,18 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
     }
 }
 
-// === Curve Scalar<C> Multiplication === //
+// === Division === //
+#[allow(clippy::suspicious_arithmetic_impl)]
+impl<C: CurveGroup> Div<&ScalarResult<C>> for &AuthenticatedScalarResult<C> {
+    type Output = AuthenticatedScalarResult<C>;
+    fn div(self, rhs: &ScalarResult<C>) -> Self::Output {
+        let rhs_inv = rhs.inverse();
+        self * rhs_inv
+    }
+}
+impl_borrow_variants!(AuthenticatedScalarResult<C>, Div, div, /, ScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
+
+// === Curve Scalar Multiplication === //
 
 impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &CurvePoint<C> {
     type Output = AuthenticatedPointResult<C>;
@@ -1132,6 +1143,26 @@ mod tests {
 
         assert!(res.0);
         assert!(res.1)
+    }
+
+    /// Tests division between a shared and public scalar
+    #[tokio::test]
+    async fn test_public_division() {
+        let mut rng = thread_rng();
+        let value1 = Scalar::random(&mut rng);
+        let value2 = Scalar::random(&mut rng);
+
+        let expected_res = value1 * value2.inverse();
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let shared_value = fabric.share_scalar(value1, PARTY0);
+            let public_value = fabric.allocate_scalar(value2);
+
+            (shared_value / public_value).open().await
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
     }
 
     /// Test a simple `XOR` circuit

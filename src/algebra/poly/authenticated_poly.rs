@@ -4,7 +4,7 @@
 
 use std::{
     cmp, iter,
-    ops::{Add, Mul, Neg, Sub},
+    ops::{Add, Div, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -288,38 +288,81 @@ impl<C: CurveGroup> Mul<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<
     }
 }
 
+// --- Division --- //
+/// Given a public divisor b(x) and shared dividend a(x) = a_1(x) + a_2(x) for party shares a_1, a_2
+/// We can divide each share locally to obtain a secret sharing of \floor{a(x) / b(x)}
+///
+/// To see this, consider that a_1(x) = q_1(x)b(x) + r_1(x) and a_2(x) = q_2(x)b(x) + r_2(x) where:
+///     - deg(q_1) = deg(a_1) - deg(b)
+///     - deg(q_2) = deg(a_2) - deg(b)
+///     - deg(r_1) < deg(b)
+///     - deg(r_2) < deg(b)
+/// The floor division operator for a(x), b(x) returns q(x) such that there exists r(x): deg(r) < deg(b)
+/// where a(x) = q(x)b(x) + r(x)
+/// Note that a_1(x) + a_2(x) = (q_1(x) + q_2(x))b(x) + r_1(x) + r_2(x), where of course
+/// deg(r_1 + r_2) < deg(b), so \floor{a(x) / b(x)} = q_1(x) + q_2(x); making q_1, q_2 additive
+/// secret shares of the result as desired
+impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    fn div(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
+        // We cannot break early if the remainder is exhausted because this will cause the gate
+        // sequencing to differ between parties in the MPC. Instead we execute the whole computation on
+        // both ends of the MPC
+        assert!(!rhs.coeffs.is_empty(), "cannot divide by zero polynomial");
+        let fabric = self.coeffs[0].fabric();
+
+        let quotient_degree = self.degree().saturating_sub(rhs.degree());
+        if quotient_degree == 0 {
+            return AuthenticatedDensePoly::zero(fabric);
+        }
+
+        let mut remainder = self.clone();
+        let mut quotient_coeffs = fabric.ones_authenticated(quotient_degree + 1);
+
+        let divisor_leading_inverse = rhs.coeffs.last().unwrap().inverse();
+        for deg in (0..=quotient_degree).rev() {
+            // Compute the quotient coefficient for this round
+            let remainder_leading_coeff = remainder.coeffs.last().unwrap();
+            let next_quotient_coeff = remainder_leading_coeff * &divisor_leading_inverse;
+
+            // Update the remainder and record the coefficient
+            for (i, divisor_coeff) in rhs.coeffs.iter().enumerate() {
+                let remainder_ind = deg + i;
+                remainder.coeffs[remainder_ind] =
+                    &remainder.coeffs[remainder_ind] - divisor_coeff * &next_quotient_coeff;
+            }
+
+            quotient_coeffs[deg] = next_quotient_coeff;
+
+            // Pop the leading coefficient (now zero) from the remainder
+            remainder.coeffs.pop();
+        }
+
+        // Reverse the quotient coefficients, long division generates them leading coefficient first, and
+        // we store them leading coefficient last
+        // quotient_coeffs.reverse();
+        AuthenticatedDensePoly::from_coeffs(quotient_coeffs)
+    }
+}
+impl_borrow_variants!(AuthenticatedDensePoly<C>, Div, div, /, DensePolynomialResult<C>, C: CurveGroup);
+
 #[cfg(test)]
 mod test {
-    use ark_poly::{univariate::DensePolynomial, Polynomial};
-    use itertools::Itertools;
+    use ark_poly::Polynomial;
     use rand::thread_rng;
 
     use crate::{
         algebra::{
-            poly_test_helpers::{random_poly, TestPolyField},
+            poly_test_helpers::{allocate_poly, random_poly, share_poly},
             Scalar,
         },
-        network::PartyId,
-        test_helpers::{execute_mock_mpc, TestCurve},
-        MpcFabric, PARTY0,
+        test_helpers::execute_mock_mpc,
+        PARTY0,
     };
-
-    use super::AuthenticatedDensePoly;
 
     /// The degree bound used for testing
     const DEGREE_BOUND: usize = 100;
-
-    /// Allocate an authenticated polynomial in the given fabric
-    fn share_poly(
-        poly: DensePolynomial<TestPolyField>,
-        sender: PartyId,
-        fabric: &MpcFabric<TestCurve>,
-    ) -> AuthenticatedDensePoly<TestCurve> {
-        let coeffs = poly.coeffs.iter().copied().map(Scalar::new).collect_vec();
-        let shared_coeffs = fabric.batch_share_scalar(coeffs, sender);
-
-        AuthenticatedDensePoly::from_coeffs(shared_coeffs)
-    }
 
     /// Test evaluating a polynomial at a given point
     #[tokio::test]
@@ -490,6 +533,37 @@ mod test {
 
                 let res = &shared_poly1 * &shared_poly2;
                 res.open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
+    /// Tests dividing a shared polynomial by a public polynomial
+    #[tokio::test]
+    async fn test_div_polynomial_public() {
+        let poly1 = random_poly(DEGREE_BOUND);
+        let poly2 = random_poly(DEGREE_BOUND);
+
+        let (poly1, poly2) = if poly1.degree() < poly2.degree() {
+            (poly2, poly1)
+        } else {
+            (poly1, poly2)
+        };
+
+        let expected_res = &poly1 / &poly2;
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly1 = poly1.clone();
+            let poly2 = poly2.clone();
+            async move {
+                let dividend = share_poly(poly1, PARTY0, &fabric);
+                let divisor = allocate_poly(&poly2, &fabric);
+
+                let quotient = dividend / divisor;
+                quotient.open_authenticated().await
             }
         })
         .await;
