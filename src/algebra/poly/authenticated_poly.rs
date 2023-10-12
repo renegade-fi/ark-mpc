@@ -288,6 +288,41 @@ impl<C: CurveGroup> Mul<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<
     }
 }
 
+// --- Scalar Multiplication --- //
+
+impl<C: CurveGroup> Mul<&Scalar<C>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    fn mul(self, rhs: &Scalar<C>) -> Self::Output {
+        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        AuthenticatedDensePoly::from_coeffs(new_coeffs)
+    }
+}
+impl_borrow_variants!(AuthenticatedDensePoly<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+impl_commutative!(AuthenticatedDensePoly<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
+
+impl<C: CurveGroup> Mul<&ScalarResult<C>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
+        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        AuthenticatedDensePoly::from_coeffs(new_coeffs)
+    }
+}
+impl_borrow_variants!(AuthenticatedDensePoly<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
+impl_commutative!(AuthenticatedDensePoly<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
+
+impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
+        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        AuthenticatedDensePoly::from_coeffs(new_coeffs)
+    }
+}
+impl_borrow_variants!(AuthenticatedDensePoly<C>, Mul, mul, *, AuthenticatedScalarResult<C>, C: CurveGroup);
+impl_commutative!(AuthenticatedDensePoly<C>, Mul, mul, *, AuthenticatedScalarResult<C>, C: CurveGroup);
+
 // --- Division --- //
 /// Given a public divisor b(x) and shared dividend a(x) = a_1(x) + a_2(x) for party shares a_1, a_2
 /// We can divide each share locally to obtain a secret sharing of \floor{a(x) / b(x)}
@@ -318,7 +353,7 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
         }
 
         let mut remainder = self.clone();
-        let mut quotient_coeffs = fabric.ones_authenticated(quotient_degree + 1);
+        let mut quotient_coeffs = fabric.zeros_authenticated(quotient_degree + 1);
 
         let divisor_leading_inverse = rhs.coeffs.last().unwrap().inverse();
         for deg in (0..=quotient_degree).rev() {
@@ -339,9 +374,6 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
             remainder.coeffs.pop();
         }
 
-        // Reverse the quotient coefficients, long division generates them leading coefficient first, and
-        // we store them leading coefficient last
-        // quotient_coeffs.reverse();
         AuthenticatedDensePoly::from_coeffs(quotient_coeffs)
     }
 }
@@ -541,17 +573,81 @@ mod test {
         assert_eq!(res.unwrap(), expected_res);
     }
 
+    /// Tests multiplying by a public constant scalar
+    #[tokio::test]
+    async fn test_scalar_mul_constant() {
+        let mut rng = thread_rng();
+        let poly = random_poly(DEGREE_BOUND);
+        let scaling_factor = Scalar::random(&mut rng);
+
+        let expected_res = &poly * scaling_factor.inner();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let shared_poly = share_poly(poly, PARTY0, &fabric);
+                (shared_poly * scaling_factor).open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
+    /// Tests multiplying by a public result
+    #[tokio::test]
+    async fn test_scalar_mul_public() {
+        let mut rng = thread_rng();
+        let poly = random_poly(DEGREE_BOUND);
+        let scaling_factor = Scalar::random(&mut rng);
+
+        let expected_res = &poly * scaling_factor.inner();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let shared_poly = share_poly(poly, PARTY0, &fabric);
+                let scaling_factor = fabric.allocate_scalar(scaling_factor);
+
+                (shared_poly * scaling_factor).open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
+    /// Tests multiplying by a shared scalar
+    #[tokio::test]
+    async fn test_scalar_mul() {
+        let mut rng = thread_rng();
+        let poly = random_poly(DEGREE_BOUND);
+        let scaling_factor = Scalar::random(&mut rng);
+
+        let expected_res = &poly * scaling_factor.inner();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let shared_poly = share_poly(poly, PARTY0, &fabric);
+                let scaling_factor = fabric.share_scalar(scaling_factor, PARTY0);
+
+                (shared_poly * scaling_factor).open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
     /// Tests dividing a shared polynomial by a public polynomial
     #[tokio::test]
     async fn test_div_polynomial_public() {
         let poly1 = random_poly(DEGREE_BOUND);
         let poly2 = random_poly(DEGREE_BOUND);
-
-        let (poly1, poly2) = if poly1.degree() < poly2.degree() {
-            (poly2, poly1)
-        } else {
-            (poly1, poly2)
-        };
 
         let expected_res = &poly1 / &poly2;
 
