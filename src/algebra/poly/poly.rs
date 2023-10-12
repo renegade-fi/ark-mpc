@@ -2,7 +2,7 @@
 
 use std::{
     cmp, iter,
-    ops::{Add, Mul, Neg, Sub},
+    ops::{Add, Div, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -36,12 +36,12 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
     }
 
     /// Construct the zero polynomial (additive identity)
-    pub fn zero(fabric: MpcFabric<C>) -> Self {
+    pub fn zero(fabric: &MpcFabric<C>) -> Self {
         Self::from_coeffs(vec![fabric.zero()])
     }
 
     /// Construct the one polynomial (multiplicative identity)
-    pub fn one(fabric: MpcFabric<C>) -> Self {
+    pub fn one(fabric: &MpcFabric<C>) -> Self {
         Self::from_coeffs(vec![fabric.one()])
     }
 
@@ -242,6 +242,52 @@ impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 }
 impl_borrow_variants!(DensePolynomialResult<C>, Mul, mul, *, DensePolynomialResult<C>, C: CurveGroup);
 
+// --- Division --- //
+
+// Floor division, i.e. truncated remainder
+#[allow(clippy::suspicious_arithmetic_impl)]
+impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &DensePolynomialResult<C> {
+    type Output = DensePolynomialResult<C>;
+
+    fn div(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
+        let fabric = self.coeffs[0].fabric();
+        if self.degree() < rhs.degree() {
+            return DensePolynomialResult::zero(fabric);
+        }
+
+        let n_lhs_coeffs = self.coeffs.len();
+        let n_rhs_coeffs = rhs.coeffs.len();
+
+        let mut deps = self.coeffs.iter().map(|coeff| coeff.id()).collect_vec();
+        deps.extend(rhs.coeffs.iter().map(|coeff| coeff.id()));
+
+        // Allocate a gate to return the coefficients of the quotient polynomial
+        let result_degree = self.degree().saturating_sub(rhs.degree());
+        let coeff_results =
+            fabric.new_batch_gate_op(deps, result_degree + 1 /* arity */, move |mut args| {
+                let lhs_coeffs: Vec<C::ScalarField> = args
+                    .drain(..n_lhs_coeffs)
+                    .map(|res| Scalar::<C>::from(res).inner())
+                    .collect_vec();
+                let rhs_coeffs = args
+                    .drain(..n_rhs_coeffs)
+                    .map(|res| Scalar::<C>::from(res).inner())
+                    .collect_vec();
+
+                let lhs_poly = DensePolynomial::from_coefficients_vec(lhs_coeffs);
+                let rhs_poly = DensePolynomial::from_coefficients_vec(rhs_coeffs);
+
+                let res = &lhs_poly / &rhs_poly;
+                res.coeffs
+                    .iter()
+                    .map(|coeff| ResultValue::Scalar(Scalar::new(*coeff)))
+                    .collect_vec()
+            });
+
+        DensePolynomialResult::from_coeffs(coeff_results)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
@@ -414,6 +460,31 @@ mod test {
                 let poly1 = allocate_poly(&poly1, &fabric);
                 let poly2 = allocate_poly(&poly2, &fabric);
                 let res = &poly1 * &poly2;
+
+                res.await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
+    }
+
+    /// Tests dividing one polynomial by another
+    #[tokio::test]
+    async fn test_poly_div() {
+        let poly1 = random_poly(DEGREE_BOUND);
+        let poly2 = random_poly(DEGREE_BOUND);
+
+        let expected_res = &poly1 / &poly2;
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly1 = poly1.clone();
+            let poly2 = poly2.clone();
+
+            async move {
+                let poly1 = allocate_poly(&poly1, &fabric);
+                let poly2 = allocate_poly(&poly2, &fabric);
+                let res = &poly1 / &poly2;
 
                 res.await
             }
