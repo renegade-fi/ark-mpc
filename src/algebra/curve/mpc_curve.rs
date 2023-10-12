@@ -102,7 +102,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
                 party0_values
                     .into_iter()
-                    .zip(party1_values.into_iter())
+                    .zip(party1_values)
                     .map(|(x, y)| x + y)
                     .map(ResultValue::Point)
                     .collect_vec()
@@ -235,7 +235,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
                 lhs_points
                     .into_iter()
-                    .zip(rhs_points.into_iter())
+                    .zip(rhs_points)
                     .map(|(x, y)| if party_id == PARTY0 { x + y } else { x })
                     .map(ResultValue::Point)
                     .collect_vec()
@@ -363,7 +363,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
                 lhs_points
                     .into_iter()
-                    .zip(rhs_points.into_iter())
+                    .zip(rhs_points)
                     .map(|(x, y)| if party_id == PARTY0 { x - y } else { x })
                     .map(ResultValue::Point)
                     .collect_vec()
@@ -536,7 +536,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
                 scalars
                     .into_iter()
-                    .zip(points.into_iter())
+                    .zip(points)
                     .map(|(x, y)| x * y)
                     .map(ResultValue::Point)
                     .collect_vec()

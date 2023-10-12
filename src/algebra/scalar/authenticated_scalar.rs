@@ -99,7 +99,7 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         mpc_values
             .into_iter()
-            .zip(values_macs.into_iter())
+            .zip(values_macs)
             .map(|(value, mac)| Self {
                 share: value,
                 mac,
@@ -376,7 +376,7 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         values_open
             .into_iter()
-            .zip(commitment_checks.into_iter())
+            .zip(commitment_checks)
             .map(|(value, check)| AuthenticatedScalarOpenResult {
                 value,
                 mac_check: check,

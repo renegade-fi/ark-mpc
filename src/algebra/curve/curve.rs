@@ -85,6 +85,11 @@ impl<C: CurveGroup> CurvePoint<C> {
         self == &CurvePoint::identity()
     }
 
+    /// Return the wrapped type
+    pub fn inner(&self) -> C {
+        self.0
+    }
+
     /// Convert the point to affine
     pub fn to_affine(&self) -> C::Affine {
         self.0.into_affine()
@@ -250,7 +255,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
             let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
             a.into_iter()
-                .zip(b.into_iter())
+                .zip(b)
                 .map(|(a, b)| a + b)
                 .map(ResultValue::Point)
                 .collect_vec()
@@ -336,7 +341,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
             let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
             a.into_iter()
-                .zip(b.into_iter())
+                .zip(b)
                 .map(|(a, b)| a - b)
                 .map(ResultValue::Point)
                 .collect_vec()
@@ -469,7 +474,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
             let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
             a.into_iter()
-                .zip(b.into_iter())
+                .zip(b)
                 .map(|(a, b)| a * b)
                 .map(ResultValue::Point)
                 .collect_vec()
@@ -501,7 +506,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
                 let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
                 a.into_iter()
-                    .zip(b.into_iter())
+                    .zip(b)
                     .map(|(a, b)| a * b)
                     .map(ResultValue::Point)
                     .collect_vec()

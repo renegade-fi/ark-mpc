@@ -1071,7 +1071,7 @@ impl<C: CurveGroup> MpcFabric<C> {
             .unwrap()
             .next_shared_inverse_pair_batch(n);
 
-        let left_right = left.into_iter().chain(right.into_iter()).collect_vec();
+        let left_right = left.into_iter().chain(right).collect_vec();
         let allocated_left_right = self.allocate_scalars(left_right);
         let authenticated_left_right =
             AuthenticatedScalarResult::new_shared_batch(&allocated_left_right);

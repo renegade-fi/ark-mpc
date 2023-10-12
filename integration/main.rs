@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, io::Write, net::SocketAddr, process::exit, thread, time::Duration};
+use std::{io::Write, net::SocketAddr, process::exit, thread, time::Duration};
 
 use ark_bn254::G1Projective as Bn254Projective;
 use ark_mpc::{
@@ -154,7 +154,7 @@ fn main() {
         let mut all_success = true;
 
         for test in inventory::iter::<IntegrationTest> {
-            if args.borrow().test.is_some() && args.borrow().test.as_deref().unwrap() != test.name {
+            if args.test.is_some() && args.test.as_deref().unwrap() != test.name {
                 continue;
             }
 

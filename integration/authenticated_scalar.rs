@@ -155,7 +155,7 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     let expected_result = await_result_batch(&party0_value)
         .into_iter()
-        .zip(await_result_batch(&party1_value).into_iter())
+        .zip(await_result_batch(&party1_value))
         .map(|(x, y)| x + y)
         .collect_vec();
 
@@ -185,7 +185,7 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
     let expected_result = await_result_batch(&party0_value)
         .into_iter()
-        .zip(await_result_batch(&plaintext_value).into_iter())
+        .zip(await_result_batch(&plaintext_value))
         .map(|(x, y)| x + y)
         .collect_vec();
 
@@ -260,7 +260,7 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     let expected_result = await_result_batch(&party0_value)
         .into_iter()
-        .zip(await_result_batch(&party1_value).into_iter())
+        .zip(await_result_batch(&party1_value))
         .map(|(x, y)| x - y)
         .collect_vec();
 
@@ -290,7 +290,7 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
     let expected_result = await_result_batch(&party0_value)
         .into_iter()
-        .zip(await_result_batch(&plaintext_value).into_iter())
+        .zip(await_result_batch(&plaintext_value))
         .map(|(x, y)| x - y)
         .collect_vec();
 
@@ -412,7 +412,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     let expected_result = await_result_batch(&party0_value)
         .into_iter()
-        .zip(await_result_batch(&party1_value).into_iter())
+        .zip(await_result_batch(&party1_value))
         .map(|(x, y)| x * y)
         .collect_vec();
 
@@ -442,7 +442,7 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
     let expected_result = await_result_batch(&party0_value)
         .into_iter()
-        .zip(await_result_batch(&plaintext_value).into_iter())
+        .zip(await_result_batch(&plaintext_value))
         .map(|(x, y)| x * y)
         .collect_vec();
 

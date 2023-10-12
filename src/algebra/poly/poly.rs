@@ -245,6 +245,7 @@ impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 impl_borrow_variants!(DensePolynomialResult<C>, Mul, mul, *, DensePolynomialResult<C>, C: CurveGroup);
 
 // --- Scalar Multiplication --- //
+
 impl<C: CurveGroup> Mul<&Scalar<C>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
 

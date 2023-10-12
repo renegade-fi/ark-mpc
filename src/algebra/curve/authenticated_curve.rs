@@ -98,7 +98,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         mpc_values
             .into_iter()
-            .zip(macs.into_iter())
+            .zip(macs)
             .map(|(share, mac)| Self {
                 share,
                 mac,
@@ -373,7 +373,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         opened_values
             .into_iter()
-            .zip(commitment_checks.into_iter())
+            .zip(commitment_checks)
             .map(|(value, check)| AuthenticatedPointOpenResult {
                 value,
                 mac_check: check,

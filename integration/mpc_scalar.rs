@@ -85,7 +85,7 @@ fn test_batch_addition(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Add the values together to get the plaintext, expected result
     let expected_result = await_result_batch(&party0_values)
         .into_iter()
-        .zip(await_result_batch(&party1_values).into_iter())
+        .zip(await_result_batch(&party1_values))
         .map(|(x, y)| x + y)
         .collect_vec();
 
@@ -198,7 +198,7 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Add the values together to get the plaintext, expected result
     let expected_result = await_result_batch(&party0_values)
         .into_iter()
-        .zip(await_result_batch(&party1_values).into_iter())
+        .zip(await_result_batch(&party1_values))
         .map(|(x, y)| x - y)
         .collect_vec();
 
@@ -361,7 +361,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Add the values together to get the plaintext, expected result
     let expected_result = await_result_batch(&party0_values)
         .into_iter()
-        .zip(await_result_batch(&party1_values).into_iter())
+        .zip(await_result_batch(&party1_values))
         .map(|(x, y)| x * y)
         .collect_vec();
 

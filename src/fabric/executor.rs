@@ -215,7 +215,7 @@ impl<C: CurveGroup> Executor<C> {
         if let Some(deps) = self.dependencies.get(id) {
             let mut ready_ops = Vec::new();
             for op_id in deps.iter() {
-                let mut operation = self.operations.get_mut(*op_id).unwrap();
+                let operation = self.operations.get_mut(*op_id).unwrap();
 
                 operation.inflight_args -= 1;
                 if operation.inflight_args > 0 {
@@ -306,7 +306,7 @@ impl<C: CurveGroup> Executor<C> {
                 let output = (function)(inputs);
                 result_ids
                     .into_iter()
-                    .zip(output.into_iter())
+                    .zip(output)
                     .map(|(id, value)| OpResult { id, value })
                     .for_each(|res| self.handle_new_result(res));
             }
@@ -342,7 +342,7 @@ impl<C: CurveGroup> Executor<C> {
         // Insert the new waiter to the queue
         self.waiters
             .entry(waiter.result_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(waiter);
 
         // If the result being awaited is already available, wake the waiter

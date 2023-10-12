@@ -2,6 +2,7 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![allow(incomplete_features)]
+#![allow(ambiguous_glob_reexports)]
 #![feature(inherent_associated_types)]
 
 //! Defines an MPC implementation over the a generic Arkworks curve that allows for out-of-order execution of
