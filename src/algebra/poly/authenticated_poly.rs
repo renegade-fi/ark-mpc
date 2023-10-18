@@ -62,6 +62,11 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         self.coeffs.len() - 1
     }
 
+    /// Get the fabric underlying the polynomial
+    pub fn fabric(&self) -> &MpcFabric<C> {
+        self.coeffs[0].fabric()
+    }
+
     /// Evaluate the polynomial at a given point
     ///
     /// TODO: Opt for a more efficient implementation that allocates fewer gates, i.e.
@@ -88,6 +93,68 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         // Open the coeffs directly
         let coeff_open_results = AuthenticatedScalarResult::open_authenticated_batch(&self.coeffs);
         AuthenticatedDensePolyOpenResult { coeff_open_results }
+    }
+}
+
+/// Inversion and division helpers
+impl<C: CurveGroup> AuthenticatedDensePoly<C> {
+    /// Reduce a given polynomial mod x^n
+    ///
+    /// For a modulus of this form, this is equivalent to truncating the coefficients
+    pub fn mod_xn(&self, n: usize) -> Self {
+        let mut coeffs = self.coeffs.clone();
+        coeffs.truncate(n);
+
+        Self::from_coeffs(coeffs)
+    }
+
+    /// Reverse the coefficients of the polynomial and return a new polynomial
+    ///
+    /// This is useful when implementing division between authenticated polynomials as per:
+    ///     https://iacr.org/archive/pkc2006/39580045/39580045.pdf
+    /// Effectively, for a given polynomial a(x), the operation rev(a) returns the polynomial:
+    ///     rev(a)(x) = x^deg(a) * a(1/x)
+    /// which is emulated by reversing the coefficients directly.
+    ///
+    /// See the division docstring below for a more detailed explanation
+    pub fn rev(&self) -> Self {
+        let mut coeffs = self.coeffs.clone();
+        coeffs.reverse();
+
+        Self::from_coeffs(coeffs)
+    }
+
+    /// Get a random, shared masking polynomial of degree `n`
+    pub fn random_polynomial(n: usize, fabric: &MpcFabric<C>) -> Self {
+        let coeffs = fabric.random_shared_scalars_authenticated(n + 1);
+        Self::from_coeffs(coeffs)
+    }
+
+    /// Compute the multiplicative inverse of a polynomial in the quotient ring F[x] / (x^t)
+    ///
+    /// Uses an extension of the inverse method defined in:
+    ///     https://dl.acm.org/doi/pdf/10.1145/72981.72995
+    pub fn mul_inverse_mod_t(&self, t: usize) -> Self {
+        let fabric = self.fabric();
+        let masking_poly = Self::random_polynomial(t /* degree */, fabric);
+
+        // Mask the polynomial and open the result
+        let masked_poly = (&masking_poly * self).open_authenticated();
+
+        // Invert the public, masked polynomial without interaction
+        let masked_poly_res = DensePolynomialResult::from_coeffs(
+            masked_poly
+                .coeff_open_results
+                .into_iter()
+                .map(|c| c.value)
+                .collect_vec(),
+        );
+        let inverted_masked_poly = masked_poly_res.mul_inverse_mod_t(t);
+
+        // Multiply out this inversion with the masking polynomial to cancel the masking term
+        // and reduce modulo x^t
+        let res = &inverted_masked_poly * &masking_poly;
+        res.mod_xn(t)
     }
 }
 
@@ -260,6 +327,36 @@ impl<C: CurveGroup> Mul<&DensePolynomial<C::ScalarField>> for &AuthenticatedDens
     }
 }
 
+impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    fn mul(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
+        assert!(
+            !self.coeffs.is_empty(),
+            "cannot multiply an empty polynomial"
+        );
+        let fabric = self.coeffs[0].fabric();
+
+        // Setup the zero coefficients
+        let result_degree = self.degree() + rhs.degree();
+        let mut coeffs = Vec::with_capacity(result_degree + 1);
+        for _ in 0..(result_degree + 1) {
+            coeffs.push(fabric.zero_authenticated());
+        }
+
+        // Multiply the coefficients component-wise
+        for (i, lhs_coeff) in self.coeffs.iter().enumerate() {
+            for (j, rhs_coeff) in rhs.coeffs.iter().enumerate() {
+                coeffs[i + j] = &coeffs[i + j] + (lhs_coeff * rhs_coeff);
+            }
+        }
+
+        AuthenticatedDensePoly::from_coeffs(coeffs)
+    }
+}
+impl_borrow_variants!(AuthenticatedDensePoly<C>, Mul, mul, *, DensePolynomialResult<C>, C: CurveGroup);
+impl_commutative!(AuthenticatedDensePoly<C>, Mul, mul, *, DensePolynomialResult<C>, C: CurveGroup);
+
 impl<C: CurveGroup> Mul<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
@@ -379,6 +476,65 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
 }
 impl_borrow_variants!(AuthenticatedDensePoly<C>, Div, div, /, DensePolynomialResult<C>, C: CurveGroup);
 
+/// Authenticated division, i.e. division in which the divisor is a secret shared polynomial
+///
+/// We follow the approach of: https://iacr.org/archive/pkc2006/39580045/39580045.pdf (Section 4)
+///
+/// To see why this method holds, consider the `rev` operation for a polynomial a(x):
+///     rev(a) = x^deg(a) * a(1/x)
+/// Note that this operation is equivalent to reversing the coefficients of a(x)
+/// For f(x) / g(x) where deg(f) = n, deg(g) = m, the objective of a division with
+/// remainder algorithm is to solve:
+///     f(x) = g(x)q(x) + r(x)
+/// for q(x), r(x) uniquely where deg(r) < deg(g).
+///
+/// We could solve for q(x) easily if:
+///     1. We could "mod out" r(x) and
+///     2. If g^{-1}(x) exists
+/// The rev operator provides a transformation that makes both of these true:
+///     rev(f) = rev(g) * rev(q) + x^{n - m + 1} * rev(r)
+/// Again, we have used the `rev` operator to reverse the coefficients of each polynomial
+/// so that the leading coefficients are those of r(x). Now we can "mod out" the highest
+/// terms to get:
+///     rev(f) = rev(g) * rev(q) mod x^{n - m + 1}
+/// And now that we are working in the quotient ring F[x] / (x^{n - m + 1}), we can be sure
+/// that rev(g)^{-1}(x) exists if its lowest degree coefficient (constant coefficient) is non-zero.
+/// For random (blinded) polynomials, this is true with probability 1 - 1/p.
+///
+/// So we:
+///     1. apply the `rev` transformation,
+///     2. mod out rev{r} and solve for rev(q)
+///     3. undo the `rev` transformation to get q(x)
+///     4. solve for r(x) = f(x) - q(x)g(x), though for floor division we skip this step
+impl<C: CurveGroup> Div<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    // Let f = self, g = rhs
+    fn div(self, rhs: &AuthenticatedDensePoly<C>) -> Self::Output {
+        let n = self.degree();
+        let m = rhs.degree();
+        if n < m {
+            return AuthenticatedDensePoly::zero(self.fabric());
+        }
+
+        let modulus = n - m + 1;
+
+        // Apply the rev transformation
+        let rev_f = self.rev();
+        let rev_g = rhs.rev();
+
+        // Invert `rev_g` in the quotient ring
+        let rev_g_inv = rev_g.mul_inverse_mod_t(modulus);
+
+        // Compute rev_f * rev_g_inv and "mod out" rev_r; what is left is `rev_q`
+        let rev_q = (&rev_f * &rev_g_inv).mod_xn(modulus);
+
+        // Undo the `rev` transformation
+        rev_q.rev()
+    }
+}
+impl_borrow_variants!(AuthenticatedDensePoly<C>, Div, div, /, AuthenticatedDensePoly<C>, C: CurveGroup);
+
 #[cfg(test)]
 mod test {
     use ark_poly::Polynomial;
@@ -390,7 +546,7 @@ mod test {
             Scalar,
         },
         test_helpers::execute_mock_mpc,
-        PARTY0,
+        PARTY0, PARTY1,
     };
 
     /// The degree bound used for testing
@@ -547,6 +703,32 @@ mod test {
         assert_eq!(res.unwrap(), expected_res);
     }
 
+    /// Tests multiplying by a public polynomial result
+    #[tokio::test]
+    async fn test_mul_public_polynomial() {
+        let poly1 = random_poly(DEGREE_BOUND);
+        let poly2 = random_poly(DEGREE_BOUND);
+
+        let expected_res = &poly1 * &poly2;
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly1 = poly1.clone();
+            let poly2 = poly2.clone();
+
+            async move {
+                let shared_poly1 = share_poly(poly1, PARTY0, &fabric);
+                let poly2 = allocate_poly(&poly2, &fabric);
+
+                let res = &shared_poly1 * &poly2;
+                res.open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
     /// Test multiplying two authenticated polynomials
     #[tokio::test]
     async fn test_mul_polynomial() {
@@ -657,6 +839,31 @@ mod test {
             async move {
                 let dividend = share_poly(poly1, PARTY0, &fabric);
                 let divisor = allocate_poly(&poly2, &fabric);
+
+                let quotient = dividend / divisor;
+                quotient.open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
+    /// Tests dividing two shared polynomial
+    #[tokio::test]
+    async fn test_div_polynomial() {
+        let poly1 = random_poly(DEGREE_BOUND);
+        let poly2 = random_poly(DEGREE_BOUND);
+
+        let expected_res = &poly1 / &poly2;
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly1 = poly1.clone();
+            let poly2 = poly2.clone();
+            async move {
+                let dividend = share_poly(poly1, PARTY0, &fabric);
+                let divisor = share_poly(poly2, PARTY1, &fabric);
 
                 let quotient = dividend / divisor;
                 quotient.open_authenticated().await

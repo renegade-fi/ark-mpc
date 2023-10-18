@@ -126,7 +126,7 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
                 // f * f^{-1}(x) = 1 \in F[x] / (x^t)
                 let self_constant_coeff = self_poly.coeffs[0];
                 let inverse_constant_coeff = inverse_poly.coeffs[0];
-                let leading_coeff_inv = (self_constant_coeff * inverse_constant_coeff)
+                let constant_coeff_inv = (self_constant_coeff * inverse_constant_coeff)
                     .inverse()
                     .unwrap();
 
@@ -134,7 +134,7 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
                     .coeffs
                     .into_iter()
                     .take(n_result_coeffs)
-                    .map(|c| c * leading_coeff_inv)
+                    .map(|c| c * constant_coeff_inv)
                     .map(Scalar::new)
                     .map(ResultValue::Scalar)
                     .collect_vec()
@@ -148,6 +148,7 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
     ///
     /// I.e. for a(x), b(x) as input, we compute f(x), g(x) such that:
     ///     f(x) * a(x) + g(x) * b(x) = gcd(a, b)
+    /// This is done using the extended Euclidean method
     fn compute_bezout_polynomials(
         a: &DensePolynomial<C::ScalarField>,
         b: &DensePolynomial<C::ScalarField>,
