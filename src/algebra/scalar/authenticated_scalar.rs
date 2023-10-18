@@ -190,7 +190,6 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         //      m_i^-1 * r_i = (x_i^-1 * r_i^-1) * r_i = x_i^-1
         AuthenticatedScalarResult::batch_mul_public(&shared_scalars, &inverted_openings)
     }
-    // Compute
 }
 
 /// Opening implementations
