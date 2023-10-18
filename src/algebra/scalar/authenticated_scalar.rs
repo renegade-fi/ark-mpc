@@ -150,6 +150,51 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         vec![self.share.id(), self.mac.id(), self.public_modifier.id]
     }
 
+    /// Compute the inverse of a
+    pub fn inverse(&self) -> AuthenticatedScalarResult<C> {
+        let mut res = Self::batch_inverse(&[self.clone()]);
+        res.remove(0)
+    }
+
+    /// Compute a batch of inverses of an `AuthenticatedScalarResult`s
+    ///
+    /// This follows the protocol detailed in:
+    ///     https://dl.acm.org/doi/pdf/10.1145/72981.72995
+    /// Which gives a two round implementation
+    pub fn batch_inverse(
+        values: &[AuthenticatedScalarResult<C>],
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        let n = values.len();
+        assert!(n > 0, "cannot invert empty batch of scalars");
+
+        let fabric = values[0].fabric();
+
+        // For the following steps, let the input values be x_i for i=1..n
+
+        // 1. Sample a random shared group element from the shared value source
+        // call these values r_i for i=1..n
+        let shared_scalars = fabric.random_shared_scalars_authenticated(n);
+
+        // 2. Mask the values by multiplying them with the random scalars, i.e. compute m_i = (r_i * x_i)
+        // Open the masked values to both parties
+        let masked_values = AuthenticatedScalarResult::batch_mul(values, &shared_scalars);
+        let masked_values_open = Self::open_authenticated_batch(&masked_values);
+
+        // 3. Compute the inverse of the masked values: m_i^-1 = (x_i^-1 * r_i^-1)
+        let inverted_openings = masked_values_open
+            .into_iter()
+            .map(|val| val.value.inverse())
+            .collect_vec();
+
+        // 4. Multiply these inverted openings with the original shared scalars r_i:
+        //      m_i^-1 * r_i = (x_i^-1 * r_i^-1) * r_i = x_i^-1
+        AuthenticatedScalarResult::batch_mul_public(&shared_scalars, &inverted_openings)
+    }
+    // Compute
+}
+
+/// Opening implementations
+impl<C: CurveGroup> AuthenticatedScalarResult<C> {
     /// Open the value without checking its MAC
     pub fn open(&self) -> ScalarResult<C> {
         self.share.open()
@@ -1082,9 +1127,15 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod tests {
+    use futures::future;
+    use itertools::Itertools;
     use rand::thread_rng;
 
-    use crate::{algebra::scalar::Scalar, test_helpers::execute_mock_mpc, PARTY0};
+    use crate::{
+        algebra::{scalar::Scalar, AuthenticatedScalarResult},
+        test_helpers::{execute_mock_mpc, TestCurve},
+        PARTY0,
+    };
 
     /// Test subtraction across non-commutative types
     #[tokio::test]
@@ -1178,5 +1229,34 @@ mod tests {
         .await;
 
         assert_eq!(res.unwrap(), 0u8.into());
+    }
+
+    /// Tests computing the inverse of a scalar
+    #[tokio::test]
+    async fn test_batch_inverse() {
+        const N: usize = 10;
+
+        let mut rng = thread_rng();
+        let values = (0..N)
+            .map(|_| Scalar::<TestCurve>::random(&mut rng))
+            .collect_vec();
+        let expected_res = values.iter().map(|v| v.inverse()).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let values = values.clone();
+            async move {
+                let shared_values = fabric.batch_share_scalar(values, PARTY0 /* sender */);
+                let inverses = AuthenticatedScalarResult::batch_inverse(&shared_values);
+
+                let opening = AuthenticatedScalarResult::open_authenticated_batch(&inverses);
+                future::join_all(opening.into_iter())
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+            }
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
     }
 }
