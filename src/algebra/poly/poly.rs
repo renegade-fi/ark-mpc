@@ -8,7 +8,11 @@ use std::{
 };
 
 use ark_ec::CurveGroup;
-use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
+use ark_ff::{Field, One, Zero};
+use ark_poly::{
+    univariate::{DenseOrSparsePolynomial, DensePolynomial},
+    DenseUVPolynomial,
+};
 use futures::FutureExt;
 use futures::{ready, Future};
 use itertools::Itertools;
@@ -22,6 +26,21 @@ use crate::{
 };
 
 use super::AuthenticatedDensePoly;
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Return a representation of x^t as a `DensePolynomial`
+fn x_to_t<C: CurveGroup>(t: usize) -> DensePolynomial<C::ScalarField> {
+    let mut coeffs = vec![C::ScalarField::zero(); t];
+    coeffs.push(C::ScalarField::one());
+    DensePolynomial::from_coefficients_vec(coeffs)
+}
+
+// ------------------
+// | Implementation |
+// ------------------
 
 /// A dense polynomial representation allocated in an MPC circuit
 #[derive(Clone)]
@@ -75,6 +94,82 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
 
             ResultValue::Scalar(res)
         })
+    }
+}
+
+/// Modular inversion implementation
+impl<C: CurveGroup> DensePolynomialResult<C> {
+    /// Compute the multiplicative inverse of the polynomial mod x^t
+    ///
+    /// Done using the extended Euclidean algorithm
+    pub fn mul_inverse_mod_t(&self, t: usize) -> Self {
+        let ids = self.coeffs.iter().map(|c| c.id()).collect_vec();
+        let n_result_coeffs = t;
+
+        let res_coeffs = self.fabric().new_batch_gate_op(
+            ids,
+            n_result_coeffs, /* output_arity */
+            move |args| {
+                let x_to_t = x_to_t::<C>(t);
+
+                let self_coeffs = args
+                    .into_iter()
+                    .map(|res| Scalar::<C>::from(res).inner())
+                    .collect_vec();
+                let self_poly = DensePolynomial::from_coefficients_vec(self_coeffs);
+
+                // Compute the bezout coefficients of the two polynomials
+                let (inverse_poly, _) = Self::compute_bezout_polynomials(&self_poly, &x_to_t);
+
+                // In a polynomial ring, gcd is defined only up to scalar multiplication, so we multiply the result
+                // by the inverse of the resultant first coefficient to uniquely define the inverse as f^{-1}(x) such that
+                // f * f^{-1}(x) = 1 \in F[x] / (x^t)
+                let self_constant_coeff = self_poly.coeffs[0];
+                let inverse_constant_coeff = inverse_poly.coeffs[0];
+                let leading_coeff_inv = (self_constant_coeff * inverse_constant_coeff)
+                    .inverse()
+                    .unwrap();
+
+                inverse_poly
+                    .coeffs
+                    .into_iter()
+                    .take(n_result_coeffs)
+                    .map(|c| c * leading_coeff_inv)
+                    .map(Scalar::new)
+                    .map(ResultValue::Scalar)
+                    .collect_vec()
+            },
+        );
+
+        Self::from_coeffs(res_coeffs)
+    }
+
+    /// A helper to compute the Bezout coefficients of the two given polynomials
+    ///
+    /// I.e. for a(x), b(x) as input, we compute f(x), g(x) such that:
+    ///     f(x) * a(x) + g(x) * b(x) = gcd(a, b)
+    fn compute_bezout_polynomials(
+        a: &DensePolynomial<C::ScalarField>,
+        b: &DensePolynomial<C::ScalarField>,
+    ) -> (
+        DensePolynomial<C::ScalarField>,
+        DensePolynomial<C::ScalarField>,
+    ) {
+        if b.is_zero() {
+            return (
+                DensePolynomial::from_coefficients_vec(vec![C::ScalarField::one()]), // f(x) = 1
+                DensePolynomial::zero(),                                             // f(x) = 0
+            );
+        }
+
+        let a_transformed = DenseOrSparsePolynomial::from(a);
+        let b_transformed = DenseOrSparsePolynomial::from(b);
+        let (quotient, remainder) = a_transformed.divide_with_q_and_r(&b_transformed).unwrap();
+
+        let (f, g) = Self::compute_bezout_polynomials(b, &remainder);
+        let next_g = &f - &(&quotient * &g);
+
+        (g, next_g)
     }
 }
 
@@ -327,8 +422,10 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 
 #[cfg(test)]
 pub(crate) mod test {
+    use ark_ff::{One, Zero};
     use ark_poly::Polynomial;
-    use rand::thread_rng;
+    use itertools::Itertools;
+    use rand::{thread_rng, Rng};
 
     use crate::{
         algebra::{
@@ -610,5 +707,31 @@ pub(crate) mod test {
         .await;
 
         assert_eq!(eval.inner(), expected_eval);
+    }
+
+    /// Tests computing the modular inverse of a polynomial
+    #[tokio::test]
+    async fn test_mod_inv() {
+        let poly = random_poly(DEGREE_BOUND);
+
+        let mut rng = thread_rng();
+        let t = rng.gen_range(1..(DEGREE_BOUND * 2));
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly = poly.clone();
+            async move {
+                let poly = allocate_poly(&poly, &fabric);
+
+                poly.mul_inverse_mod_t(t).await
+            }
+        })
+        .await;
+
+        // Check that the result is correct
+        let inverted = &poly * &res;
+        let mut first_t_coeffs = inverted.coeffs.into_iter().take(t).collect_vec();
+
+        assert!(first_t_coeffs.remove(0).is_one());
+        assert!(first_t_coeffs.into_iter().all(|coeff| coeff.is_zero()));
     }
 }
