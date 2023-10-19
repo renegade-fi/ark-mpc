@@ -4,9 +4,7 @@ mod curve;
 mod macros;
 mod scalar;
 
-#[cfg(feature = "poly")]
 mod poly;
-#[cfg(feature = "poly")]
 pub use poly::*;
 
 pub use curve::*;
