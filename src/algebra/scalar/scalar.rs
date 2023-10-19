@@ -11,7 +11,8 @@ use std::{
 };
 
 use ark_ec::CurveGroup;
-use ark_ff::{batch_inversion, Field, PrimeField};
+use ark_ff::{batch_inversion, FftField, Field, PrimeField};
+use ark_poly::EvaluationDomain;
 use ark_std::UniformRand;
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -412,6 +413,62 @@ impl<C: CurveGroup> MulAssign for Scalar<C> {
     }
 }
 
+// === FFT and IFFT === //
+impl<C: CurveGroup> ScalarResult<C>
+where
+    C::ScalarField: FftField,
+{
+    /// Compute the fft of a sequence of `ScalarResult`s
+    pub fn fft<D: EvaluationDomain<C::ScalarField>>(x: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
+        assert!(!x.is_empty(), "Cannot compute fft of empty sequence");
+        let n = x.len().next_power_of_two();
+
+        let fabric = x[0].fabric();
+        let ids = x.iter().map(|v| v.id).collect_vec();
+
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let scalars = args
+                .into_iter()
+                .map(Scalar::from)
+                .map(|x| x.0)
+                .collect_vec();
+
+            let domain = D::new(n).unwrap();
+            let res = domain.fft(&scalars);
+
+            res.into_iter()
+                .map(|x| ResultValue::Scalar(Scalar::new(x)))
+                .collect_vec()
+        })
+    }
+
+    /// Compute the ifft of a sequence of `ScalarResult`s
+    pub fn ifft<D: EvaluationDomain<C::ScalarField>>(
+        x: &[ScalarResult<C>],
+    ) -> Vec<ScalarResult<C>> {
+        assert!(!x.is_empty(), "Cannot compute fft of empty sequence");
+        let n = x.len().next_power_of_two();
+
+        let fabric = x[0].fabric();
+        let ids = x.iter().map(|v| v.id).collect_vec();
+
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let scalars = args
+                .into_iter()
+                .map(Scalar::from)
+                .map(|x| x.0)
+                .collect_vec();
+
+            let domain = D::new(n).unwrap();
+            let res = domain.ifft(&scalars);
+
+            res.into_iter()
+                .map(|x| ResultValue::Scalar(Scalar::new(x)))
+                .collect_vec()
+        })
+    }
+}
+
 // ---------------
 // | Conversions |
 // ---------------
@@ -476,8 +533,14 @@ impl<C: CurveGroup> Product for Scalar<C> {
 
 #[cfg(test)]
 mod test {
-    use crate::{algebra::scalar::Scalar, test_helpers::mock_fabric};
-    use rand::thread_rng;
+    use crate::{
+        algebra::{poly_test_helpers::TestPolyField, scalar::Scalar, ScalarResult},
+        test_helpers::{execute_mock_mpc, mock_fabric, TestCurve},
+    };
+    use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+    use futures::future;
+    use itertools::Itertools;
+    use rand::{thread_rng, Rng};
 
     /// Tests addition of raw scalars in a circuit
     #[tokio::test]
@@ -559,5 +622,61 @@ mod test {
 
         assert_eq!(res_final, expected_res);
         fabric.shutdown();
+    }
+
+    /// Tests fft of scalars allocated in a circuit
+    #[tokio::test]
+    async fn test_circuit_fft() {
+        let mut rng = thread_rng();
+        let n: usize = rng.gen_range(1..=100);
+
+        let seq = (0..n)
+            .map(|_| Scalar::<TestCurve>::random(&mut rng))
+            .collect_vec();
+
+        let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
+        let fft_res = domain.fft(&seq.iter().map(|s| s.inner()).collect_vec());
+        let expected_res = fft_res.into_iter().map(Scalar::new).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let seq = seq.clone();
+            async move {
+                let seq_alloc = seq.iter().map(|x| fabric.allocate_scalar(*x)).collect_vec();
+
+                let res = ScalarResult::fft::<Radix2EvaluationDomain<TestPolyField>>(&seq_alloc);
+                future::join_all(res.into_iter()).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
+    }
+
+    /// Tests the ifft of scalars allocated in a circuit
+    #[tokio::test]
+    async fn test_circuit_ifft() {
+        let mut rng = thread_rng();
+        let n: usize = rng.gen_range(1..=100);
+
+        let seq = (0..n)
+            .map(|_| Scalar::<TestCurve>::random(&mut rng))
+            .collect_vec();
+
+        let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
+        let ifft_res = domain.ifft(&seq.iter().map(|s| s.inner()).collect_vec());
+        let expected_res = ifft_res.into_iter().map(Scalar::new).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let seq = seq.clone();
+            async move {
+                let seq_alloc = seq.iter().map(|x| fabric.allocate_scalar(*x)).collect_vec();
+
+                let res = ScalarResult::ifft::<Radix2EvaluationDomain<TestPolyField>>(&seq_alloc);
+                future::join_all(res.into_iter()).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
     }
 }

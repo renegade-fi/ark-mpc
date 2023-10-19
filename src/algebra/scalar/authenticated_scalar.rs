@@ -9,6 +9,8 @@ use std::{
 };
 
 use ark_ec::CurveGroup;
+use ark_ff::FftField;
+use ark_poly::EvaluationDomain;
 use futures::{Future, FutureExt};
 use itertools::{izip, Itertools};
 
@@ -137,6 +139,11 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
     /// Get the raw share as a `ScalarResult`
     pub fn share(&self) -> ScalarResult<C> {
         self.share.to_scalar()
+    }
+
+    /// Get the raw share of the MAC as a `ScalarResult`
+    pub fn mac_share(&self) -> ScalarResult<C> {
+        self.mac.to_scalar()
     }
 
     /// Get a reference to the underlying MPC fabric
@@ -1088,6 +1095,76 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &CurvePointResult<C> 
 impl_borrow_variants!(CurvePointResult<C>, Mul, mul, *, AuthenticatedScalarResult<C>, Output=AuthenticatedPointResult<C>, C: CurveGroup);
 impl_commutative!(CurvePointResult<C>, Mul, mul, *, AuthenticatedScalarResult<C>, Output=AuthenticatedPointResult<C>, C: CurveGroup);
 
+// === FFT and IFFT === //
+impl<C: CurveGroup> AuthenticatedScalarResult<C>
+where
+    C::ScalarField: FftField,
+{
+    /// Compute the FFT of a vector of `AuthenticatedScalarResult`s
+    pub fn fft<D: EvaluationDomain<C::ScalarField>>(
+        x: &[AuthenticatedScalarResult<C>],
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        Self::fft_helper::<D>(x, true /* is_forward */)
+    }
+
+    /// Compute the inverse FFT of a vector of `AuthenticatedScalarResult`s
+    pub fn ifft<D: EvaluationDomain<C::ScalarField>>(
+        x: &[AuthenticatedScalarResult<C>],
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        Self::fft_helper::<D>(x, false /* is_forward */)
+    }
+
+    /// An FFT/IFFT helper that encapsulates the setup and restructuring of an FFT regardless of direction
+    ///
+    /// If `is_forward` is set, an FFT is performed. Otherwise, an IFFT is performed
+    fn fft_helper<D: EvaluationDomain<C::ScalarField>>(
+        x: &[AuthenticatedScalarResult<C>],
+        is_forward: bool,
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        assert!(!x.is_empty(), "Cannot compute FFT of empty vector");
+        let fabric = x[0].fabric();
+
+        // Extend to the next power of two
+        let n = x.len();
+        let padding_length = n.next_power_of_two() - n;
+        let pad = fabric.zeros_authenticated(padding_length);
+        let padded_input = [x, &pad].concat();
+
+        // Take the FFT of the shares and the macs separately
+        let shares = padded_input.iter().map(|v| v.share()).collect_vec();
+        let macs = padded_input.iter().map(|v| v.mac_share()).collect_vec();
+
+        let (share_fft, mac_fft) = if is_forward {
+            (
+                ScalarResult::fft::<D>(&shares),
+                ScalarResult::fft::<D>(&macs),
+            )
+        } else {
+            (
+                ScalarResult::ifft::<D>(&shares),
+                ScalarResult::ifft::<D>(&macs),
+            )
+        };
+
+        // No public values are added in an FFT, so the public modifiers remain unchanged
+        let modifiers = padded_input
+            .into_iter()
+            .map(|v| v.public_modifier)
+            .collect_vec();
+
+        let mut res = Vec::with_capacity(n);
+        for (share, mac, modifier) in izip!(share_fft, mac_fft, modifiers) {
+            res.push(AuthenticatedScalarResult {
+                share: MpcScalarResult::new_shared(share),
+                mac: MpcScalarResult::new_shared(mac),
+                public_modifier: modifier,
+            })
+        }
+
+        res
+    }
+}
+
 // ----------------
 // | Test Helpers |
 // ----------------
@@ -1126,12 +1203,13 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod tests {
+    use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
     use futures::future;
     use itertools::Itertools;
-    use rand::thread_rng;
+    use rand::{thread_rng, Rng};
 
     use crate::{
-        algebra::{scalar::Scalar, AuthenticatedScalarResult},
+        algebra::{poly_test_helpers::TestPolyField, scalar::Scalar, AuthenticatedScalarResult},
         test_helpers::{execute_mock_mpc, TestCurve},
         PARTY0,
     };
@@ -1248,6 +1326,72 @@ mod tests {
                 let inverses = AuthenticatedScalarResult::batch_inverse(&shared_values);
 
                 let opening = AuthenticatedScalarResult::open_authenticated_batch(&inverses);
+                future::join_all(opening.into_iter())
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+            }
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
+    }
+
+    #[tokio::test]
+    async fn test_fft() {
+        let mut rng = thread_rng();
+        let n: usize = rng.gen_range(0..100);
+
+        let values = (0..n)
+            .map(|_| Scalar::<TestCurve>::random(&mut rng))
+            .collect_vec();
+
+        let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
+        let fft_res = domain.fft(&values.iter().map(Scalar::inner).collect_vec());
+        let expected_res = fft_res.into_iter().map(Scalar::new).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let values = values.clone();
+            async move {
+                let shared_values = fabric.batch_share_scalar(values, PARTY0 /* sender */);
+                let fft = AuthenticatedScalarResult::fft::<Radix2EvaluationDomain<TestPolyField>>(
+                    &shared_values,
+                );
+
+                let opening = AuthenticatedScalarResult::open_authenticated_batch(&fft);
+                future::join_all(opening.into_iter())
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+            }
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
+    }
+
+    #[tokio::test]
+    async fn test_ifft() {
+        let mut rng = thread_rng();
+        let n: usize = rng.gen_range(0..100);
+
+        let values = (0..n)
+            .map(|_| Scalar::<TestCurve>::random(&mut rng))
+            .collect_vec();
+
+        let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
+        let ifft_res = domain.ifft(&values.iter().map(Scalar::inner).collect_vec());
+        let expected_res = ifft_res.into_iter().map(Scalar::new).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let values = values.clone();
+            async move {
+                let shared_values = fabric.batch_share_scalar(values, PARTY0 /* sender */);
+                let ifft = AuthenticatedScalarResult::ifft::<Radix2EvaluationDomain<TestPolyField>>(
+                    &shared_values,
+                );
+
+                let opening = AuthenticatedScalarResult::open_authenticated_batch(&ifft);
                 future::join_all(opening.into_iter())
                     .await
                     .into_iter()
