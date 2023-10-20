@@ -197,6 +197,24 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         //      m_i^-1 * r_i = (x_i^-1 * r_i^-1) * r_i = x_i^-1
         AuthenticatedScalarResult::batch_mul_public(&shared_scalars, &inverted_openings)
     }
+
+    /// Compute the exponentiation of the given value
+    /// via recursive squaring
+    pub fn pow(&self, exp: u64) -> Self {
+        if exp == 0 {
+            return self.fabric().zero_authenticated();
+        } else if exp == 1 {
+            return self.clone();
+        }
+
+        let recursive = self.pow(exp / 2);
+        let mut res = &recursive * &recursive;
+
+        if exp % 2 == 1 {
+            res = res * self.clone();
+        }
+        res
+    }
 }
 
 /// Opening implementations
@@ -1206,7 +1224,7 @@ mod tests {
     use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
     use futures::future;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{thread_rng, Rng, RngCore};
 
     use crate::{
         algebra::{poly_test_helpers::TestPolyField, scalar::Scalar, AuthenticatedScalarResult},
@@ -1335,6 +1353,26 @@ mod tests {
         .await;
 
         assert_eq!(res.unwrap(), expected_res)
+    }
+
+    /// Tests exponentiation
+    #[tokio::test]
+    async fn test_pow() {
+        let mut rng = thread_rng();
+        let exp = rng.next_u64();
+        let value = Scalar::<TestCurve>::random(&mut rng);
+
+        let expected_res = value.pow(exp);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let shared_value = fabric.share_scalar(value, PARTY0 /* sender */);
+            let res = shared_value.pow(exp);
+
+            res.open().await
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
     }
 
     #[tokio::test]
