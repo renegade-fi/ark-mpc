@@ -87,6 +87,11 @@ impl<C: CurveGroup> Scalar<C> {
         }
     }
 
+    /// Compute the exponentiation of the given scalar
+    pub fn pow(&self, exp: u64) -> Self {
+        Scalar::new(self.0.pow([exp]))
+    }
+
     /// Construct a scalar from the given bytes and reduce modulo the field's modulus
     pub fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
         let inner = C::ScalarField::from_be_bytes_mod_order(bytes);
