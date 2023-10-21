@@ -7,7 +7,7 @@
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     iter::{Product, Sum},
-    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 use ark_ec::CurveGroup;
@@ -417,6 +417,17 @@ impl<C: CurveGroup> MulAssign for Scalar<C> {
         *self = *self * rhs;
     }
 }
+
+// === Division === //
+impl<C: CurveGroup> Div<&Scalar<C>> for &Scalar<C> {
+    type Output = Scalar<C>;
+
+    fn div(self, rhs: &Scalar<C>) -> Self::Output {
+        let rhs = *rhs;
+        Scalar(self.0 / rhs.0)
+    }
+}
+impl_borrow_variants!(Scalar<C>, Div, div, /, Scalar<C>, C: CurveGroup);
 
 // === FFT and IFFT === //
 impl<C: CurveGroup> ScalarResult<C>

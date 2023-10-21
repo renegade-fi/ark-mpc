@@ -1084,6 +1084,24 @@ impl<C: CurveGroup> Div<&ScalarResult<C>> for &AuthenticatedScalarResult<C> {
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Div, div, /, ScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
 
+#[allow(clippy::suspicious_arithmetic_impl)]
+impl<C: CurveGroup> Div<&AuthenticatedScalarResult<C>> for &AuthenticatedScalarResult<C> {
+    type Output = AuthenticatedScalarResult<C>;
+    fn div(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
+        let rhs_inv = rhs.inverse();
+        self * rhs_inv
+    }
+}
+impl_borrow_variants!(AuthenticatedScalarResult<C>, Div, div, /, AuthenticatedScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
+
+impl<C: CurveGroup> AuthenticatedScalarResult<C> {
+    /// Divide two batches of values
+    pub fn batch_div(a: &[Self], b: &[Self]) -> Vec<Self> {
+        let b_inv = Self::batch_inverse(b);
+        Self::batch_mul(a, &b_inv)
+    }
+}
+
 // === Curve Scalar Multiplication === //
 
 impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &CurvePoint<C> {
@@ -1229,7 +1247,7 @@ mod tests {
     use crate::{
         algebra::{poly_test_helpers::TestPolyField, scalar::Scalar, AuthenticatedScalarResult},
         test_helpers::{execute_mock_mpc, TestCurve},
-        PARTY0,
+        PARTY0, PARTY1,
     };
 
     /// Test subtraction across non-commutative types
@@ -1309,6 +1327,65 @@ mod tests {
         .await;
 
         assert_eq!(res, expected_res)
+    }
+
+    /// Tests division between two authenticated values
+    #[tokio::test]
+    async fn test_division() {
+        let mut rng = thread_rng();
+        let value1 = Scalar::random(&mut rng);
+        let value2 = Scalar::random(&mut rng);
+
+        let expected_res = value1 / value2;
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let shared_value1 = fabric.share_scalar(value1, PARTY0 /* sender */);
+            let shared_value2 = fabric.share_scalar(value2, PARTY1 /* sender */);
+
+            (shared_value1 / shared_value2).open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
+    }
+
+    /// Tests batch division between authenticated values
+    #[tokio::test]
+    async fn test_batch_div() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+
+        let a_values = (0..N)
+            .map(|_| Scalar::<TestCurve>::random(&mut rng))
+            .collect_vec();
+        let b_values = (0..N)
+            .map(|_| Scalar::<TestCurve>::random(&mut rng))
+            .collect_vec();
+
+        let expected_res = a_values
+            .iter()
+            .zip(b_values.iter())
+            .map(|(a, b)| a / b)
+            .collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a_values.clone();
+            let b = b_values.clone();
+            async move {
+                let shared_a = fabric.batch_share_scalar(a, PARTY0 /* sender */);
+                let shared_b = fabric.batch_share_scalar(b, PARTY1 /* sender */);
+
+                let res = AuthenticatedScalarResult::batch_div(&shared_a, &shared_b);
+                let opening = AuthenticatedScalarResult::open_authenticated_batch(&res);
+                future::join_all(opening.into_iter())
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+            }
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
     }
 
     /// Test a simple `XOR` circuit
