@@ -62,6 +62,12 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         self.coeffs.len() - 1
     }
 
+    /// Sample a random polynomial of given degree
+    pub fn random(d: usize, fabric: &MpcFabric<C>) -> Self {
+        let coeffs = fabric.random_shared_scalars_authenticated(d + 1);
+        Self::from_coeffs(coeffs)
+    }
+
     /// Get the fabric underlying the polynomial
     pub fn fabric(&self) -> &MpcFabric<C> {
         self.coeffs[0].fabric()
