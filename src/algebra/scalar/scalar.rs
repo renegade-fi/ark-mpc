@@ -435,32 +435,16 @@ where
     C::ScalarField: FftField,
 {
     /// Compute the fft of a sequence of `ScalarResult`s
-    pub fn fft<D: EvaluationDomain<C::ScalarField>>(x: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
-        assert!(!x.is_empty(), "Cannot compute fft of empty sequence");
-        let n = x.len().next_power_of_two();
-
-        let fabric = x[0].fabric();
-        let ids = x.iter().map(|v| v.id).collect_vec();
-
-        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-            let scalars = args
-                .into_iter()
-                .map(Scalar::from)
-                .map(|x| x.0)
-                .collect_vec();
-
-            let domain = D::new(n).unwrap();
-            let res = domain.fft(&scalars);
-
-            res.into_iter()
-                .map(|x| ResultValue::Scalar(Scalar::new(x)))
-                .collect_vec()
-        })
+    pub fn fft<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
+        x: &[ScalarResult<C>],
+    ) -> Vec<ScalarResult<C>> {
+        Self::fft_with_domain(x, D::new(x.len()).unwrap())
     }
 
-    /// Compute the ifft of a sequence of `ScalarResult`s
-    pub fn ifft<D: EvaluationDomain<C::ScalarField>>(
+    /// Compute the fft of a sequence of `ScalarResult`s with the given domain
+    pub fn fft_with_domain<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
         x: &[ScalarResult<C>],
+        domain: D,
     ) -> Vec<ScalarResult<C>> {
         assert!(!x.is_empty(), "Cannot compute fft of empty sequence");
         let n = x.len().next_power_of_two();
@@ -475,10 +459,42 @@ where
                 .map(|x| x.0)
                 .collect_vec();
 
-            let domain = D::new(n).unwrap();
-            let res = domain.ifft(&scalars);
+            domain
+                .fft(&scalars)
+                .into_iter()
+                .map(|x| ResultValue::Scalar(Scalar::new(x)))
+                .collect_vec()
+        })
+    }
 
-            res.into_iter()
+    /// Compute the ifft of a sequence of `ScalarResult`s
+    pub fn ifft<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
+        x: &[ScalarResult<C>],
+    ) -> Vec<ScalarResult<C>> {
+        Self::ifft_with_domain(x, D::new(x.len()).unwrap())
+    }
+
+    /// Compute the ifft of a sequence of `ScalarResult`s with the given domain
+    pub fn ifft_with_domain<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
+        x: &[ScalarResult<C>],
+        domain: D,
+    ) -> Vec<ScalarResult<C>> {
+        assert!(!x.is_empty(), "Cannot compute fft of empty sequence");
+        let n = x.len().next_power_of_two();
+
+        let fabric = x[0].fabric();
+        let ids = x.iter().map(|v| v.id).collect_vec();
+
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let scalars = args
+                .into_iter()
+                .map(Scalar::from)
+                .map(|x| x.0)
+                .collect_vec();
+
+            domain
+                .ifft(&scalars)
+                .into_iter()
                 .map(|x| ResultValue::Scalar(Scalar::new(x)))
                 .collect_vec()
         })

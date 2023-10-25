@@ -1137,25 +1137,42 @@ where
     C::ScalarField: FftField,
 {
     /// Compute the FFT of a vector of `AuthenticatedScalarResult`s
-    pub fn fft<D: EvaluationDomain<C::ScalarField>>(
+    pub fn fft<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
         x: &[AuthenticatedScalarResult<C>],
     ) -> Vec<AuthenticatedScalarResult<C>> {
-        Self::fft_helper::<D>(x, true /* is_forward */)
+        Self::fft_with_domain::<D>(x, D::new(x.len()).unwrap())
+    }
+
+    /// Compute the FFT of a vector of `AuthenticatedScalarResult`s with a given domain
+    pub fn fft_with_domain<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
+        x: &[AuthenticatedScalarResult<C>],
+        domain: D,
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        Self::fft_helper::<D>(x, true /* is_forward */, domain)
     }
 
     /// Compute the inverse FFT of a vector of `AuthenticatedScalarResult`s
-    pub fn ifft<D: EvaluationDomain<C::ScalarField>>(
+    pub fn ifft<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
         x: &[AuthenticatedScalarResult<C>],
     ) -> Vec<AuthenticatedScalarResult<C>> {
-        Self::fft_helper::<D>(x, false /* is_forward */)
+        Self::fft_helper::<D>(x, false /* is_forward */, D::new(x.len()).unwrap())
+    }
+
+    /// Compute the inverse FFT of a vector of `AuthenticatedScalarResult`s with a given domain
+    pub fn ifft_with_domain<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
+        x: &[AuthenticatedScalarResult<C>],
+        domain: D,
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        Self::fft_helper::<D>(x, false /* is_forward */, domain)
     }
 
     /// An FFT/IFFT helper that encapsulates the setup and restructuring of an FFT regardless of direction
     ///
     /// If `is_forward` is set, an FFT is performed. Otherwise, an IFFT is performed
-    fn fft_helper<D: EvaluationDomain<C::ScalarField>>(
+    fn fft_helper<D: 'static + EvaluationDomain<C::ScalarField> + Send>(
         x: &[AuthenticatedScalarResult<C>],
         is_forward: bool,
+        domain: D,
     ) -> Vec<AuthenticatedScalarResult<C>> {
         assert!(!x.is_empty(), "Cannot compute FFT of empty vector");
         let fabric = x[0].fabric();
@@ -1172,13 +1189,13 @@ where
 
         let (share_fft, mac_fft) = if is_forward {
             (
-                ScalarResult::fft::<D>(&shares),
-                ScalarResult::fft::<D>(&macs),
+                ScalarResult::fft_with_domain::<D>(&shares, domain),
+                ScalarResult::fft_with_domain::<D>(&macs, domain),
             )
         } else {
             (
-                ScalarResult::ifft::<D>(&shares),
-                ScalarResult::ifft::<D>(&macs),
+                ScalarResult::ifft_with_domain::<D>(&shares, domain),
+                ScalarResult::ifft_with_domain::<D>(&macs, domain),
             )
         };
 
