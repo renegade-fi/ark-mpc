@@ -147,16 +147,29 @@ impl<'de, C: CurveGroup> Deserialize<'de> for Scalar<C> {
     }
 }
 
+/// A type alias for a result that resolves to a `Scalar`
+pub type ScalarResult<C> = ResultHandle<C, Scalar<C>>;
+/// A type alias for a result that resolves to a batch of `Scalar`s
+pub type BatchScalarResult<C> = ResultHandle<C, Vec<Scalar<C>>>;
+
+impl<C: CurveGroup> ScalarResult<C> {
+    /// Exponentiation
+    pub fn pow(&self, exp: u64) -> Self {
+        self.fabric().new_gate_op(vec![self.id()], move |mut args| {
+            let base: Scalar<C> = args.pop().unwrap().into();
+            let res = base.inner().pow([exp]);
+
+            ResultValue::Scalar(Scalar::new(res))
+        })
+    }
+}
+
 // --------------
 // | Arithmetic |
 // --------------
 
 // === Addition === //
 
-/// A type alias for a result that resolves to a `Scalar`
-pub type ScalarResult<C> = ResultHandle<C, Scalar<C>>;
-/// A type alias for a result that resolves to a batch of `Scalar`s
-pub type BatchScalarResult<C> = ResultHandle<C, Vec<Scalar<C>>>;
 impl<C: CurveGroup> ScalarResult<C> {
     /// Compute the multiplicative inverse of the scalar in its field
     pub fn inverse(&self) -> ScalarResult<C> {
@@ -569,10 +582,11 @@ mod test {
         algebra::{poly_test_helpers::TestPolyField, scalar::Scalar, ScalarResult},
         test_helpers::{execute_mock_mpc, mock_fabric, TestCurve},
     };
+    use ark_ff::Field;
     use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
     use futures::future;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{thread_rng, Rng, RngCore};
 
     /// Tests addition of raw scalars in a circuit
     #[tokio::test]
@@ -654,6 +668,25 @@ mod test {
 
         assert_eq!(res_final, expected_res);
         fabric.shutdown();
+    }
+
+    /// Tests exponentiation or raw scalars in a circuit
+    #[tokio::test]
+    async fn test_exp() {
+        let mut rng = thread_rng();
+        let base = Scalar::<TestCurve>::random(&mut rng);
+        let exp = rng.next_u64();
+
+        let expected_res = base.inner().pow([exp as u64]);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let base_allocated = fabric.allocate_scalar(base);
+            let res = base_allocated.pow(exp);
+            res.await
+        })
+        .await;
+
+        assert_eq!(res, Scalar::new(expected_res));
     }
 
     /// Tests fft of scalars allocated in a circuit
