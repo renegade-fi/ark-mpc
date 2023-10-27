@@ -29,7 +29,7 @@ use super::DensePolynomialResult;
 /// shared between parties
 ///
 /// This is modeled after the `ark_poly::DensePolynomial` [source](https://github.com/arkworks-rs/algebra/blob/master/poly/src/polynomial/univariate/dense.rs#L22)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AuthenticatedDensePoly<C: CurveGroup> {
     /// A vector of coefficients, the coefficient for `x^i` is stored at index `i`
     pub coeffs: Vec<AuthenticatedScalarResult<C>>,
@@ -235,6 +235,35 @@ impl<C: CurveGroup> Add<&DensePolynomial<C::ScalarField>> for &AuthenticatedDens
 }
 impl_borrow_variants!(AuthenticatedDensePoly<C>, Add, add, +, DensePolynomial<C::ScalarField>, C: CurveGroup);
 impl_commutative!(AuthenticatedDensePoly<C>, Add, add, +, DensePolynomial<C::ScalarField>, C: CurveGroup);
+
+impl<C: CurveGroup> Add<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+    fn add(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
+        assert!(!self.coeffs.is_empty(), "cannot add to an empty polynomial");
+
+        // Pad both polynomials to the same length
+        let n_coeffs = cmp::max(self.coeffs.len(), rhs.coeffs.len());
+        let zero = self.fabric().zero();
+        let zero_authenticated = self.fabric().zero_authenticated();
+
+        let padded_lhs = self
+            .coeffs
+            .iter()
+            .chain(iter::repeat(&zero_authenticated))
+            .take(n_coeffs);
+        let padded_rhs = rhs.coeffs.iter().chain(iter::repeat(&zero)).take(n_coeffs);
+
+        // Add the coefficients component-wise
+        let mut coeffs = Vec::with_capacity(n_coeffs);
+        for (lhs_coeff, rhs_coeff) in padded_lhs.zip(padded_rhs) {
+            coeffs.push(lhs_coeff + rhs_coeff);
+        }
+
+        AuthenticatedDensePoly::from_coeffs(coeffs)
+    }
+}
+impl_borrow_variants!(AuthenticatedDensePoly<C>, Add, add, +, DensePolynomialResult<C>, C: CurveGroup);
+impl_commutative!(AuthenticatedDensePoly<C>, Add, add, +, DensePolynomialResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> Add<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
@@ -596,6 +625,32 @@ mod test {
 
             async move {
                 let shared_poly1 = share_poly(poly1, PARTY0, &fabric);
+
+                let res = &shared_poly1 + &poly2;
+                res.open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
+    /// Tests adding a public polynomial to an authenticated polynomial
+    #[tokio::test]
+    async fn test_add_public_poly() {
+        let poly1 = random_poly(DEGREE_BOUND);
+        let poly2 = random_poly(DEGREE_BOUND);
+
+        let expected_res = &poly1 + &poly2;
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly1 = poly1.clone();
+            let poly2 = poly2.clone();
+
+            async move {
+                let shared_poly1 = share_poly(poly1, PARTY0, &fabric);
+                let poly2 = allocate_poly(&poly2, &fabric);
 
                 let res = &shared_poly1 + &poly2;
                 res.open_authenticated().await

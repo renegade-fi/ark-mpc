@@ -43,7 +43,7 @@ fn x_to_t<C: CurveGroup>(t: usize) -> DensePolynomial<C::ScalarField> {
 // ------------------
 
 /// A dense polynomial representation allocated in an MPC circuit
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct DensePolynomialResult<C: CurveGroup> {
     /// The coefficients of the polynomial, the `i`th coefficient is the coefficient of `x^i`
     pub coeffs: Vec<ScalarResult<C>>,
