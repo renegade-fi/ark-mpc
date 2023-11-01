@@ -85,22 +85,23 @@ fn main() {
         .build()
         .unwrap();
 
-    // We run the harness inside of a tokio blocking task so that blocking network calls are
-    // able to function properly
+    // We run the harness inside of a tokio blocking task so that blocking network
+    // calls are able to function properly
     let result = runtime.spawn_blocking(move || {
         // ---------
         // | Setup |
         // ---------
 
         // Listen on 0.0.0.0 (all network interfaces) with the given port
-        // We do this because listening on localhost when running in a container points to
-        // the container's loopback interface, not the docker bridge
+        // We do this because listening on localhost when running in a container points
+        // to the container's loopback interface, not the docker bridge
         let local_addr: SocketAddr = format!("0.0.0.0:{}", args.port1).parse().unwrap();
 
-        // If the code is running in a docker compose setup (set by the --docker flag); attempt
-        // to lookup the peer via DNS. The compose networking interface will add an alias for
-        // party0 for the first peer and party1 for the second.
-        // If not running on docker, dial the peer directly on the loopback interface.
+        // If the code is running in a docker compose setup (set by the --docker flag);
+        // attempt to lookup the peer via DNS. The compose networking interface
+        // will add an alias for party0 for the first peer and party1 for the
+        // second. If not running on docker, dial the peer directly on the
+        // loopback interface.
         let peer_addr: SocketAddr = {
             if args.docker {
                 let other_host_alias = format!("party{}", if args.party == 1 { 0 } else { 1 });
@@ -201,7 +202,8 @@ fn init_logger() {
         .init();
 }
 
-/// Prints a success or failure message, returns true if success, false if failure
+/// Prints a success or failure message, returns true if success, false if
+/// failure
 #[inline]
 fn validate_success(res: Result<(), String>, party_id: u64) -> bool {
     if res.is_ok() {

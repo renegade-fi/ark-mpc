@@ -1,6 +1,6 @@
-//! Defines the abstractions over the result of an MPC operation, this can be a network
-//! operation, a simple local computation, or a more complex operation like a
-//! Beaver multiplication
+//! Defines the abstractions over the result of an MPC operation, this can be a
+//! network operation, a simple local computation, or a more complex operation
+//! like a Beaver multiplication
 
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -62,7 +62,7 @@ impl<C: CurveGroup> Debug for ResultValue<C> {
             ResultValue::Scalar(scalar) => f.debug_tuple("Scalar").field(scalar).finish(),
             ResultValue::ScalarBatch(scalars) => {
                 f.debug_tuple("ScalarBatch").field(scalars).finish()
-            }
+            },
             ResultValue::Point(point) => f.debug_tuple("Point").field(point).finish(),
             ResultValue::PointBatch(points) => f.debug_tuple("PointBatch").field(points).finish(),
         }
@@ -164,10 +164,12 @@ impl<C: CurveGroup> From<ResultValue<C>> for Vec<CurvePoint<C>> {
 /// A handle to the result of the execution of an MPC computation graph
 ///
 /// This handle acts as a pointer to a possible incomplete partial result, and
-/// `await`-ing it will block the task until the graph has evaluated up to that point
+/// `await`-ing it will block the task until the graph has evaluated up to that
+/// point
 ///
-/// This allows for construction of the graph concurrently with execution, giving the
-/// fabric the opportunity to schedule all results onto the network optimistically
+/// This allows for construction of the graph concurrently with execution,
+/// giving the fabric the opportunity to schedule all results onto the network
+/// optimistically
 #[derive(Clone, Debug)]
 pub struct ResultHandle<C: CurveGroup, T: From<ResultValue<C>>> {
     /// The id of the result
@@ -203,7 +205,8 @@ impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
         }
     }
 
-    /// Get the ids that this result represents, awaiting these IDs is awaiting this result
+    /// Get the ids that this result represents, awaiting these IDs is awaiting
+    /// this result
     pub fn op_ids(&self) -> Vec<ResultId> {
         vec![self.id]
     }
@@ -234,8 +237,8 @@ impl<C: CurveGroup, T: From<ResultValue<C>> + Debug> Future for ResultHandle<C, 
         // Lock the result buffer
         let locked_result = self.result_buffer.read().expect(ERR_RESULT_BUFFER_POISONED);
 
-        // If the result is ready, return it, otherwise register the current context's waker
-        // with the `Executor`
+        // If the result is ready, return it, otherwise register the current context's
+        // waker with the `Executor`
         match locked_result.clone() {
             Some(res) => Poll::Ready(res.into()),
             None => {
@@ -247,7 +250,7 @@ impl<C: CurveGroup, T: From<ResultValue<C>> + Debug> Future for ResultHandle<C, 
 
                 self.fabric.register_waiter(waiter);
                 Poll::Pending
-            }
+            },
         }
     }
 }

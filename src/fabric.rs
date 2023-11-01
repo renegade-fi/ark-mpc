@@ -1,9 +1,10 @@
 //! Defines an MPC fabric for the protocol
 //!
-//! The fabric essentially acts as a dependency injection layer. That is, the MpcFabric
-//! creates and manages dependencies needed to allocate network values. This provides a
-//! cleaner interface for consumers of the library; i.e. clients do not have to hold onto
-//! references of the network layer or the beaver sources to allocate values.
+//! The fabric essentially acts as a dependency injection layer. That is, the
+//! MpcFabric creates and manages dependencies needed to allocate network
+//! values. This provides a cleaner interface for consumers of the library; i.e.
+//! clients do not have to hold onto references of the network layer or the
+//! beaver sources to allocate values.
 
 mod executor;
 mod network_sender;
@@ -56,7 +57,8 @@ const RESULT_ONE: ResultId = 1;
 /// The result id that is hardcoded to the curve identity point
 const RESULT_IDENTITY: ResultId = 2;
 
-/// The number of constant results allocated in the fabric, i.e. those defined above
+/// The number of constant results allocated in the fabric, i.e. those defined
+/// above
 const N_CONSTANT_RESULTS: usize = 3;
 
 /// The default size hint to give the fabric for buffer pre-allocation
@@ -65,8 +67,8 @@ const DEFAULT_SIZE_HINT: usize = 10_000;
 /// A type alias for the identifier used for a gate
 pub type OperationId = usize;
 
-/// An operation within the network, describes the arguments and function to evaluate
-/// once the arguments are ready
+/// An operation within the network, describes the arguments and function to
+/// evaluate once the arguments are ready
 ///
 /// `N` represents the number of results that this operation outputs
 #[derive(Clone)]
@@ -107,7 +109,8 @@ pub enum OperationType<C: CurveGroup> {
     },
     /// A gate operation that has output arity greater than one
     ///
-    /// We separate this out to avoid vector allocation for result values of arity one
+    /// We separate this out to avoid vector allocation for result values of
+    /// arity one
     GateBatch {
         /// The function to apply to the inputs
         #[allow(clippy::type_complexity)]
@@ -120,8 +123,8 @@ pub enum OperationType<C: CurveGroup> {
     },
 }
 
-/// A clone implementation, never concretely called but used as a Marker type to allow
-/// pre-allocating buffer space for `Operation`s
+/// A clone implementation, never concretely called but used as a Marker type to
+/// allow pre-allocating buffer space for `Operation`s
 impl<C: CurveGroup> Clone for OperationType<C> {
     fn clone(&self) -> Self {
         panic!("cannot clone `OperationType`")
@@ -138,13 +141,15 @@ impl<C: CurveGroup> Debug for OperationType<C> {
     }
 }
 
-/// A fabric for the MPC protocol, defines a dependency injection layer that dynamically schedules
-/// circuit gate evaluations onto the network to be executed
+/// A fabric for the MPC protocol, defines a dependency injection layer that
+/// dynamically schedules circuit gate evaluations onto the network to be
+/// executed
 ///
-/// The fabric does not block on gate evaluations, but instead returns a handle to a future result
-/// that may be polled to obtain the materialized result. This allows the application layer to
-/// continue using the fabric, scheduling more gates to be evaluated and maximally exploiting
-/// gate-level parallelism within the circuit
+/// The fabric does not block on gate evaluations, but instead returns a handle
+/// to a future result that may be polled to obtain the materialized result.
+/// This allows the application layer to continue using the fabric, scheduling
+/// more gates to be evaluated and maximally exploiting gate-level parallelism
+/// within the circuit
 #[derive(Clone)]
 pub struct MpcFabric<C: CurveGroup> {
     /// The inner fabric
@@ -177,8 +182,8 @@ impl<C: CurveGroup> Debug for MpcFabric<C> {
     }
 }
 
-/// The inner component of the fabric, allows the constructor to allocate executor and network
-/// sender objects at the same level as the fabric
+/// The inner component of the fabric, allows the constructor to allocate
+/// executor and network sender objects at the same level as the fabric
 #[derive(Clone)]
 pub struct FabricInner<C: CurveGroup> {
     /// The ID of the local party in the MPC execution
@@ -209,8 +214,8 @@ impl<C: CurveGroup> FabricInner<C> {
         outbound_queue: KanalSender<NetworkOutbound<C>>,
         beaver_source: S,
     ) -> Self {
-        // Allocate a zero and a one as well as the curve identity in the fabric to begin,
-        // for convenience
+        // Allocate a zero and a one as well as the curve identity in the fabric to
+        // begin, for convenience
         let zero = ResultValue::Scalar(Scalar::zero());
         let one = ResultValue::Scalar(Scalar::one());
         let identity = ResultValue::Point(CurvePoint::identity());
@@ -327,8 +332,9 @@ impl<C: CurveGroup> FabricInner<C> {
 
     /// Receive a value from a network operation initiated by a peer
     ///
-    /// The peer will already send the value with the corresponding ID, so all that is needed
-    /// is to allocate a slot in the result buffer for the receipt
+    /// The peer will already send the value with the corresponding ID, so all
+    /// that is needed is to allocate a slot in the result buffer for the
+    /// receipt
     pub(crate) fn receive_value(&self) -> ResultId {
         self.new_result_id()
     }
@@ -378,8 +384,9 @@ impl<C: CurveGroup> MpcFabric<C> {
         Self::new_with_size_hint(DEFAULT_SIZE_HINT, network, beaver_source)
     }
 
-    /// Constructor that takes an additional size hint, indicating how much buffer space
-    /// the fabric should allocate for results. The size is given in number of gates
+    /// Constructor that takes an additional size hint, indicating how much
+    /// buffer space the fabric should allocate for results. The size is
+    /// given in number of gates
     pub fn new_with_size_hint<N: 'static + MpcNetwork<C>, S: 'static + SharedValueSource<C>>(
         size_hint: usize,
         network: N,
@@ -488,7 +495,8 @@ impl<C: CurveGroup> MpcFabric<C> {
         }
     }
 
-    /// Get a batch of references to the zero wire as an `AuthenticatedScalarResult`
+    /// Get a batch of references to the zero wire as an
+    /// `AuthenticatedScalarResult`
     pub fn zeros_authenticated(&self, n: usize) -> Vec<AuthenticatedScalarResult<C>> {
         let val = self.zero_authenticated();
         (0..n).map(|_| val.clone()).collect_vec()
@@ -531,7 +539,8 @@ impl<C: CurveGroup> MpcFabric<C> {
         }
     }
 
-    /// Get a batch of references to the one wire as an `AuthenticatedScalarResult`
+    /// Get a batch of references to the one wire as an
+    /// `AuthenticatedScalarResult`
     pub fn ones_authenticated(&self, n: usize) -> Vec<AuthenticatedScalarResult<C>> {
         let val = self.one_authenticated();
         (0..n).map(|_| val.clone()).collect_vec()
@@ -634,10 +643,11 @@ impl<C: CurveGroup> MpcFabric<C> {
     pub fn share_point(&self, val: CurvePoint<C>, sender: PartyId) -> AuthenticatedPointResult<C> {
         let point: CurvePointResult<C> = if self.party_id() == sender {
             // As mentioned in https://eprint.iacr.org/2009/226.pdf
-            // it is okay to sample a random point by sampling a random `Scalar` and multiplying
-            // by the generator in the case that the discrete log of the output may be leaked with
-            // respect to the generator. Leaking the discrete log (i.e. the random `Scalar`) is okay
-            // when it is used to generate secret shares
+            // it is okay to sample a random point by sampling a random `Scalar` and
+            // multiplying by the generator in the case that the discrete log of
+            // the output may be leaked with respect to the generator. Leaking
+            // the discrete log (i.e. the random `Scalar`) is okay when it is
+            // used to generate secret shares
             let mut rng = thread_rng();
             let random = Scalar::random(&mut rng);
             let random_point = random * CurvePoint::generator();
@@ -733,7 +743,8 @@ impl<C: CurveGroup> MpcFabric<C> {
             .collect_vec()
     }
 
-    /// Send a value to the peer, placing the identity in the local result buffer at the send ID
+    /// Send a value to the peer, placing the identity in the local result
+    /// buffer at the send ID
     pub fn send_value<T: From<ResultValue<C>> + Into<NetworkPayload<C>>>(
         &self,
         value: ResultHandle<C, T>,
@@ -760,10 +771,11 @@ impl<C: CurveGroup> MpcFabric<C> {
         ResultHandle::new(id, self.clone())
     }
 
-    /// Exchange a value with the peer, i.e. send then receive or receive then send
-    /// based on the party ID
+    /// Exchange a value with the peer, i.e. send then receive or receive then
+    /// send based on the party ID
     ///
-    /// Returns a handle to the received value, which will be different for different parties
+    /// Returns a handle to the received value, which will be different for
+    /// different parties
     pub fn exchange_value<T: From<ResultValue<C>> + Into<NetworkPayload<C>>>(
         &self,
         value: ResultHandle<C, T>,
@@ -780,8 +792,8 @@ impl<C: CurveGroup> MpcFabric<C> {
         }
     }
 
-    /// Exchange a batch of values with the peer, i.e. send then receive or receive then send
-    /// based on party ID
+    /// Exchange a batch of values with the peer, i.e. send then receive or
+    /// receive then send based on party ID
     pub fn exchange_values<T>(&self, values: &[ResultHandle<C, T>]) -> ResultHandle<C, Vec<T>>
     where
         T: From<ResultValue<C>>,
@@ -826,8 +838,8 @@ impl<C: CurveGroup> MpcFabric<C> {
     // | Gate Definition |
     // -------------------
 
-    /// Construct a new gate operation in the fabric, i.e. one that can be evaluated immediate given
-    /// its inputs
+    /// Construct a new gate operation in the fabric, i.e. one that can be
+    /// evaluated immediate given its inputs
     pub fn new_gate_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<C, T>
     where
         F: 'static + FnOnce(Vec<ResultValue<C>>) -> ResultValue<C> + Send + Sync,
@@ -836,17 +848,17 @@ impl<C: CurveGroup> MpcFabric<C> {
         let function = Box::new(function);
         let id = self.inner.new_op(
             args,
-            1, /* output_arity */
+            1, // output_arity
             OperationType::Gate { function },
         )[0];
         ResultHandle::new(id, self.clone())
     }
 
-    /// Construct a new batch gate operation in the fabric, i.e. one that can be evaluated to return
-    /// an array of results
+    /// Construct a new batch gate operation in the fabric, i.e. one that can be
+    /// evaluated to return an array of results
     ///
-    /// The array must be sized so that the fabric knows how many results to allocate buffer space for
-    /// ahead of execution
+    /// The array must be sized so that the fabric knows how many results to
+    /// allocate buffer space for ahead of execution
     pub fn new_batch_gate_op<F, T>(
         &self,
         args: Vec<ResultId>,
@@ -866,8 +878,8 @@ impl<C: CurveGroup> MpcFabric<C> {
             .collect_vec()
     }
 
-    /// Construct a new network operation in the fabric, i.e. one that requires a value to be sent
-    /// over the channel
+    /// Construct a new network operation in the fabric, i.e. one that requires
+    /// a value to be sent over the channel
     pub fn new_network_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<C, T>
     where
         F: 'static + FnOnce(Vec<ResultValue<C>>) -> NetworkPayload<C> + Send + Sync,
@@ -876,7 +888,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         let function = Box::new(function);
         let id = self.inner.new_op(
             args,
-            1, /* output_arity */
+            1, // output_arity
             OperationType::Network { function },
         )[0];
         ResultHandle::new(id, self.clone())
@@ -890,7 +902,8 @@ impl<C: CurveGroup> MpcFabric<C> {
     pub fn next_beaver_triple(
         &self,
     ) -> (MpcScalarResult<C>, MpcScalarResult<C>, MpcScalarResult<C>) {
-        // Sample the triple and allocate it in the fabric, the counterparty will do the same
+        // Sample the triple and allocate it in the fabric, the counterparty will do the
+        // same
         let (a, b, c) = self
             .inner
             .beaver_source
@@ -947,8 +960,8 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Sample the next beaver triplet with MACs from the beaver source
     ///
-    /// TODO: Authenticate these values either here or in the pre-processing phase as per
-    /// the SPDZ paper
+    /// TODO: Authenticate these values either here or in the pre-processing
+    /// phase as per the SPDZ paper
     pub fn next_authenticated_triple(
         &self,
     ) -> (
@@ -1018,7 +1031,8 @@ impl<C: CurveGroup> MpcFabric<C> {
             .collect_vec()
     }
 
-    /// Sample a batch of random shared values from the beaver source and allocate them as `AuthenticatedScalars`
+    /// Sample a batch of random shared values from the beaver source and
+    /// allocate them as `AuthenticatedScalars`
     pub fn random_shared_scalars_authenticated(
         &self,
         n: usize,

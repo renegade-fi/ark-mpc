@@ -1,5 +1,5 @@
-//! Defines the `CurvePoint` type, a wrapper around a generic curve that allows us to
-//! bring curve arithmetic into the execution graph
+//! Defines the `CurvePoint` type, a wrapper around a generic curve that allows
+//! us to bring curve arithmetic into the execution graph
 
 use std::{
     iter::Sum,
@@ -37,14 +37,15 @@ use super::{authenticated_curve::AuthenticatedPointResult, mpc_curve::MpcPointRe
 const MSM_CHUNK_SIZE: usize = 1 << 16;
 /// The threshold at which we call out to the Arkworks MSM implementation
 ///
-/// MSM sizes below this threshold are computed serially as the parallelism overhead is
-/// too significant
+/// MSM sizes below this threshold are computed serially as the parallelism
+/// overhead is too significant
 const MSM_SIZE_THRESHOLD: usize = 10;
 
 /// The security level used in the hash-to-curve implementation, in bytes
 pub const HASH_TO_CURVE_SECURITY: usize = 16; // 128 bit security
 
-/// A wrapper around the inner point that allows us to define foreign traits on the point
+/// A wrapper around the inner point that allows us to define foreign traits on
+/// the point
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct CurvePoint<C: CurveGroup>(pub(crate) C);
 impl<C: CurveGroup> Unpin for CurvePoint<C> {}
@@ -72,7 +73,8 @@ impl<C: CurveGroup> CurvePoint<C> {
     /// The base field that the curve is defined over, i.e. the field in which
     /// the curve equation's coefficients lie
     pub type BaseField = C::BaseField;
-    /// The scalar field of the curve, i.e. Z/rZ where r is the curve group's order
+    /// The scalar field of the curve, i.e. Z/rZ where r is the curve group's
+    /// order
     pub type ScalarField = C::ScalarField;
 
     /// The additive identity in the curve group
@@ -121,8 +123,9 @@ impl<C: CurveGroup> CurvePoint<C>
 where
     C::BaseField: PrimeField,
 {
-    /// Get the number of bytes needed to represent a point, this is exactly the number of bytes
-    /// for one base field element, as we can simply use the x-coordinate and set a high bit for the `y`
+    /// Get the number of bytes needed to represent a point, this is exactly the
+    /// number of bytes for one base field element, as we can simply use the
+    /// x-coordinate and set a high bit for the `y`
     pub fn n_bytes() -> usize {
         n_bytes_field::<C::BaseField>()
     }
@@ -133,12 +136,14 @@ where
     C::Config: SWUConfig,
     C::BaseField: PrimeField,
 {
-    /// Convert a uniform byte buffer to a `CurvePoint<C>` via the SWU map-to-curve approach:
+    /// Convert a uniform byte buffer to a `CurvePoint<C>` via the SWU
+    /// map-to-curve approach:
     ///
     /// See https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-hash-to-curve-09#simple-swu
-    /// for a description of the setup. Essentially, we assume that the buffer provided is the
-    /// result of an `extend_message` implementation that gives us its uniform digest. From here
-    /// we construct two field elements, map to curve, and add the points to give a uniformly
+    /// for a description of the setup. Essentially, we assume that the buffer
+    /// provided is the result of an `extend_message` implementation that
+    /// gives us its uniform digest. From here we construct two field
+    /// elements, map to curve, and add the points to give a uniformly
     /// distributed curve point
     pub fn from_uniform_bytes(
         buf: Vec<u8>,
@@ -166,7 +171,8 @@ where
         Ok(CurvePoint(p1_clear + p2_clear))
     }
 
-    /// A helper that converts an arbitrarily long byte buffer to a field element
+    /// A helper that converts an arbitrarily long byte buffer to a field
+    /// element
     fn hash_to_field(buf: &[u8]) -> C::BaseField {
         Self::BaseField::from_be_bytes_mod_order(buf)
     }
@@ -453,7 +459,8 @@ impl_borrow_variants!(CurvePointResult<C>, Mul, mul, *, ScalarResult<C>, C: Curv
 impl_commutative!(CurvePointResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> CurvePointResult<C> {
-    /// Multiply a batch of `CurvePointResult<C>`s with a batch of `ScalarResult`s
+    /// Multiply a batch of `CurvePointResult<C>`s with a batch of
+    /// `ScalarResult`s
     pub fn batch_mul(a: &[ScalarResult<C>], b: &[CurvePointResult<C>]) -> Vec<CurvePointResult<C>> {
         assert_eq!(
             a.len(),
@@ -481,7 +488,8 @@ impl<C: CurveGroup> CurvePointResult<C> {
         })
     }
 
-    /// Multiply a batch of `MpcScalarResult`s with a batch of `CurvePointResult<C>`s
+    /// Multiply a batch of `MpcScalarResult`s with a batch of
+    /// `CurvePointResult<C>`s
     pub fn batch_mul_shared(
         a: &[MpcScalarResult<C>],
         b: &[CurvePointResult<C>],
@@ -516,7 +524,8 @@ impl<C: CurveGroup> CurvePointResult<C> {
             .collect_vec()
     }
 
-    /// Multiply a batch of `AuthenticatedScalarResult`s with a batch of `CurvePointResult<C>`s
+    /// Multiply a batch of `AuthenticatedScalarResult`s with a batch of
+    /// `CurvePointResult<C>`s
     pub fn batch_mul_authenticated(
         a: &[AuthenticatedScalarResult<C>],
         b: &[CurvePointResult<C>],
@@ -537,7 +546,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let results = fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_POINT_RESULT_LEN * n, /* output_arity */
+            AUTHENTICATED_POINT_RESULT_LEN * n, // output_arity
             move |mut args| {
                 let points: Vec<CurvePoint<C>> =
                     args.drain(..n).map(CurvePoint::from).collect_vec();
@@ -637,7 +646,8 @@ impl<C: CurveGroup> CurvePoint<C> {
         res
     }
 
-    /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
+    /// Compute the multiscalar multiplication of the given points with
+    /// `ScalarResult`s
     pub fn msm_results(
         scalars: &[ScalarResult<C>],
         points: &[CurvePoint<C>],
@@ -660,8 +670,8 @@ impl<C: CurveGroup> CurvePoint<C> {
         })
     }
 
-    /// Compute the multiscalar multiplication of the given points with `ScalarResult`s
-    /// as iterators. Assumes the iterators are non-empty
+    /// Compute the multiscalar multiplication of the given points with
+    /// `ScalarResult`s as iterators. Assumes the iterators are non-empty
     pub fn msm_results_iter<I, J>(scalars: I, points: J) -> CurvePointResult<C>
     where
         I: IntoIterator<Item = ScalarResult<C>>,
@@ -673,7 +683,8 @@ impl<C: CurveGroup> CurvePoint<C> {
         )
     }
 
-    /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
+    /// Compute the multiscalar multiplication of the given authenticated
+    /// scalars and plaintext points
     pub fn msm_authenticated(
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[CurvePoint<C>],
@@ -692,7 +703,7 @@ impl<C: CurveGroup> CurvePoint<C> {
         let points = points.to_vec();
         let res: Vec<CurvePointResult<C>> = fabric.new_batch_gate_op(
             scalar_ids,
-            AUTHENTICATED_SCALAR_RESULT_LEN, /* output_arity */
+            AUTHENTICATED_SCALAR_RESULT_LEN, // output_arity
             move |args| {
                 let mut shares = Vec::with_capacity(n);
                 let mut macs = Vec::with_capacity(n);
@@ -723,8 +734,8 @@ impl<C: CurveGroup> CurvePoint<C> {
         }
     }
 
-    /// Compute the multiscalar multiplication of the given authenticated scalars and plaintext points
-    /// as iterators
+    /// Compute the multiscalar multiplication of the given authenticated
+    /// scalars and plaintext points as iterators
     /// This method assumes that the iterators are of the same length
     pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedPointResult<C>
     where
@@ -783,7 +794,8 @@ impl<C: CurveGroup> CurvePointResult<C> {
         )
     }
 
-    /// Compute the multiscalar multiplication of the given `AuthenticatedScalarResult`s and points
+    /// Compute the multiscalar multiplication of the given
+    /// `AuthenticatedScalarResult`s and points
     pub fn msm_authenticated(
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[CurvePointResult<C>],
@@ -804,7 +816,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let res = fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_POINT_RESULT_LEN, /* output_arity */
+            AUTHENTICATED_POINT_RESULT_LEN, // output_arity
             move |mut args| {
                 let mut shares = Vec::with_capacity(n);
                 let mut macs = Vec::with_capacity(n);
@@ -841,8 +853,9 @@ impl<C: CurveGroup> CurvePointResult<C> {
         }
     }
 
-    /// Compute the multiscalar multiplication of the given `AuthenticatedScalarResult`s and points
-    /// represented as streaming iterators
+    /// Compute the multiscalar multiplication of the given
+    /// `AuthenticatedScalarResult`s and points represented as streaming
+    /// iterators
     pub fn msm_authenticated_iter<I, J>(scalars: I, points: J) -> AuthenticatedPointResult<C>
     where
         I: IntoIterator<Item = AuthenticatedScalarResult<C>>,
@@ -870,7 +883,8 @@ mod test {
     /// A curve point on the test curve
     pub type TestCurvePoint = CurvePoint<TestCurve>;
 
-    /// Generate a random point, by multiplying the basepoint with a random scalar
+    /// Generate a random point, by multiplying the basepoint with a random
+    /// scalar
     pub fn random_point() -> TestCurvePoint {
         let mut rng = thread_rng();
         let scalar = Scalar::random(&mut rng);

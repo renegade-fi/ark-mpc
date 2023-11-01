@@ -1,4 +1,5 @@
-//! MPC circuits implemented directly in the library as gadgets for more complex MPC operations
+//! MPC circuits implemented directly in the library as gadgets for more complex
+//! MPC operations
 
 use std::iter;
 
@@ -7,14 +8,15 @@ use itertools::Itertools;
 
 use crate::{algebra::AuthenticatedScalarResult, MpcFabric};
 
-/// A prefix product gadget, computes the prefix products of a vector of values, where
-/// for `n` values, the `i`th prefix product is defined as:
+/// A prefix product gadget, computes the prefix products of a vector of values,
+/// where for `n` values, the `i`th prefix product is defined as:
 ///     x0 * x1 * ... * xi
 ///
 /// The method used here is that described in (Section 4.2):
 ///     https://dl.acm.org/doi/pdf/10.1145/72981.72995
-/// I.e. we blind each value in the product with a telescoping product, open the blinded values,
-/// construct prefix products, then unblind them as shared values
+/// I.e. we blind each value in the product with a telescoping product, open the
+/// blinded values, construct prefix products, then unblind them as shared
+/// values
 pub fn prefix_product<C: CurveGroup>(
     values: &[AuthenticatedScalarResult<C>],
     fabric: &MpcFabric<C>,
@@ -39,8 +41,9 @@ pub fn prefix_product<C: CurveGroup>(
     // Each prefix is multiplied by b[0] on the left
     let b0_repeat = iter::repeat(b_values[0].clone()).take(n).collect_vec();
 
-    // Construct a vector of the prefix products of the blinded values, the left hand multiple of
-    // each term cancels the right hand blinder of the previous one in a telescoping fashion
+    // Construct a vector of the prefix products of the blinded values, the left
+    // hand multiple of each term cancels the right hand blinder of the previous
+    // one in a telescoping fashion
     let mut prefix = blinded_open[0].clone();
     let mut prefixes = vec![prefix.clone()];
     for blinded_term in blinded_open[1..].iter() {
@@ -48,11 +51,13 @@ pub fn prefix_product<C: CurveGroup>(
         prefixes.push(prefix.clone());
     }
 
-    // Construct the right hand terms, this is the value b_inv[i] for the ith prefix, which cancels
-    // the right hand blinder of the last term in the prefix product
+    // Construct the right hand terms, this is the value b_inv[i] for the ith
+    // prefix, which cancels the right hand blinder of the last term in the
+    // prefix product
     let right_hand_terms = &b_inv_values[1..];
 
-    // Cancel each prefix term's blinders with b[0] on the lhs and b_inv[i] on the rhs
+    // Cancel each prefix term's blinders with b[0] on the lhs and b_inv[i] on the
+    // rhs
     let partial_unblind = AuthenticatedScalarResult::batch_mul_public(&b0_repeat, &prefixes);
     AuthenticatedScalarResult::batch_mul(&partial_unblind, right_hand_terms)
 }

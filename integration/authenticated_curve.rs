@@ -148,7 +148,8 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test addition between a batch of `AuthenticatedPointResult`s and `CurvePoint`s
+/// Test addition between a batch of `AuthenticatedPointResult`s and
+/// `CurvePoint`s
 fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -242,7 +243,8 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test addition between a batch of `AuthenticatedPointResult`s and `CurvePoint`s
+/// Test addition between a batch of `AuthenticatedPointResult`s and
+/// `CurvePoint`s
 fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
@@ -381,7 +383,8 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(res_open, expected_result)
 }
 
-/// Test addition between a batch of `AuthenticatedPointResult`s and `CurvePoint`s
+/// Test addition between a batch of `AuthenticatedPointResult`s and
+/// `CurvePoint`s
 fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;

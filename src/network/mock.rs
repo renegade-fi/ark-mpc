@@ -58,7 +58,8 @@ impl<C: CurveGroup> Sink<NetworkOutbound<C>> for NoRecvNetwork<C> {
     }
 }
 
-/// A dummy MPC network that operates over a duplex channel instead of a network connection/// An unbounded duplex channel used to mock a network connection
+/// A dummy MPC network that operates over a duplex channel instead of a network
+/// connection/// An unbounded duplex channel used to mock a network connection
 pub struct UnboundedDuplexStream<C: CurveGroup> {
     /// The send side of the stream
     send: UnboundedSender<NetworkOutbound<C>>,

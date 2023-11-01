@@ -1,5 +1,5 @@
-//! Integration tests for arithmetic on the `AuthenticatedScalarResult` type which provides
-//! a malicious-secure primitive
+//! Integration tests for arithmetic on the `AuthenticatedScalarResult` type
+//! which provides a malicious-secure primitive
 
 use ark_mpc::{
     algebra::{scalar_test_helpers::*, AuthenticatedScalarResult, Scalar},
@@ -22,7 +22,8 @@ use crate::{
 // | Opening |
 // -----------
 
-/// Tests the authenticated opening of a shared value with no arithmetic done on it
+/// Tests the authenticated opening of a shared value with no arithmetic done on
+/// it
 fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
     let mut rng = thread_rng();
@@ -101,7 +102,8 @@ fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> 
     let val = Scalar::random(&mut rng);
     let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
-    // Share the value with the counterparty in the plaintext and compute the expected result
+    // Share the value with the counterparty in the plaintext and compute the
+    // expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
     let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
 
@@ -206,7 +208,8 @@ fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     let val = Scalar::random(&mut rng);
     let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
-    // Share the value with the counterparty in the plaintext and compute the expected result
+    // Share the value with the counterparty in the plaintext and compute the
+    // expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
     let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
 
@@ -358,7 +361,8 @@ fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
     let val = Scalar::random(&mut rng);
     let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
-    // Share the value with the counterparty in the plaintext and compute the expected result
+    // Share the value with the counterparty in the plaintext and compute the
+    // expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
     let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
 
@@ -463,7 +467,8 @@ fn test_public_add_then_mul(test_args: &IntegrationTestArgs) -> Result<(), Strin
     let val = Scalar::random(&mut rng);
     let my_value = test_args.fabric.allocate_scalar(ResultValue::Scalar(val));
 
-    // Share the value with the counterparty in the plaintext and compute the expected result
+    // Share the value with the counterparty in the plaintext and compute the
+    // expected result
     let party0_value = share_plaintext_value(my_value.clone(), PARTY0, &test_args.fabric);
     let party1_value = share_plaintext_value(my_value, PARTY1, &test_args.fabric);
 

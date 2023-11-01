@@ -1,14 +1,15 @@
-//! Defines an `std::io::Cursor` like buffer that tracks a cursor within a buffer that
-//! is incrementally consumed. We use this to allow partial fills across cancelled
-//! futures.
+//! Defines an `std::io::Cursor` like buffer that tracks a cursor within a
+//! buffer that is incrementally consumed. We use this to allow partial fills
+//! across cancelled futures.
 //!
-//! This will be replaced when the more convenient `std::io::Cursor` is stabilized.
+//! This will be replaced when the more convenient `std::io::Cursor` is
+//! stabilized.
 
 /// A wrapper around a raw `&[u8]` buffer that tracks a cursor within the buffer
 /// to allow partial fills across cancelled futures
 ///
-/// Similar to `tokio::io::ReadBuf` but takes ownership of the underlying buffer to
-/// avoid coloring interfaces with lifetime parameters
+/// Similar to `tokio::io::ReadBuf` but takes ownership of the underlying buffer
+/// to avoid coloring interfaces with lifetime parameters
 ///
 /// TODO: Replace this with `std::io::Cursor` once it is stabilized
 #[derive(Debug)]

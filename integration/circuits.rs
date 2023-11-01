@@ -17,7 +17,8 @@ use crate::{
 
 /// Tests an inner product between two vectors of shared scalars
 ///
-/// We take the inner product <a, b> where party 0 chooses a, and party 1 chooses b
+/// We take the inner product <a, b> where party 0 chooses a, and party 1
+/// chooses b
 fn test_inner_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Sample local values
     let n = 100;
@@ -127,7 +128,8 @@ fn test_polynomial_eval(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let x = fabric.exchange_value(my_x.clone()) + my_x;
     let x_res = await_result(x.clone());
 
-    // Party 0 chooses the first three coefficients, party 1 chooses the second three
+    // Party 0 chooses the first three coefficients, party 1 chooses the second
+    // three
     let my_coeffs = (0..3).map(|_| Scalar::random(&mut rng)).collect_vec();
     let my_allocated_coeffs = my_coeffs
         .iter()

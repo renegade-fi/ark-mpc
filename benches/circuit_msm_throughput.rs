@@ -1,4 +1,5 @@
-//! Benchmarks multiscalar multiplication throughput as executed via the `Executor`
+//! Benchmarks multiscalar multiplication throughput as executed via the
+//! `Executor`
 
 use std::time::{Duration, Instant};
 

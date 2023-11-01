@@ -1,7 +1,7 @@
 //! Defines a buffer type used for operations, results, etc in an MPC fabric
 //!
-//! This buffer allows the creator to pre-allocate buffer space for results to fill, and
-//! automatically grows as access to the buffer goes out of bounds
+//! This buffer allows the creator to pre-allocate buffer space for results to
+//! fill, and automatically grows as access to the buffer goes out of bounds
 
 /// A thin wrapper around a vector that auto-allocates as the buffer grows
 pub struct GrowableBuffer<T: Clone> {
@@ -23,8 +23,8 @@ impl<T: Clone> GrowableBuffer<T> {
         self.buf.resize(new_size, None);
     }
 
-    /// Get the element at the given index in the buffer, returns `None` if the element
-    /// has not been set
+    /// Get the element at the given index in the buffer, returns `None` if the
+    /// element has not been set
     pub fn get(&self, idx: usize) -> Option<&T> {
         if idx >= self.buf.len() {
             return None;
@@ -72,7 +72,8 @@ impl<T: Clone> GrowableBuffer<T> {
 mod test {
     use super::GrowableBuffer;
 
-    /// Test that indexing into the buffer when it initially has no elements does not fail
+    /// Test that indexing into the buffer when it initially has no elements
+    /// does not fail
     #[test]
     fn test_empty_buf() {
         let mut buf = GrowableBuffer::new(10);

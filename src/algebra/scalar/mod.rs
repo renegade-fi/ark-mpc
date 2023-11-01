@@ -1,4 +1,5 @@
-//! Scalar type arithmetic with shared authenticated, shared non-authenticated, and plaintext types
+//! Scalar type arithmetic with shared authenticated, shared non-authenticated,
+//! and plaintext types
 #![allow(clippy::module_inception)]
 
 mod authenticated_scalar;

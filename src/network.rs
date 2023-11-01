@@ -89,11 +89,12 @@ impl<C: CurveGroup> From<Vec<CurvePoint<C>>> for NetworkPayload<C> {
     }
 }
 
-/// The `MpcNetwork` trait defines shared functionality for a network implementing a
-/// connection between two parties in a 2PC
+/// The `MpcNetwork` trait defines shared functionality for a network
+/// implementing a connection between two parties in a 2PC
 ///
-/// Values are sent as bytes, scalars, or curve points and always in batch form with the
-/// message length (measured in the number of elements sent) prepended to the message
+/// Values are sent as bytes, scalars, or curve points and always in batch form
+/// with the message length (measured in the number of elements sent) prepended
+/// to the message
 #[async_trait]
 pub trait MpcNetwork<C: CurveGroup>:
     Send

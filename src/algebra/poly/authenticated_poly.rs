@@ -1,6 +1,7 @@
 //! An authenticated polynomial over a `CurveGroup`'s scalar field
 //!
-//! Modeled after the `ark_poly::DensePolynomial` type, but allocated in an MPC fabric
+//! Modeled after the `ark_poly::DensePolynomial` type, but allocated in an MPC
+//! fabric
 
 use std::{
     cmp, iter,
@@ -25,13 +26,14 @@ use crate::{
 
 use super::DensePolynomialResult;
 
-/// An authenticated polynomial; i.e. a polynomial in which the coefficients are secret
-/// shared between parties
+/// An authenticated polynomial; i.e. a polynomial in which the coefficients are
+/// secret shared between parties
 ///
 /// This is modeled after the `ark_poly::DensePolynomial` [source](https://github.com/arkworks-rs/algebra/blob/master/poly/src/polynomial/univariate/dense.rs#L22)
 #[derive(Debug, Clone, Default)]
 pub struct AuthenticatedDensePoly<C: CurveGroup> {
-    /// A vector of coefficients, the coefficient for `x^i` is stored at index `i`
+    /// A vector of coefficients, the coefficient for `x^i` is stored at index
+    /// `i`
     pub coeffs: Vec<AuthenticatedScalarResult<C>>,
 }
 
@@ -51,7 +53,8 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         Self::from_coeffs(coeffs)
     }
 
-    /// Allocate the one polynomial (multiplicative identity) in the given fabric
+    /// Allocate the one polynomial (multiplicative identity) in the given
+    /// fabric
     pub fn one(fabric: &MpcFabric<C>) -> Self {
         let coeffs = vec![fabric.one_authenticated()];
         Self::from_coeffs(coeffs)
@@ -75,8 +78,8 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
 
     /// Evaluate the polynomial at a given point
     ///
-    /// TODO: Opt for a more efficient implementation that allocates fewer gates, i.e.
-    /// by awaiting all results then creating the evaluation
+    /// TODO: Opt for a more efficient implementation that allocates fewer
+    /// gates, i.e. by awaiting all results then creating the evaluation
     pub fn eval(&self, x: &ScalarResult<C>) -> AuthenticatedScalarResult<C> {
         // Evaluate the polynomial at the given point
         let mut result = x.fabric().zero_authenticated();
@@ -106,7 +109,8 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
 impl<C: CurveGroup> AuthenticatedDensePoly<C> {
     /// Reduce a given polynomial mod x^n
     ///
-    /// For a modulus of this form, this is equivalent to truncating the coefficients
+    /// For a modulus of this form, this is equivalent to truncating the
+    /// coefficients
     pub fn mod_xn(&self, n: usize) -> Self {
         let mut coeffs = self.coeffs.clone();
         coeffs.truncate(n);
@@ -116,10 +120,10 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
 
     /// Reverse the coefficients of the polynomial and return a new polynomial
     ///
-    /// This is useful when implementing division between authenticated polynomials as per:
-    ///     https://iacr.org/archive/pkc2006/39580045/39580045.pdf
-    /// Effectively, for a given polynomial a(x), the operation rev(a) returns the polynomial:
-    ///     rev(a)(x) = x^deg(a) * a(1/x)
+    /// This is useful when implementing division between authenticated
+    /// polynomials as per:     https://iacr.org/archive/pkc2006/39580045/39580045.pdf
+    /// Effectively, for a given polynomial a(x), the operation rev(a) returns
+    /// the polynomial:     rev(a)(x) = x^deg(a) * a(1/x)
     /// which is emulated by reversing the coefficients directly.
     ///
     /// See the division docstring below for a more detailed explanation
@@ -136,7 +140,8 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         Self::from_coeffs(coeffs)
     }
 
-    /// Compute the multiplicative inverse of a polynomial in the quotient ring F[x] / (x^t)
+    /// Compute the multiplicative inverse of a polynomial in the quotient ring
+    /// F[x] / (x^t)
     ///
     /// Uses an extension of the inverse method defined in:
     ///     https://dl.acm.org/doi/pdf/10.1145/72981.72995
@@ -157,8 +162,8 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         );
         let inverted_masked_poly = masked_poly_res.mul_inverse_mod_t(t);
 
-        // Multiply out this inversion with the masking polynomial to cancel the masking term
-        // and reduce modulo x^t
+        // Multiply out this inversion with the masking polynomial to cancel the masking
+        // term and reduce modulo x^t
         let res = &inverted_masked_poly * &masking_poly;
         res.mod_xn(t)
     }
@@ -329,11 +334,12 @@ impl<C: CurveGroup> Sub<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<
 impl_borrow_variants!(AuthenticatedDensePoly<C>, Sub, sub, -, AuthenticatedDensePoly<C>, C: CurveGroup);
 
 // --- Multiplication --- //
-// TODO: We can use an FFT-based approach here, it takes a bit more care because evaluations needed
-// are more expensive, but it could provide a performance boost
+// TODO: We can use an FFT-based approach here, it takes a bit more care because
+// evaluations needed are more expensive, but it could provide a performance
+// boost
 //
-// For now we leave this as an optimization, the current implementation can be executed in one round,
-// although with many gates
+// For now we leave this as an optimization, the current implementation can be
+// executed in one round, although with many gates
 impl<C: CurveGroup> Mul<&DensePolynomial<C::ScalarField>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
@@ -456,26 +462,28 @@ impl_borrow_variants!(AuthenticatedDensePoly<C>, Mul, mul, *, AuthenticatedScala
 impl_commutative!(AuthenticatedDensePoly<C>, Mul, mul, *, AuthenticatedScalarResult<C>, C: CurveGroup);
 
 // --- Division --- //
-/// Given a public divisor b(x) and shared dividend a(x) = a_1(x) + a_2(x) for party shares a_1, a_2
-/// We can divide each share locally to obtain a secret sharing of \floor{a(x) / b(x)}
+/// Given a public divisor b(x) and shared dividend a(x) = a_1(x) + a_2(x) for
+/// party shares a_1, a_2 We can divide each share locally to obtain a secret
+/// sharing of \floor{a(x) / b(x)}
 ///
-/// To see this, consider that a_1(x) = q_1(x)b(x) + r_1(x) and a_2(x) = q_2(x)b(x) + r_2(x) where:
+/// To see this, consider that a_1(x) = q_1(x)b(x) + r_1(x) and a_2(x) =
+/// q_2(x)b(x) + r_2(x) where:
 ///     - deg(q_1) = deg(a_1) - deg(b)
 ///     - deg(q_2) = deg(a_2) - deg(b)
 ///     - deg(r_1) < deg(b)
 ///     - deg(r_2) < deg(b)
-/// The floor division operator for a(x), b(x) returns q(x) such that there exists r(x): deg(r) < deg(b)
-/// where a(x) = q(x)b(x) + r(x)
-/// Note that a_1(x) + a_2(x) = (q_1(x) + q_2(x))b(x) + r_1(x) + r_2(x), where of course
-/// deg(r_1 + r_2) < deg(b), so \floor{a(x) / b(x)} = q_1(x) + q_2(x); making q_1, q_2 additive
-/// secret shares of the result as desired
+/// The floor division operator for a(x), b(x) returns q(x) such that there
+/// exists r(x): deg(r) < deg(b) where a(x) = q(x)b(x) + r(x)
+/// Note that a_1(x) + a_2(x) = (q_1(x) + q_2(x))b(x) + r_1(x) + r_2(x), where
+/// of course deg(r_1 + r_2) < deg(b), so \floor{a(x) / b(x)} = q_1(x) + q_2(x);
+/// making q_1, q_2 additive secret shares of the result as desired
 impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
     fn div(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
-        // We cannot break early if the remainder is exhausted because this will cause the gate
-        // sequencing to differ between parties in the MPC. Instead we execute the whole computation on
-        // both ends of the MPC
+        // We cannot break early if the remainder is exhausted because this will cause
+        // the gate sequencing to differ between parties in the MPC. Instead we
+        // execute the whole computation on both ends of the MPC
         assert!(!rhs.coeffs.is_empty(), "cannot divide by zero polynomial");
         let fabric = self.coeffs[0].fabric();
 
@@ -511,15 +519,16 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
 }
 impl_borrow_variants!(AuthenticatedDensePoly<C>, Div, div, /, DensePolynomialResult<C>, C: CurveGroup);
 
-/// Authenticated division, i.e. division in which the divisor is a secret shared polynomial
+/// Authenticated division, i.e. division in which the divisor is a secret
+/// shared polynomial
 ///
 /// We follow the approach of: https://iacr.org/archive/pkc2006/39580045/39580045.pdf (Section 4)
 ///
-/// To see why this method holds, consider the `rev` operation for a polynomial a(x):
-///     rev(a) = x^deg(a) * a(1/x)
+/// To see why this method holds, consider the `rev` operation for a polynomial
+/// a(x):     rev(a) = x^deg(a) * a(1/x)
 /// Note that this operation is equivalent to reversing the coefficients of a(x)
-/// For f(x) / g(x) where deg(f) = n, deg(g) = m, the objective of a division with
-/// remainder algorithm is to solve:
+/// For f(x) / g(x) where deg(f) = n, deg(g) = m, the objective of a division
+/// with remainder algorithm is to solve:
 ///     f(x) = g(x)q(x) + r(x)
 /// for q(x), r(x) uniquely where deg(r) < deg(g).
 ///
@@ -528,19 +537,21 @@ impl_borrow_variants!(AuthenticatedDensePoly<C>, Div, div, /, DensePolynomialRes
 ///     2. If g^{-1}(x) exists
 /// The rev operator provides a transformation that makes both of these true:
 ///     rev(f) = rev(g) * rev(q) + x^{n - m + 1} * rev(r)
-/// Again, we have used the `rev` operator to reverse the coefficients of each polynomial
-/// so that the leading coefficients are those of r(x). Now we can "mod out" the highest
-/// terms to get:
+/// Again, we have used the `rev` operator to reverse the coefficients of each
+/// polynomial so that the leading coefficients are those of r(x). Now we can
+/// "mod out" the highest terms to get:
 ///     rev(f) = rev(g) * rev(q) mod x^{n - m + 1}
-/// And now that we are working in the quotient ring F[x] / (x^{n - m + 1}), we can be sure
-/// that rev(g)^{-1}(x) exists if its lowest degree coefficient (constant coefficient) is non-zero.
-/// For random (blinded) polynomials, this is true with probability 1 - 1/p.
+/// And now that we are working in the quotient ring F[x] / (x^{n - m + 1}), we
+/// can be sure that rev(g)^{-1}(x) exists if its lowest degree coefficient
+/// (constant coefficient) is non-zero. For random (blinded) polynomials, this
+/// is true with probability 1 - 1/p.
 ///
 /// So we:
 ///     1. apply the `rev` transformation,
 ///     2. mod out rev{r} and solve for rev(q)
 ///     3. undo the `rev` transformation to get q(x)
-///     4. solve for r(x) = f(x) - q(x)g(x), though for floor division we skip this step
+///     4. solve for r(x) = f(x) - q(x)g(x), though for floor division we skip
+///        this step
 impl<C: CurveGroup> Div<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 

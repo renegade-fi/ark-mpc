@@ -1,6 +1,6 @@
-//! Implements a dummy certificate verifier that simply passes through the request
-//! We do not care about the authenticity of certificates during the course of a
-//! p2p MPC
+//! Implements a dummy certificate verifier that simply passes through the
+//! request We do not care about the authenticity of certificates during the
+//! course of a p2p MPC
 
 use rustls::client::{ServerCertVerified, ServerCertVerifier};
 

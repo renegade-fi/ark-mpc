@@ -1,5 +1,5 @@
-//! Defines an malicious secure wrapper around an `MpcCurvePoint<C>` type that includes a MAC
-//! for ensuring computational integrity of an opened point
+//! Defines an malicious secure wrapper around an `MpcCurvePoint<C>` type that
+//! includes a MAC for ensuring computational integrity of an opened point
 
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -30,8 +30,8 @@ use super::{
 /// The number of underlying results in an `AuthenticatedPointResult`
 pub(crate) const AUTHENTICATED_POINT_RESULT_LEN: usize = 3;
 
-/// A maliciously secure wrapper around `MpcPointResult` that includes a MAC as per
-/// the SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
+/// A maliciously secure wrapper around `MpcPointResult` that includes a MAC as
+/// per the SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
 #[derive(Clone)]
 pub struct AuthenticatedPointResult<C: CurveGroup> {
     /// The local secret share of the underlying authenticated point
@@ -41,10 +41,12 @@ pub struct AuthenticatedPointResult<C: CurveGroup> {
     ///
     /// See the doc comment in `AuthenticatedScalar` for more details
     pub(crate) mac: MpcPointResult<C>,
-    /// The public modifier tracks additions and subtractions of public values to the shares
+    /// The public modifier tracks additions and subtractions of public values
+    /// to the shares
     ///
-    /// Only the first party adds/subtracts public values to their share, but the other parties
-    /// must track this to validate the MAC when it is opened
+    /// Only the first party adds/subtracts public values to their share, but
+    /// the other parties must track this to validate the MAC when it is
+    /// opened
     pub(crate) public_modifier: CurvePointResult<C>,
 }
 
@@ -77,7 +79,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         }
     }
 
-    /// Creates a batch of `AuthenticatedPointResult`s from a given batch of underlying points
+    /// Creates a batch of `AuthenticatedPointResult`s from a given batch of
+    /// underlying points
     pub fn new_shared_batch(values: &[CurvePointResult<C>]) -> Vec<AuthenticatedPointResult<C>> {
         if values.is_empty() {
             return vec![];
@@ -109,8 +112,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
     /// Creates a batch of `AuthenticatedPointResult`s from a batch result
     ///
-    /// The batch result combines the batch into one result, so it must be split out
-    /// first before creating the `AuthenticatedPointResult`s
+    /// The batch result combines the batch into one result, so it must be split
+    /// out first before creating the `AuthenticatedPointResult`s
     pub fn new_shared_from_batch_result(
         values: BatchCurvePointResult<C>,
         n: usize,
@@ -132,7 +135,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         self.share.id()
     }
 
-    /// Get the IDs of the results that make up the `AuthenticatedPointResult` representation
+    /// Get the IDs of the results that make up the `AuthenticatedPointResult`
+    /// representation
     pub(crate) fn ids(&self) -> Vec<ResultId> {
         vec![self.share.id(), self.mac.id(), self.public_modifier.id]
     }
@@ -160,8 +164,9 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
     /// Convert a flattened iterator into a batch of `AuthenticatedPointResult`s
     ///
-    /// We assume that the iterator has been flattened in the same way order that `Self::id`s returns
-    /// the `AuthenticatedScalar`'s values: `[share, mac, public_modifier]`
+    /// We assume that the iterator has been flattened in the same way order
+    /// that `Self::id`s returns the `AuthenticatedScalar`'s values:
+    /// `[share, mac, public_modifier]`
     pub fn from_flattened_iterator<I>(iter: I) -> Vec<Self>
     where
         I: Iterator<Item = CurvePointResult<C>>,
@@ -211,7 +216,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         // Both parties open the underlying value
         let recovered_value = self.share.open();
 
-        // Add a gate to compute hte MAC check value: `key_share * opened_value - mac_share`
+        // Add a gate to compute hte MAC check value: `key_share * opened_value -
+        // mac_share`
         let mac_check: CurvePointResult<C> = self.fabric().new_gate_op(
             vec![
                 self.fabric().borrow_mac_key().id(),
@@ -233,8 +239,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         let my_comm = HashCommitmentResult::commit(mac_check.clone());
         let peer_commit = self.fabric().exchange_value(my_comm.commitment);
 
-        // Once the parties have exchanged their commitments, they can open the underlying MAC check value
-        // as they are bound by the commitment
+        // Once the parties have exchanged their commitments, they can open the
+        // underlying MAC check value as they are bound by the commitment
         let peer_mac_check = self.fabric().exchange_value(my_comm.value.clone());
         let blinder_result: ScalarResult<C> = self.fabric().allocate_scalar(my_comm.blinder);
         let peer_blinder = self.fabric().exchange_value(blinder_result);
@@ -340,7 +346,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         let commitment_checks: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
             mac_check_gate_deps,
-            n, /* output_arity */
+            n, // output_arity
             move |mut args| {
                 let my_comms: Vec<CurvePoint<C>> =
                     args.drain(..n).map(|comm| comm.into()).collect();
@@ -382,8 +388,9 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
     }
 }
 
-/// The value that results from opening an `AuthenticatedPointResult` and checking its MAC. This encapsulates
-/// both the underlying value and the result of the MAC check
+/// The value that results from opening an `AuthenticatedPointResult` and
+/// checking its MAC. This encapsulates both the underlying value and the result
+/// of the MAC check
 #[derive(Clone)]
 pub struct AuthenticatedPointOpenResult<C: CurveGroup> {
     /// The underlying value
@@ -444,8 +451,8 @@ impl<C: CurveGroup> Add<&CurvePoint<C>> for &AuthenticatedPointResult<C> {
             // Party zero adds the public value to their share
             &self.share + other
         } else {
-            // Other parties just add the identity to the value to allocate a new op and keep
-            // in sync with party 0
+            // Other parties just add the identity to the value to allocate a new op and
+            // keep in sync with party 0
             &self.share + CurvePoint::identity()
         };
 
@@ -469,8 +476,8 @@ impl<C: CurveGroup> Add<&CurvePointResult<C>> for &AuthenticatedPointResult<C> {
             // Party zero adds the public value to their share
             &self.share + other
         } else {
-            // Other parties just add the identity to the value to allocate a new op and keep
-            // in sync with party 0
+            // Other parties just add the identity to the value to allocate a new op and
+            // keep in sync with party 0
             &self.share + CurvePoint::identity()
         };
 
@@ -551,7 +558,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         Self::from_flattened_iterator(res.into_iter())
     }
 
-    /// Add a batch of `AuthenticatedPointResult`s to a batch of `CurvePointResult`s
+    /// Add a batch of `AuthenticatedPointResult`s to a batch of
+    /// `CurvePointResult`s
     pub fn batch_add_public(
         a: &[AuthenticatedPointResult<C>],
         b: &[CurvePointResult<C>],
@@ -623,8 +631,8 @@ impl<C: CurveGroup> Sub<&CurvePoint<C>> for &AuthenticatedPointResult<C> {
             // Party zero subtracts the public value from their share
             &self.share - other
         } else {
-            // Other parties just subtract the identity from the value to allocate a new op and keep
-            // in sync with party 0
+            // Other parties just subtract the identity from the value to allocate a new op
+            // and keep in sync with party 0
             &self.share - CurvePoint::identity()
         };
 
@@ -648,8 +656,8 @@ impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &AuthenticatedPointResult<C> {
             // Party zero subtracts the public value from their share
             &self.share - other
         } else {
-            // Other parties just subtract the identity from the value to allocate a new op and keep
-            // in sync with party 0
+            // Other parties just subtract the identity from the value to allocate a new op
+            // and keep in sync with party 0
             &self.share - CurvePoint::identity()
         };
 
@@ -730,7 +738,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         Self::from_flattened_iterator(res.into_iter())
     }
 
-    /// Subtract a batch of `AuthenticatedPointResult`s to a batch of `CurvePointResult`s
+    /// Subtract a batch of `AuthenticatedPointResult`s to a batch of
+    /// `CurvePointResult`s
     pub fn batch_sub_public(
         a: &[AuthenticatedPointResult<C>],
         b: &[CurvePointResult<C>],
@@ -900,7 +909,8 @@ impl_borrow_variants!(AuthenticatedPointResult<C>, Mul, mul, *, AuthenticatedSca
 impl_commutative!(AuthenticatedPointResult<C>, Mul, mul, *, AuthenticatedScalarResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> AuthenticatedPointResult<C> {
-    /// Multiply a batch of `AuthenticatedPointResult`s by a batch of `AuthenticatedScalarResult`s
+    /// Multiply a batch of `AuthenticatedPointResult`s by a batch of
+    /// `AuthenticatedScalarResult`s
     #[allow(non_snake_case)]
     pub fn batch_mul(
         a: &[AuthenticatedScalarResult<C>],
@@ -936,7 +946,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         AuthenticatedPointResult::batch_add(&de_db_G, &ae_c_G)
     }
 
-    /// Multiply a batch of `AuthenticatedPointResult`s by a batch of `ScalarResult`s
+    /// Multiply a batch of `AuthenticatedPointResult`s by a batch of
+    /// `ScalarResult`s
     pub fn batch_mul_public(
         a: &[ScalarResult<C>],
         b: &[AuthenticatedPointResult<C>],
@@ -960,7 +971,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         let results: Vec<CurvePointResult<C>> = fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_POINT_RESULT_LEN * n, /* output_arity */
+            AUTHENTICATED_POINT_RESULT_LEN * n, // output_arity
             move |mut args| {
                 let scalars: Vec<Scalar<C>> = args.drain(..n).map(Scalar::from).collect_vec();
                 let points: Vec<CurvePoint<C>> =
@@ -1002,7 +1013,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         // Multiply the shares in a batch gate
         let results = fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_POINT_RESULT_LEN * n, /* output_arity */
+            AUTHENTICATED_POINT_RESULT_LEN * n, // output_arity
             move |args| {
                 let scalars = args.into_iter().map(Scalar::from).collect_vec();
                 let generator = CurvePoint::generator();
@@ -1024,7 +1035,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 impl<C: CurveGroup> AuthenticatedPointResult<C> {
     /// Multiscalar multiplication
     ///
-    /// TODO: Maybe make use of a fast MSM operation under the hood once the blinded points are revealed
+    /// TODO: Maybe make use of a fast MSM operation under the hood once the
+    /// blinded points are revealed
     pub fn msm(
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[AuthenticatedPointResult<C>],
@@ -1047,7 +1059,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         let results = fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_POINT_RESULT_LEN, /* output_arity */
+            AUTHENTICATED_POINT_RESULT_LEN, // output_arity
             move |args| {
                 // Accumulators
                 let mut share = CurvePoint::identity();
@@ -1097,8 +1109,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 // | Test Helpers |
 // ----------------
 
-/// Defines testing helpers for testing secure opening, these methods are not safe to use
-/// outside of tests
+/// Defines testing helpers for testing secure opening, these methods are not
+/// safe to use outside of tests
 #[cfg(feature = "test_helpers")]
 pub mod test_helpers {
     use ark_ec::CurveGroup;

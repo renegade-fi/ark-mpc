@@ -10,7 +10,8 @@ use crate::{
     fabric::ResultValue,
 };
 
-/// A handle on the result of a Pedersen commitment, including the committed secret
+/// A handle on the result of a Pedersen commitment, including the committed
+/// secret
 ///
 /// Of the form `value * G + blinder * H`
 pub(crate) struct PedersenCommitment<C: CurveGroup> {
@@ -60,13 +61,14 @@ impl<C: CurveGroup> PedersenCommitmentResult<C> {
     }
 }
 
-/// A handle on the result of a salted Sha256 hash commitment, including the committed secret
+/// A handle on the result of a salted Sha256 hash commitment, including the
+/// committed secret
 ///
 /// Of the form `H(salt || value)`
 ///
-/// We use hash commitments to commit to curve points before opening them. There is no straightforward
-/// way to adapt Pedersen commitments to curve points, and we do not need the homomorphic properties
-/// of a Pedersen commitment
+/// We use hash commitments to commit to curve points before opening them. There
+/// is no straightforward way to adapt Pedersen commitments to curve points, and
+/// we do not need the homomorphic properties of a Pedersen commitment
 pub(crate) struct HashCommitment<C: CurveGroup> {
     /// The committed value
     pub(crate) value: CurvePoint<C>,

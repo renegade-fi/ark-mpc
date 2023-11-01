@@ -1,7 +1,8 @@
 //! Defines macros useful for creating arithmetic implementations
 
-/// Given an implementation of an arithmetic trait on two borrowed references, this macro
-/// implements the same arithmetic on the owned and partially-owned variants
+/// Given an implementation of an arithmetic trait on two borrowed references,
+/// this macro implements the same arithmetic on the owned and partially-owned
+/// variants
 macro_rules! impl_borrow_variants {
     // Single type trait
     ($target:ty, $trait:ident, $fn_name:ident, $op:tt, $($gen:ident: $gen_ty:ident),*) => {

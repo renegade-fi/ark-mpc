@@ -5,8 +5,8 @@
 #![allow(ambiguous_glob_reexports)]
 #![feature(inherent_associated_types)]
 
-//! Defines an MPC implementation over the a generic Arkworks curve that allows for out-of-order execution of
-//! the underlying MPC circuit
+//! Defines an MPC implementation over the a generic Arkworks curve that allows
+//! for out-of-order execution of the underlying MPC circuit
 
 use std::sync::{Arc, RwLock};
 
@@ -56,11 +56,12 @@ type Shared<T> = Arc<RwLock<T>>;
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    //! Defines test helpers for use in unit and integration tests, as well as benchmarks
+    //! Defines test helpers for use in unit and integration tests, as well as
+    //! benchmarks
     use futures::Future;
 
     use crate::{
-        beaver::PartyIDBeaverSource,
+        beaver::{PartyIDBeaverSource, SharedValueSource},
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
         MpcFabric, PARTY0, PARTY1,
     };
@@ -83,22 +84,36 @@ pub mod test_helpers {
     /// This will spawn two tasks to execute either side of the MPC
     ///
     /// Returns the outputs of both parties
-    pub async fn execute_mock_mpc<T, S, F>(mut f: F) -> (T, T)
+    pub async fn execute_mock_mpc<T, S, F>(f: F) -> (T, T)
     where
+        T: Send + 'static,
+        S: Future<Output = T> + Send + 'static,
+        F: FnMut(MpcFabric<TestCurve>) -> S,
+    {
+        execute_mock_mpc_with_beaver_source(
+            f,
+            PartyIDBeaverSource::new(PARTY0),
+            PartyIDBeaverSource::new(PARTY1),
+        )
+        .await
+    }
+
+    /// Execute a mock MPC by specifying a beaver source for party 0 and 1
+    pub async fn execute_mock_mpc_with_beaver_source<B, T, S, F>(
+        mut f: F,
+        party0_beaver: B,
+        party1_beaver: B,
+    ) -> (T, T)
+    where
+        B: 'static + SharedValueSource<TestCurve>,
         T: Send + 'static,
         S: Future<Output = T> + Send + 'static,
         F: FnMut(MpcFabric<TestCurve>) -> S,
     {
         // Build a duplex stream to broker communication between the two parties
         let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
-        let party0_fabric = MpcFabric::new(
-            MockNetwork::new(PARTY0, party0_stream),
-            PartyIDBeaverSource::new(PARTY0),
-        );
-        let party1_fabric = MpcFabric::new(
-            MockNetwork::new(PARTY1, party1_stream),
-            PartyIDBeaverSource::new(PARTY1),
-        );
+        let party0_fabric = MpcFabric::new(MockNetwork::new(PARTY0, party0_stream), party0_beaver);
+        let party1_fabric = MpcFabric::new(MockNetwork::new(PARTY1, party1_stream), party1_beaver);
 
         // Spawn two tasks to execute the MPC
         let fabric0 = party0_fabric.clone();

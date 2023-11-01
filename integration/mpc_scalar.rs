@@ -110,7 +110,8 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
         .map(|v| fabric.allocate_scalar(*v))
         .collect_vec();
 
-    // Share the values in the plaintext with the counterparty, party 1's values are made public
+    // Share the values in the plaintext with the counterparty, party 1's values are
+    // made public
     let party0_values = share_plaintext_values_batch(&allocated_values, PARTY0, fabric);
     let party1_values = share_plaintext_values_batch(&allocated_values, PARTY1, fabric);
 
@@ -223,7 +224,8 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
         .map(|v| fabric.allocate_scalar(*v))
         .collect_vec();
 
-    // Share the values in the plaintext with the counterparty, party 1's values are made public
+    // Share the values in the plaintext with the counterparty, party 1's values are
+    // made public
     let party0_values = share_plaintext_values_batch(&allocated_values, PARTY0, fabric);
     let party1_values = share_plaintext_values_batch(&allocated_values, PARTY1, fabric);
 
@@ -315,7 +317,8 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_scalars_eq(opened_res, expected_result)
 }
 
-/// Test multiplication of `MpcScalarResult` types with a plaintext scalar constant
+/// Test multiplication of `MpcScalarResult` types with a plaintext scalar
+/// constant
 ///
 /// Party 0 chooses an MPC scalar and party 1 chooses a plaintext scalar
 fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -386,7 +389,8 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
         .map(|v| fabric.allocate_scalar(*v))
         .collect_vec();
 
-    // Share the values in the plaintext with the counterparty, party 1's values are made public
+    // Share the values in the plaintext with the counterparty, party 1's values are
+    // made public
     let party0_values = share_plaintext_values_batch(&allocated_values, PARTY0, fabric);
     let party1_values = share_plaintext_values_batch(&allocated_values, PARTY1, fabric);
 

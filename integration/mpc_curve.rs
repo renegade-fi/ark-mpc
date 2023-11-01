@@ -260,7 +260,8 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     assert_point_batches_eq(opened_res, expected_result)
 }
 
-/// Test multiplication of an `MpcPointResult` type with an `MpcScalarResult` type
+/// Test multiplication of an `MpcPointResult` type with an `MpcScalarResult`
+/// type
 ///
 /// Party 0 chooses the point, party 1 chooses the scalar
 fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
@@ -374,7 +375,8 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     let my_allocated_scalars = fabric.allocate_scalars(scalars);
     let my_allocated_points = fabric.allocate_points(points.clone());
 
-    // Share the plaintext values with the counterparty and compute the expected result
+    // Share the plaintext values with the counterparty and compute the expected
+    // result
     let party0_values = share_plaintext_values_batch(&my_allocated_points, PARTY0, fabric);
     let plaintext_values = share_plaintext_values_batch(&my_allocated_scalars, PARTY1, fabric);
 

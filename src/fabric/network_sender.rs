@@ -1,5 +1,6 @@
-//! Defines an abstraction over the network that receives jobs scheduled onto the
-//! network and re-enqueues them in the result buffer for dependent instructions
+//! Defines an abstraction over the network that receives jobs scheduled onto
+//! the network and re-enqueues them in the result buffer for dependent
+//! instructions
 
 use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
@@ -71,8 +72,9 @@ impl NetworkStats {
 // | Sender Implementation |
 // -------------------------
 
-/// The network sender sits behind the scheduler and is responsible for forwarding messages
-/// onto the network and pulling results off the network, re-enqueuing them for processing
+/// The network sender sits behind the scheduler and is responsible for
+/// forwarding messages onto the network and pulling results off the network,
+/// re-enqueuing them for processing
 pub(crate) struct NetworkSender<C: CurveGroup, N: MpcNetwork<C>> {
     /// The outbound queue of messages to send
     outbound: KanalReceiver<NetworkOutbound<C>>,
@@ -136,8 +138,8 @@ impl<C: CurveGroup, N: MpcNetwork<C> + 'static> NetworkSender<C, N> {
         println!("Network stats: {:#?}", stats);
     }
 
-    /// The read loop for the network, reads messages from the network and re-enqueues them
-    /// with the executor
+    /// The read loop for the network, reads messages from the network and
+    /// re-enqueues them with the executor
     async fn read_loop(
         mut network_stream: SplitStream<N>,
         result_queue: Arc<SegQueue<ExecutorMessage<C>>>,
@@ -160,8 +162,8 @@ impl<C: CurveGroup, N: MpcNetwork<C> + 'static> NetworkSender<C, N> {
         MpcNetworkError::RecvError(ERR_STREAM_FINISHED_EARLY.to_string())
     }
 
-    /// The write loop for the network, reads messages from the outbound queue and sends them
-    /// onto the network
+    /// The write loop for the network, reads messages from the outbound queue
+    /// and sends them onto the network
     async fn write_loop(
         outbound_stream: KanalReceiver<NetworkOutbound<C>>,
         mut network: SplitSink<N, NetworkOutbound<C>>,

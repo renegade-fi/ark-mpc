@@ -21,8 +21,8 @@ use tokio::runtime::Handle;
 
 use crate::{IntegrationTestArgs, TestCurve, TestCurvePoint, TestScalar};
 
-/// Compares two scalars, returning a result that can be propagated up an integration test
-/// stack in the case that the scalars are not equal
+/// Compares two scalars, returning a result that can be propagated up an
+/// integration test stack in the case that the scalars are not equal
 pub(crate) fn assert_scalars_eq(a: TestScalar, b: TestScalar) -> Result<(), String> {
     if a == b {
         Ok(())
@@ -47,8 +47,8 @@ pub(crate) fn assert_scalar_batches_eq(
     Ok(())
 }
 
-/// Compares two points, returning a result that can be propagated up an integration test
-/// stack in the case that the points are not equal
+/// Compares two points, returning a result that can be propagated up an
+/// integration test stack in the case that the points are not equal
 pub(crate) fn assert_points_eq(a: TestCurvePoint, b: TestCurvePoint) -> Result<(), String> {
     if a == b {
         Ok(())
@@ -163,7 +163,8 @@ pub(crate) fn share_point_batch(
         .collect_vec()
 }
 
-/// Send or receive a secret shared scalar from the given party and allocate it as an authenticated value
+/// Send or receive a secret shared scalar from the given party and allocate it
+/// as an authenticated value
 pub(crate) fn share_authenticated_scalar(
     value: TestScalar,
     sender: PartyId,
@@ -172,7 +173,8 @@ pub(crate) fn share_authenticated_scalar(
     test_args.fabric.share_scalar(value, sender)
 }
 
-/// Send or receive a batch of secret shared scalars from the given party and allocate them as authenticated values
+/// Send or receive a batch of secret shared scalars from the given party and
+/// allocate them as authenticated values
 pub(crate) fn share_authenticated_scalar_batch(
     values: Vec<TestScalar>,
     sender: PartyId,
@@ -181,7 +183,8 @@ pub(crate) fn share_authenticated_scalar_batch(
     test_args.fabric.batch_share_scalar(values, sender)
 }
 
-/// Send or receive a secret shared point from the given party and allocate it as an authenticated value
+/// Send or receive a secret shared point from the given party and allocate it
+/// as an authenticated value
 pub(crate) fn share_authenticated_point(
     value: TestCurvePoint,
     sender: PartyId,
@@ -190,7 +193,8 @@ pub(crate) fn share_authenticated_point(
     test_args.fabric.share_point(value, sender)
 }
 
-/// Send or receive a batch of secret shared points from the given party and allocate them as authenticated values
+/// Send or receive a batch of secret shared points from the given party and
+/// allocate them as authenticated values
 pub(crate) fn share_authenticated_point_batch(
     values: Vec<TestCurvePoint>,
     sender: PartyId,
@@ -199,7 +203,8 @@ pub(crate) fn share_authenticated_point_batch(
     test_args.fabric.batch_share_point(values, sender)
 }
 
-/// Share a value with the counterparty by sender ID, the sender sends and the receiver receives
+/// Share a value with the counterparty by sender ID, the sender sends and the
+/// receiver receives
 pub(crate) fn share_plaintext_value<
     T: From<ResultValue<TestCurve>> + Into<NetworkPayload<TestCurve>>,
 >(
@@ -245,7 +250,8 @@ impl PartyIDBeaverSource {
 }
 
 /// The PartyIDBeaverSource returns beaver triplets split statically between the
-/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] = (2, 4)
+/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] =
+/// (2, 4)
 impl SharedValueSource<TestCurve> for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> TestScalar {
         // Simply output partyID, assume partyID \in {0, 1}

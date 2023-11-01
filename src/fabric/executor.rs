@@ -1,5 +1,6 @@
-//! The executor receives IDs of operations that are ready for execution, executes
-//! them, and places the result back into the fabric for further executions
+//! The executor receives IDs of operations that are ready for execution,
+//! executes them, and places the result back into the fabric for further
+//! executions
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -37,8 +38,9 @@ struct ExecutorStats {
     summed_queue_length: u64,
     /// The number of samples taken of the executor's work queue length
     queue_length_sample_count: usize,
-    /// Maps operations to their depth in the circuit, where depth is defined as the number of
-    /// network operations that must be executed before the operation can be executed
+    /// Maps operations to their depth in the circuit, where depth is defined as
+    /// the number of network operations that must be executed before the
+    /// operation can be executed
     result_depth_map: HashMap<ResultId, usize>,
 }
 
@@ -109,14 +111,16 @@ impl Debug for ExecutorStats {
 // | Executor |
 // ------------
 
-/// The executor is responsible for executing operation that are ready for execution, either
-/// passed explicitly by the fabric or as a result of a dependency being satisfied
+/// The executor is responsible for executing operation that are ready for
+/// execution, either passed explicitly by the fabric or as a result of a
+/// dependency being satisfied
 pub struct Executor<C: CurveGroup> {
     /// The job queue for the executor
     job_queue: Arc<SegQueue<ExecutorMessage<C>>>,
     /// The operation buffer, stores in-flight operations
     operations: GrowableBuffer<Operation<C>>,
-    /// The dependency map; maps in-flight results to operations that are waiting for them
+    /// The dependency map; maps in-flight results to operations that are
+    /// waiting for them
     dependencies: GrowableBuffer<Vec<ResultId>>,
     /// The completed results of operations
     results: GrowableBuffer<OpResult<C>>,
@@ -130,9 +134,11 @@ pub struct Executor<C: CurveGroup> {
 }
 
 /// The type that the `Executor` receives on its channel, this may either be:
-/// - A result of an operation, for which th executor will check the dependency map and
+/// - A result of an operation, for which th executor will check the dependency
+///   map and
 ///  execute any operations that are now ready
-/// - An operation directly, which the executor will execute immediately if all of its
+/// - An operation directly, which the executor will execute immediately if all
+///   of its
 ///  arguments are ready
 /// - A new waiter for a result, which the executor will add to its waiter map
 #[derive(Debug)]
@@ -196,7 +202,7 @@ impl<C: CurveGroup> Executor<C> {
                         println!("Executor stats: {:?}", self.stats);
 
                         break;
-                    }
+                    },
                 }
             }
 
@@ -262,7 +268,8 @@ impl<C: CurveGroup> Executor<C> {
             return;
         }
 
-        // Otherwise, add the operation to the in-flight operations list and the dependency map
+        // Otherwise, add the operation to the in-flight operations list and the
+        // dependency map
         for arg in op.args.iter() {
             let entry = self.dependencies.entry_mut(*arg);
             if entry.is_none() {
@@ -300,7 +307,7 @@ impl<C: CurveGroup> Executor<C> {
                     id: op.result_id,
                     value,
                 });
-            }
+            },
 
             OperationType::GateBatch { function } => {
                 let output = (function)(inputs);
@@ -309,10 +316,11 @@ impl<C: CurveGroup> Executor<C> {
                     .zip(output)
                     .map(|(id, value)| OpResult { id, value })
                     .for_each(|res| self.handle_new_result(res));
-            }
+            },
 
             OperationType::Network { function } => {
-                // Derive a network payload from the gate inputs and forward it to the outbound buffer
+                // Derive a network payload from the gate inputs and forward it to the outbound
+                // buffer
                 let result_id = result_ids[0];
                 let payload = (function)(inputs);
                 let outbound = NetworkOutbound {
@@ -325,13 +333,14 @@ impl<C: CurveGroup> Executor<C> {
                     .send(outbound)
                     .expect("error sending network payload");
 
-                // On a `send`, the local party receives a copy of the value placed as the result of
-                // the network operation, so we must re-enqueue the result
+                // On a `send`, the local party receives a copy of the value placed as the
+                // result of the network operation, so we must re-enqueue the
+                // result
                 self.handle_new_result(OpResult {
                     id: result_id,
                     value: payload.into(),
                 });
-            }
+            },
         };
     }
 

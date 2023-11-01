@@ -1,4 +1,5 @@
-//! Defines a benchmark for native multiscalar-multiplication on `Scalar` and `CurvePoint` types
+//! Defines a benchmark for native multiscalar-multiplication on `Scalar` and
+//! `CurvePoint` types
 
 use ark_mpc::{
     algebra::{CurvePoint, Scalar},

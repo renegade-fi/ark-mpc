@@ -30,9 +30,11 @@ impl<C: CurveGroup> From<ScalarResult<C>> for MpcScalarResult<C> {
     }
 }
 
-/// Defines the result handle type that represents a future result of an `MpcScalar`
+/// Defines the result handle type that represents a future result of an
+/// `MpcScalar`
 impl<C: CurveGroup> MpcScalarResult<C> {
-    /// Creates an MPC scalar from a given underlying scalar assumed to be a secret share
+    /// Creates an MPC scalar from a given underlying scalar assumed to be a
+    /// secret share
     pub fn new_shared(value: ScalarResult<C>) -> MpcScalarResult<C> {
         value.into()
     }
@@ -397,7 +399,8 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         scalars.into_iter().map(|s| s.into()).collect_vec()
     }
 
-    /// Subtract a batch of `MpcScalarResult`s from a batch of public `ScalarResult`s
+    /// Subtract a batch of `MpcScalarResult`s from a batch of public
+    /// `ScalarResult`s
     pub fn batch_sub_public(
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],
@@ -575,7 +578,8 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         MpcScalarResult::batch_add(&de_plus_db, &ea_plus_c)
     }
 
-    /// Multiply a batch of `MpcScalarResult`s by a batch of public `ScalarResult`s
+    /// Multiply a batch of `MpcScalarResult`s by a batch of public
+    /// `ScalarResult`s
     pub fn batch_mul_public(
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],

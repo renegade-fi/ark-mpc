@@ -6,7 +6,8 @@ use ark_mpc::{test_helpers::execute_mock_mpc, PARTY0};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use tokio::runtime::Builder as RuntimeBuilder;
 
-/// Measure the throughput and latency of a set of sequential multiplication gates
+/// Measure the throughput and latency of a set of sequential multiplication
+/// gates
 pub fn bench_mul_throughput(c: &mut Criterion) {
     let runtime = RuntimeBuilder::new_multi_thread()
         .worker_threads(3)

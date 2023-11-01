@@ -26,9 +26,11 @@ impl<C: CurveGroup> From<CurvePointResult<C>> for MpcPointResult<C> {
     }
 }
 
-/// Defines the result handle type that represents a future result of an `MpcPoint`
+/// Defines the result handle type that represents a future result of an
+/// `MpcPoint`
 impl<C: CurveGroup> MpcPointResult<C> {
-    /// Creates an `MpcPoint` from a given underlying point assumed to be a secret share
+    /// Creates an `MpcPoint` from a given underlying point assumed to be a
+    /// secret share
     pub fn new_shared(value: CurvePointResult<C>) -> MpcPointResult<C> {
         MpcPointResult { share: value }
     }
@@ -95,7 +97,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
         // Create a gate to component-wise add the shares
         fabric.new_batch_gate_op(
             vec![party0_values.id(), party1_values.id()],
-            n, /* output_arity */
+            n, // output_arity
             |mut args| {
                 let party0_values: Vec<CurvePoint<C>> = args.remove(0).into();
                 let party1_values: Vec<CurvePoint<C>> = args.remove(0).into();

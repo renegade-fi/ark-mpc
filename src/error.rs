@@ -3,7 +3,8 @@ use std::{error::Error, fmt::Display};
 
 use quinn::{ConnectError, ConnectionError};
 
-/// An application level error that results from an error deeper in the MPC stack
+/// An application level error that results from an error deeper in the MPC
+/// stack
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MpcError {
     /// An error on the network
@@ -57,7 +58,8 @@ pub enum SetupError {
     ConnectionError(ConnectionError),
     /// An error setting up the TLS certificate
     KeygenError,
-    /// An error emitted when there is no inbound connection attempt from the suggested peer
+    /// An error emitted when there is no inbound connection attempt from the
+    /// suggested peer
     NoIncomingConnection,
     /// An error setting up the QUIC server on the local node
     ServerSetupError,

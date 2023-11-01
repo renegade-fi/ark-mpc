@@ -1,5 +1,5 @@
-//! A paired down version of the `gate_throughput` benchmarks that allows for tracing without
-//! the overhead of criterion polluting stack samples
+//! A paired down version of the `gate_throughput` benchmarks that allows for
+//! tracing without the overhead of criterion polluting stack samples
 
 use std::time::Instant;
 

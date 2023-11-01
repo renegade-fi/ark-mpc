@@ -1,4 +1,5 @@
-//! Defines curve types for shared authenticated, shared unauthenticated, and plaintext curve points
+//! Defines curve types for shared authenticated, shared unauthenticated, and
+//! plaintext curve points
 #![allow(clippy::module_inception)]
 
 mod authenticated_curve;

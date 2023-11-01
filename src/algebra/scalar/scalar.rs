@@ -40,7 +40,8 @@ pub const fn n_bytes_field<F: PrimeField>() -> usize {
 // ---------------------
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-/// A wrapper around the inner scalar that allows us to implement foreign traits for the `Scalar`
+/// A wrapper around the inner scalar that allows us to implement foreign traits
+/// for the `Scalar`
 pub struct Scalar<C: CurveGroup>(pub(crate) C::ScalarField);
 
 impl<C: CurveGroup> Scalar<C> {
@@ -92,7 +93,8 @@ impl<C: CurveGroup> Scalar<C> {
         Scalar::new(self.0.pow([exp]))
     }
 
-    /// Construct a scalar from the given bytes and reduce modulo the field's modulus
+    /// Construct a scalar from the given bytes and reduce modulo the field's
+    /// modulus
     pub fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
         let inner = C::ScalarField::from_be_bytes_mod_order(bytes);
         Scalar(inner)
@@ -100,8 +102,8 @@ impl<C: CurveGroup> Scalar<C> {
 
     /// Convert to big endian bytes
     ///
-    /// Pad to the maximum amount of bytes needed so that the resulting bytes are
-    /// of predictable length
+    /// Pad to the maximum amount of bytes needed so that the resulting bytes
+    /// are of predictable length
     pub fn to_bytes_be(&self) -> Vec<u8> {
         let val_biguint = self.to_biguint();
         let mut bytes = val_biguint.to_bytes_be();

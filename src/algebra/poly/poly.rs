@@ -1,4 +1,5 @@
-//! Defines the base polynomial representation, modeled after the `ark_poly::DensePolynomial` type
+//! Defines the base polynomial representation, modeled after the
+//! `ark_poly::DensePolynomial` type
 
 use std::{
     cmp, iter,
@@ -45,7 +46,8 @@ fn x_to_t<C: CurveGroup>(t: usize) -> DensePolynomial<C::ScalarField> {
 /// A dense polynomial representation allocated in an MPC circuit
 #[derive(Clone, Debug, Default)]
 pub struct DensePolynomialResult<C: CurveGroup> {
-    /// The coefficients of the polynomial, the `i`th coefficient is the coefficient of `x^i`
+    /// The coefficients of the polynomial, the `i`th coefficient is the
+    /// coefficient of `x^i`
     pub coeffs: Vec<ScalarResult<C>>,
 }
 
@@ -108,7 +110,7 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
 
         let res_coeffs = self.fabric().new_batch_gate_op(
             ids,
-            n_result_coeffs, /* output_arity */
+            n_result_coeffs, // output_arity
             move |args| {
                 let x_to_t = x_to_t::<C>(t);
 
@@ -121,8 +123,9 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
                 // Compute the bezout coefficients of the two polynomials
                 let (inverse_poly, _) = Self::compute_bezout_polynomials(&self_poly, &x_to_t);
 
-                // In a polynomial ring, gcd is defined only up to scalar multiplication, so we multiply the result
-                // by the inverse of the resultant first coefficient to uniquely define the inverse as f^{-1}(x) such that
+                // In a polynomial ring, gcd is defined only up to scalar multiplication, so we
+                // multiply the result by the inverse of the resultant first
+                // coefficient to uniquely define the inverse as f^{-1}(x) such that
                 // f * f^{-1}(x) = 1 \in F[x] / (x^t)
                 let self_constant_coeff = self_poly.coeffs[0];
                 let inverse_constant_coeff = inverse_poly.coeffs[0];
@@ -232,7 +235,8 @@ impl_commutative!(DensePolynomialResult<C>, Add, add, +, DensePolynomial<C::Scal
 impl<C: CurveGroup> Add<&DensePolynomialResult<C>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
     fn add(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
-        // We do not pad the coefficients here, it requires fewer gates if we avoid padding
+        // We do not pad the coefficients here, it requires fewer gates if we avoid
+        // padding
         let mut coeffs = Vec::new();
         let (shorter, longer) = if self.coeffs.len() < rhs.coeffs.len() {
             (&self.coeffs, &rhs.coeffs)
@@ -293,8 +297,9 @@ impl<C: CurveGroup> Sub<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 
 // --- Multiplication --- //
 
-// TODO: For each of the following implementations, we can await all coefficients to be available
-// and then perform an FFT-based polynomial multiplication. This is left as an optimization
+// TODO: For each of the following implementations, we can await all
+// coefficients to be available and then perform an FFT-based polynomial
+// multiplication. This is left as an optimization
 impl<C: CurveGroup> Mul<&DensePolynomial<C::ScalarField>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
 

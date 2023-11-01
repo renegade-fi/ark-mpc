@@ -9,7 +9,8 @@ use rustls::{Certificate, ClientConfig as CryptoClientConfig};
 use crate::error::SetupError;
 use crate::network::cert_verifier::PassThroughCertVerifier;
 
-/// The maximum amount of time to wait for a response from the counterparty before
+/// The maximum amount of time to wait for a response from the counterparty
+/// before
 #[cfg(not(test))]
 const MAX_IDLE_TIMEOUT: u32 = 10_000; // milliseconds
 #[cfg(test)]
@@ -37,7 +38,8 @@ pub fn build_configs() -> Result<(ClientConfig, ServerConfig), SetupError> {
     let mut roots = rustls::RootCertStore::empty();
     roots.add(&cert).map_err(|_| SetupError::ServerSetupError)?;
 
-    // Pass the self-signed cert to the client, and disable auth; p2p auth should happen at a higher layer
+    // Pass the self-signed cert to the client, and disable auth; p2p auth should
+    // happen at a higher layer
     let mut client_crypto_config = CryptoClientConfig::builder()
         .with_safe_defaults()
         .with_root_certificates(roots)

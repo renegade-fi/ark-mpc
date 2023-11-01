@@ -1,4 +1,5 @@
-//! Defines the central implementation of an `MpcNetwork` over the QUIC transport
+//! Defines the central implementation of an `MpcNetwork` over the QUIC
+//! transport
 
 use ark_ec::CurveGroup;
 use async_trait::async_trait;
@@ -51,14 +52,15 @@ pub struct QuicTwoPartyNet<C: CurveGroup> {
     ///
     /// In the case that the whole message is not available yet, reads may block
     /// and the `read_message` future may be cancelled by the executor.
-    /// We buffer the message length to avoid re-reading the message length incorrectly from
-    /// the stream
+    /// We buffer the message length to avoid re-reading the message length
+    /// incorrectly from the stream
     buffered_message_length: Option<u64>,
     /// A buffered partial message read from the stream
     ///
-    /// This buffer exists to provide cancellation safety to a `read` future as the underlying `quinn`
-    /// stream is not cancellation safe, i.e. if a `ReadBuf` future is dropped, the buffer is dropped with
-    /// it and the partially read data is skipped
+    /// This buffer exists to provide cancellation safety to a `read` future as
+    /// the underlying `quinn` stream is not cancellation safe, i.e. if a
+    /// `ReadBuf` future is dropped, the buffer is dropped with it and the
+    /// partially read data is skipped
     buffered_inbound: Option<BufferWithCursor>,
     /// A buffered partial message written to the stream
     buffered_outbound: Option<BufferWithCursor>,
@@ -241,7 +243,8 @@ impl<'a, C: CurveGroup> QuicTwoPartyNet<C> {
         let len = self.buffered_message_length.unwrap();
         let bytes = self.read_bytes(len as usize).await?;
 
-        // Reset the message length buffer after the data has been pulled from the stream
+        // Reset the message length buffer after the data has been pulled from the
+        // stream
         self.buffered_message_length = None;
 
         // Deserialize the message

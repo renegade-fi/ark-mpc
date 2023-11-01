@@ -4,13 +4,13 @@
 use ark_ec::CurveGroup;
 use itertools::Itertools;
 
-use crate::algebra::Scalar;
+use crate::{algebra::Scalar, network::PartyId};
 
 /// SharedValueSource implements both the functionality for:
-///     1. Single additively shared values [x] where party 1 holds
-///        x_1 and party 2 holds x_2 such that x_1 + x_2 = x
-///     2. Beaver triplets; additively shared values [a], [b], [c] such
-///        that a * b = c
+///     1. Single additively shared values [x] where party 1 holds x_1 and party
+///        2 holds x_2 such that x_1 + x_2 = x
+///     2. Beaver triplets; additively shared values [a], [b], [c] such that a *
+///        b = c
 pub trait SharedValueSource<C: CurveGroup>: Send + Sync {
     /// Fetch the next shared single bit
     fn next_shared_bit(&mut self) -> Scalar<C>;
@@ -28,7 +28,8 @@ pub trait SharedValueSource<C: CurveGroup>: Send + Sync {
             .map(|_| self.next_shared_value())
             .collect_vec()
     }
-    /// Fetch the next pair of values that are multiplicative inverses of one another
+    /// Fetch the next pair of values that are multiplicative inverses of one
+    /// another
     fn next_shared_inverse_pair(&mut self) -> (Scalar<C>, Scalar<C>);
     /// Fetch the next batch of multiplicative inverse pairs
     fn next_shared_inverse_pair_batch(
@@ -79,7 +80,8 @@ impl PartyIDBeaverSource {
 }
 
 /// The PartyIDBeaverSource returns beaver triplets split statically between the
-/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] = (2, 4)
+/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] =
+/// (2, 4)
 #[cfg(any(feature = "test_helpers", test))]
 impl<C: CurveGroup> SharedValueSource<C> for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar<C> {
@@ -102,5 +104,44 @@ impl<C: CurveGroup> SharedValueSource<C> for PartyIDBeaverSource {
 
     fn next_shared_value(&mut self) -> Scalar<C> {
         Scalar::from(self.party_id)
+    }
+}
+
+/// A beaver source that always returns zero
+#[cfg(any(feature = "test_helpers", test))]
+pub struct ZeroBeaverSource {
+    /// The ID of the local party
+    party_id: PartyId,
+}
+
+#[cfg(any(feature = "test_helpers", test))]
+impl ZeroBeaverSource {
+    /// Create a new beaver source given the local party_id
+    pub fn new(party_id: PartyId) -> Self {
+        Self { party_id }
+    }
+}
+
+#[cfg(any(feature = "test_helpers", test))]
+impl<C: CurveGroup> SharedValueSource<C> for ZeroBeaverSource {
+    fn next_shared_bit(&mut self) -> Scalar<C> {
+        Scalar::zero()
+    }
+
+    fn next_triplet(&mut self) -> (Scalar<C>, Scalar<C>, Scalar<C>) {
+        (Scalar::zero(), Scalar::zero(), Scalar::zero())
+    }
+
+    /// For the shared inverse pair, we return 1 to give a valid member of the
+    /// multiplicative subgroup
+    ///
+    /// This means that each party holds their party ID as a shared value
+    fn next_shared_inverse_pair(&mut self) -> (Scalar<C>, Scalar<C>) {
+        let val = Scalar::from(self.party_id);
+        (val, val)
+    }
+
+    fn next_shared_value(&mut self) -> Scalar<C> {
+        Scalar::zero()
     }
 }
