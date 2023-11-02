@@ -1200,28 +1200,27 @@ where
         // Take the FFT of the shares and the macs separately
         let shares = padded_input.iter().map(|v| v.share()).collect_vec();
         let macs = padded_input.iter().map(|v| v.mac_share()).collect_vec();
-
-        let (share_fft, mac_fft) = if is_forward {
-            (
-                ScalarResult::fft_with_domain::<D>(&shares, domain),
-                ScalarResult::fft_with_domain::<D>(&macs, domain),
-            )
-        } else {
-            (
-                ScalarResult::ifft_with_domain::<D>(&shares, domain),
-                ScalarResult::ifft_with_domain::<D>(&macs, domain),
-            )
-        };
-
-        // No public values are added in an FFT, so the public modifiers remain
-        // unchanged
         let modifiers = padded_input
             .into_iter()
             .map(|v| v.public_modifier)
             .collect_vec();
 
+        let (share_fft, mac_fft, modifier_fft) = if is_forward {
+            (
+                ScalarResult::fft_with_domain::<D>(&shares, domain),
+                ScalarResult::fft_with_domain::<D>(&macs, domain),
+                ScalarResult::fft_with_domain::<D>(&modifiers, domain),
+            )
+        } else {
+            (
+                ScalarResult::ifft_with_domain::<D>(&shares, domain),
+                ScalarResult::ifft_with_domain::<D>(&macs, domain),
+                ScalarResult::ifft_with_domain::<D>(&modifiers, domain),
+            )
+        };
+
         let mut res = Vec::with_capacity(n);
-        for (share, mac, modifier) in izip!(share_fft, mac_fft, modifiers) {
+        for (share, mac, modifier) in izip!(share_fft, mac_fft, modifier_fft) {
             res.push(AuthenticatedScalarResult {
                 share: MpcScalarResult::new_shared(share),
                 mac: MpcScalarResult::new_shared(mac),
@@ -1495,13 +1494,23 @@ mod tests {
             .collect_vec();
 
         let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
-        let fft_res = domain.fft(&values.iter().map(Scalar::inner).collect_vec());
+        let fft_res = domain.fft(
+            &values
+                .iter()
+                // Add one to test public modifiers
+                .map(|v| (v + Scalar::one()).inner())
+                .collect_vec(),
+        );
         let expected_res = fft_res.into_iter().map(Scalar::new).collect_vec();
 
         let (res, _) = execute_mock_mpc(|fabric| {
             let values = values.clone();
             async move {
-                let shared_values = fabric.batch_share_scalar(values, PARTY0 /* sender */);
+                let shared_values = fabric
+                    .batch_share_scalar(values, PARTY0 /* sender */)
+                    .into_iter()
+                    .map(|v| v + Scalar::one())
+                    .collect_vec();
                 let fft = AuthenticatedScalarResult::fft::<Radix2EvaluationDomain<TestPolyField>>(
                     &shared_values,
                 );
@@ -1528,13 +1537,24 @@ mod tests {
             .collect_vec();
 
         let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
-        let ifft_res = domain.ifft(&values.iter().map(Scalar::inner).collect_vec());
+        let ifft_res = domain.ifft(
+            &values
+                .iter()
+                // Add one to test public modifiers
+                .map(|v| (v + Scalar::one()).inner())
+                .collect_vec(),
+        );
         let expected_res = ifft_res.into_iter().map(Scalar::new).collect_vec();
 
         let (res, _) = execute_mock_mpc(|fabric| {
             let values = values.clone();
             async move {
                 let shared_values = fabric.batch_share_scalar(values, PARTY0 /* sender */);
+                let shared_values = shared_values
+                    .into_iter()
+                    .map(|v| v + Scalar::one())
+                    .collect_vec();
+
                 let ifft = AuthenticatedScalarResult::ifft::<Radix2EvaluationDomain<TestPolyField>>(
                     &shared_values,
                 );
