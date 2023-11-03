@@ -462,7 +462,7 @@ where
         domain: D,
     ) -> Vec<ScalarResult<C>> {
         assert!(!x.is_empty(), "Cannot compute fft of empty sequence");
-        let n = x.len().next_power_of_two();
+        let n = domain.size();
 
         let fabric = x[0].fabric();
         let ids = x.iter().map(|v| v.id).collect_vec();
@@ -495,7 +495,7 @@ where
         domain: D,
     ) -> Vec<ScalarResult<C>> {
         assert!(!x.is_empty(), "Cannot compute fft of empty sequence");
-        let n = x.len().next_power_of_two();
+        let n = domain.size();
 
         let fabric = x[0].fabric();
         let ids = x.iter().map(|v| v.id).collect_vec();
@@ -696,12 +696,13 @@ mod test {
     async fn test_circuit_fft() {
         let mut rng = thread_rng();
         let n: usize = rng.gen_range(1..=100);
+        let domain_size = rng.gen_range(n..10 * n);
 
         let seq = (0..n)
             .map(|_| Scalar::<TestCurve>::random(&mut rng))
             .collect_vec();
 
-        let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
+        let domain = Radix2EvaluationDomain::<TestPolyField>::new(domain_size).unwrap();
         let fft_res = domain.fft(&seq.iter().map(|s| s.inner()).collect_vec());
         let expected_res = fft_res.into_iter().map(Scalar::new).collect_vec();
 
@@ -710,12 +711,15 @@ mod test {
             async move {
                 let seq_alloc = seq.iter().map(|x| fabric.allocate_scalar(*x)).collect_vec();
 
-                let res = ScalarResult::fft::<Radix2EvaluationDomain<TestPolyField>>(&seq_alloc);
+                let res = ScalarResult::fft_with_domain::<Radix2EvaluationDomain<TestPolyField>>(
+                    &seq_alloc, domain,
+                );
                 future::join_all(res.into_iter()).await
             }
         })
         .await;
 
+        assert_eq!(res.len(), expected_res.len());
         assert_eq!(res, expected_res);
     }
 
@@ -724,12 +728,13 @@ mod test {
     async fn test_circuit_ifft() {
         let mut rng = thread_rng();
         let n: usize = rng.gen_range(1..=100);
+        let domain_size = rng.gen_range(n..10 * n);
 
         let seq = (0..n)
             .map(|_| Scalar::<TestCurve>::random(&mut rng))
             .collect_vec();
 
-        let domain = Radix2EvaluationDomain::<TestPolyField>::new(n).unwrap();
+        let domain = Radix2EvaluationDomain::<TestPolyField>::new(domain_size).unwrap();
         let ifft_res = domain.ifft(&seq.iter().map(|s| s.inner()).collect_vec());
         let expected_res = ifft_res.into_iter().map(Scalar::new).collect_vec();
 
@@ -738,12 +743,15 @@ mod test {
             async move {
                 let seq_alloc = seq.iter().map(|x| fabric.allocate_scalar(*x)).collect_vec();
 
-                let res = ScalarResult::ifft::<Radix2EvaluationDomain<TestPolyField>>(&seq_alloc);
+                let res = ScalarResult::ifft_with_domain::<Radix2EvaluationDomain<TestPolyField>>(
+                    &seq_alloc, domain,
+                );
                 future::join_all(res.into_iter()).await
             }
         })
         .await;
 
+        assert_eq!(res.len(), expected_res.len());
         assert_eq!(res, expected_res);
     }
 }
