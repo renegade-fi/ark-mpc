@@ -1121,3 +1121,27 @@ impl<C: CurveGroup> MpcFabric<C> {
         AuthenticatedScalarResult::new_shared_batch(&bits)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{algebra::Scalar, test_helpers::execute_mock_mpc, PARTY0};
+
+    /// Tests a linear circuit of very large depth
+    #[tokio::test]
+    async fn test_deep_circuit() {
+        const DEPTH: usize = 1_000_000;
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            // Perform an operation that takes time, so that further operations will enqueue
+            // behind it
+            let mut res = fabric.share_plaintext(Scalar::from(1u8), PARTY0);
+            for _ in 0..DEPTH {
+                res = res + fabric.one();
+            }
+
+            res.await
+        })
+        .await;
+
+        assert_eq!(res, Scalar::from(DEPTH + 1));
+    }
+}
