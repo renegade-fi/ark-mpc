@@ -1,6 +1,6 @@
 [package]
 name = "ark-mpc"
-version = "0.1.1"
+version = "0.1.2"
 description = "Malicious-secure SPDZ style two party secure computation"
 keywords = ["mpc", "crypto", "cryptography"]
 homepage = "https://renegade.fi"

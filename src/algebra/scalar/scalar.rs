@@ -562,6 +562,12 @@ impl<C: CurveGroup> From<usize> for Scalar<C> {
     }
 }
 
+impl<C: CurveGroup> From<BigUint> for Scalar<C> {
+    fn from(value: BigUint) -> Self {
+        Scalar::from_biguint(&value)
+    }
+}
+
 // -------------------
 // | Iterator Traits |
 // -------------------
