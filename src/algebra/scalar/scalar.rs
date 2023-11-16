@@ -11,7 +11,7 @@ use std::{
 };
 
 use ark_ec::CurveGroup;
-use ark_ff::{batch_inversion, FftField, Field, PrimeField};
+use ark_ff::{batch_inversion, FftField, Field, One, PrimeField, Zero};
 use ark_poly::EvaluationDomain;
 use ark_std::UniformRand;
 use itertools::Itertools;
@@ -125,6 +125,22 @@ impl<C: CurveGroup> Scalar<C> {
         let le_bytes = val.to_bytes_le();
         let inner = C::ScalarField::from_le_bytes_mod_order(&le_bytes);
         Scalar(inner)
+    }
+}
+
+impl<C: CurveGroup> Zero for Scalar<C> {
+    fn zero() -> Self {
+        Self::zero()
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
+impl<C: CurveGroup> One for Scalar<C> {
+    fn one() -> Self {
+        Self::one()
     }
 }
 
