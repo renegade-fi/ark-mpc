@@ -224,12 +224,15 @@ impl<C: CurveGroup> Executor<C> {
 
     /// Insert a result into the buffer
     fn insert_result(&mut self, result: OpResult<C>) {
-        let prev = self.results.insert(result.id, result);
+        let id = result.id;
+        let prev = self.results.insert(id, result);
         assert!(
             prev.is_none(),
             "duplicate result id: {:?}",
             prev.unwrap().id
         );
+
+        self.wake_waiters_on_result(id);
     }
 
     /// Get the operations that are ready for execution after a result comes in
@@ -308,11 +311,8 @@ impl<C: CurveGroup> Executor<C> {
             let res = self.compute_result(op);
 
             for result in res.into_iter() {
-                let id = result.id;
-
                 self.append_ready_ops(result.id, &mut ops);
                 self.insert_result(result);
-                self.wake_waiters_on_result(id);
             }
         }
     }
