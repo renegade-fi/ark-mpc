@@ -9,11 +9,8 @@ use tokio::runtime::Builder as RuntimeBuilder;
 /// Measure the throughput and latency of a set of sequential multiplication
 /// gates
 pub fn bench_mul_throughput(c: &mut Criterion) {
-    let runtime = RuntimeBuilder::new_multi_thread()
-        .worker_threads(3)
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime =
+        RuntimeBuilder::new_multi_thread().worker_threads(3).enable_all().build().unwrap();
 
     let mut group = c.benchmark_group("mul-throughput");
     for circuit_size in [100, 1000, 10000].into_iter() {

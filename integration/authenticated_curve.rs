@@ -298,10 +298,7 @@ fn test_batch_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
     // Party 0's values are used for the negation
     let party0_values = share_plaintext_values_batch(&my_values_allocated, PARTY0, fabric);
-    let expected_res = await_result_batch(&party0_values)
-        .into_iter()
-        .map(|x| -x)
-        .collect_vec();
+    let expected_res = await_result_batch(&party0_values).into_iter().map(|x| -x).collect_vec();
 
     // Compute the expected result in an MPC circuit
     let party0_values = share_authenticated_point_batch(my_values, PARTY0, test_args);

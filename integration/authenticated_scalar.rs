@@ -338,11 +338,8 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let my_vals_allocated = fabric.allocate_scalars(my_vals.clone());
 
     // Share the values in the plaintext and compute the expected result
-    let party0_value = await_result_batch(&share_plaintext_values_batch(
-        &my_vals_allocated,
-        PARTY0,
-        fabric,
-    ));
+    let party0_value =
+        await_result_batch(&share_plaintext_values_batch(&my_vals_allocated, PARTY0, fabric));
     let expected_result = party0_value.into_iter().map(Scalar::neg).collect_vec();
 
     // Compute the result in an MPC circuit
@@ -509,10 +506,7 @@ inventory::submit!(IntegrationTest {
     test_fn: test_add_public_value,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "authenticated_scalar::test_add",
-    test_fn: test_add,
-});
+inventory::submit!(IntegrationTest { name: "authenticated_scalar::test_add", test_fn: test_add });
 
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_batch_add",
@@ -529,10 +523,7 @@ inventory::submit!(IntegrationTest {
     test_fn: test_sub_public_scalar,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "authenticated_scalar::test_sub",
-    test_fn: test_sub,
-});
+inventory::submit!(IntegrationTest { name: "authenticated_scalar::test_sub", test_fn: test_sub });
 
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_batch_sub",
@@ -544,10 +535,7 @@ inventory::submit!(IntegrationTest {
     test_fn: test_batch_sub_public,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "authenticated_scalar::test_neg",
-    test_fn: test_neg,
-});
+inventory::submit!(IntegrationTest { name: "authenticated_scalar::test_neg", test_fn: test_neg });
 
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_batch_neg",
@@ -559,10 +547,7 @@ inventory::submit!(IntegrationTest {
     test_fn: test_mul_public_scalar,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "authenticated_scalar::test_mul",
-    test_fn: test_mul,
-});
+inventory::submit!(IntegrationTest { name: "authenticated_scalar::test_mul", test_fn: test_mul });
 
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_batch_mul",

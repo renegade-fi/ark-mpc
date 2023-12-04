@@ -80,10 +80,7 @@ fn main() {
     let args_clone = args.clone();
 
     // Build a runtime to execute within
-    let runtime = RuntimeBuilder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
 
     // We run the harness inside of a tokio blocking task so that blocking network
     // calls are able to function properly
@@ -107,10 +104,7 @@ fn main() {
                 let other_host_alias = format!("party{}", if args.party == 1 { 0 } else { 1 });
                 let hosts = lookup_host(other_host_alias.as_str()).unwrap();
 
-                println!(
-                    "Lookup successful for {}... found hosts: {:?}",
-                    other_host_alias, hosts
-                );
+                println!("Lookup successful for {}... found hosts: {:?}", other_host_alias, hosts);
 
                 format!("{}:{}", hosts[0], args.port2).parse().unwrap()
             } else {
@@ -148,10 +142,7 @@ fn main() {
             println!("\n\n{}\n", "Running integration tests...".blue());
         }
 
-        let test_args = IntegrationTestArgs {
-            party_id: args.party,
-            fabric: fabric.clone(),
-        };
+        let test_args = IntegrationTestArgs { party_id: args.party, fabric: fabric.clone() };
         let mut all_success = true;
 
         for test in inventory::iter::<IntegrationTest> {

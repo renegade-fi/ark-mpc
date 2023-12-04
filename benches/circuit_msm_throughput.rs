@@ -10,11 +10,8 @@ use tokio::runtime::Builder as RuntimeBuilder;
 
 /// Measure the throughput and latency of a variable-sized MSM
 pub fn bench_msm_throughput(c: &mut Criterion) {
-    let runtime = RuntimeBuilder::new_multi_thread()
-        .worker_threads(3)
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime =
+        RuntimeBuilder::new_multi_thread().worker_threads(3).enable_all().build().unwrap();
 
     let mut group = c.benchmark_group("msm-throughput");
     for circuit_size in [100, 1000, 10000].into_iter() {
@@ -25,9 +22,8 @@ pub fn bench_msm_throughput(c: &mut Criterion) {
                 let mut total_time = Duration::from_millis(0);
                 for _ in 0..n_iters {
                     let (elapsed1, elapsed2) = execute_mock_mpc(|fabric| async move {
-                        let scalars = (0..circuit_size)
-                            .map(|_| fabric.one_authenticated())
-                            .collect_vec();
+                        let scalars =
+                            (0..circuit_size).map(|_| fabric.one_authenticated()).collect_vec();
                         let points = (0..circuit_size)
                             .map(|_| fabric.curve_identity_authenticated())
                             .collect_vec();

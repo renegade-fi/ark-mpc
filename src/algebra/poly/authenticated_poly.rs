@@ -40,10 +40,7 @@ pub struct AuthenticatedDensePoly<C: CurveGroup> {
 impl<C: CurveGroup> AuthenticatedDensePoly<C> {
     /// Constructor
     pub fn from_coeffs(coeffs: Vec<AuthenticatedScalarResult<C>>) -> Self {
-        assert!(
-            !coeffs.is_empty(),
-            "AuthenticatedDensePoly must have at least one coefficient"
-        );
+        assert!(!coeffs.is_empty(), "AuthenticatedDensePoly must have at least one coefficient");
         Self { coeffs }
     }
 
@@ -154,11 +151,7 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
 
         // Invert the public, masked polynomial without interaction
         let masked_poly_res = DensePolynomialResult::from_coeffs(
-            masked_poly
-                .coeff_open_results
-                .into_iter()
-                .map(|c| c.value)
-                .collect_vec(),
+            masked_poly.coeff_open_results.into_iter().map(|c| c.value).collect_vec(),
         );
         let inverted_masked_poly = masked_poly_res.mul_inverse_mod_t(t);
 
@@ -194,10 +187,7 @@ where
         }
 
         // Map all coefficients back into their Arkworks types
-        let inner_coeffs = coeffs
-            .into_iter()
-            .map(|coeff| coeff.inner())
-            .collect::<Vec<_>>();
+        let inner_coeffs = coeffs.into_iter().map(|coeff| coeff.inner()).collect::<Vec<_>>();
 
         Poll::Ready(Ok(DensePolynomial::from_coefficients_vec(inner_coeffs)))
     }
@@ -217,17 +207,10 @@ impl<C: CurveGroup> Add<&DensePolynomial<C::ScalarField>> for &AuthenticatedDens
         let max_degree = cmp::max(self.degree(), rhs.degree());
 
         // Pad the coefficients to the same length
-        let padded_coeffs0 = self
-            .coeffs
-            .iter()
-            .cloned()
-            .chain(iter::repeat(fabric.zero_authenticated()));
-        let padded_coeffs1 = rhs
-            .coeffs
-            .iter()
-            .copied()
-            .map(Scalar::<C>::new)
-            .chain(iter::repeat(Scalar::zero()));
+        let padded_coeffs0 =
+            self.coeffs.iter().cloned().chain(iter::repeat(fabric.zero_authenticated()));
+        let padded_coeffs1 =
+            rhs.coeffs.iter().copied().map(Scalar::<C>::new).chain(iter::repeat(Scalar::zero()));
 
         // Add the coefficients component-wise
         let mut coeffs = Vec::new();
@@ -251,11 +234,7 @@ impl<C: CurveGroup> Add<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
         let zero = self.fabric().zero();
         let zero_authenticated = self.fabric().zero_authenticated();
 
-        let padded_lhs = self
-            .coeffs
-            .iter()
-            .chain(iter::repeat(&zero_authenticated))
-            .take(n_coeffs);
+        let padded_lhs = self.coeffs.iter().chain(iter::repeat(&zero_authenticated)).take(n_coeffs);
         let padded_rhs = rhs.coeffs.iter().chain(iter::repeat(&zero)).take(n_coeffs);
 
         // Add the coefficients component-wise
@@ -282,11 +261,8 @@ impl<C: CurveGroup> Add<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<
 
         let mut coeffs = Vec::new();
         for (i, longer_coeff) in longer.iter().enumerate() {
-            let new_coeff = if i < shorter.len() {
-                &shorter[i] + longer_coeff
-            } else {
-                longer_coeff.clone()
-            };
+            let new_coeff =
+                if i < shorter.len() { &shorter[i] + longer_coeff } else { longer_coeff.clone() };
             coeffs.push(new_coeff);
         }
 
@@ -300,11 +276,7 @@ impl<C: CurveGroup> Neg for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
     fn neg(self) -> Self::Output {
-        let coeffs = self
-            .coeffs
-            .iter()
-            .map(|coeff| coeff.neg())
-            .collect::<Vec<_>>();
+        let coeffs = self.coeffs.iter().map(|coeff| coeff.neg()).collect::<Vec<_>>();
 
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
@@ -344,10 +316,7 @@ impl<C: CurveGroup> Mul<&DensePolynomial<C::ScalarField>> for &AuthenticatedDens
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &DensePolynomial<C::ScalarField>) -> Self::Output {
-        assert!(
-            !self.coeffs.is_empty(),
-            "cannot multiply an empty polynomial"
-        );
+        assert!(!self.coeffs.is_empty(), "cannot multiply an empty polynomial");
         let fabric = self.coeffs[0].fabric();
 
         // Setup the zero coefficients
@@ -372,10 +341,7 @@ impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
-        assert!(
-            !self.coeffs.is_empty(),
-            "cannot multiply an empty polynomial"
-        );
+        assert!(!self.coeffs.is_empty(), "cannot multiply an empty polynomial");
         let fabric = self.coeffs[0].fabric();
 
         // Setup the zero coefficients
@@ -402,10 +368,7 @@ impl<C: CurveGroup> Mul<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &AuthenticatedDensePoly<C>) -> Self::Output {
-        assert!(
-            !self.coeffs.is_empty(),
-            "cannot multiply an empty polynomial"
-        );
+        assert!(!self.coeffs.is_empty(), "cannot multiply an empty polynomial");
         let fabric = self.coeffs[0].fabric();
 
         // Setup the zero coefficients

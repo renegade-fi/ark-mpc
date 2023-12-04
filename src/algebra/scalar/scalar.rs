@@ -432,11 +432,7 @@ impl<C: CurveGroup> ScalarResult<C> {
         let fabric = &a[0].fabric;
         let ids = a.iter().map(|v| v.id).collect_vec();
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-            args.into_iter()
-                .map(Scalar::from)
-                .map(|x| -x)
-                .map(ResultValue::Scalar)
-                .collect_vec()
+            args.into_iter().map(Scalar::from).map(|x| -x).map(ResultValue::Scalar).collect_vec()
         })
     }
 }
@@ -484,11 +480,7 @@ where
         let ids = x.iter().map(|v| v.id).collect_vec();
 
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-            let scalars = args
-                .into_iter()
-                .map(Scalar::from)
-                .map(|x| x.0)
-                .collect_vec();
+            let scalars = args.into_iter().map(Scalar::from).map(|x| x.0).collect_vec();
 
             domain
                 .fft(&scalars)
@@ -517,11 +509,7 @@ where
         let ids = x.iter().map(|v| v.id).collect_vec();
 
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
-            let scalars = args
-                .into_iter()
-                .map(Scalar::from)
-                .map(|x| x.0)
-                .collect_vec();
+            let scalars = args.into_iter().map(Scalar::from).map(|x| x.0).collect_vec();
 
             domain
                 .ifft(&scalars)
@@ -720,9 +708,7 @@ mod test {
         let n: usize = rng.gen_range(1..=100);
         let domain_size = rng.gen_range(n..10 * n);
 
-        let seq = (0..n)
-            .map(|_| Scalar::<TestCurve>::random(&mut rng))
-            .collect_vec();
+        let seq = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
 
         let domain = Radix2EvaluationDomain::<TestPolyField>::new(domain_size).unwrap();
         let fft_res = domain.fft(&seq.iter().map(|s| s.inner()).collect_vec());
@@ -752,9 +738,7 @@ mod test {
         let n: usize = rng.gen_range(1..=100);
         let domain_size = rng.gen_range(n..10 * n);
 
-        let seq = (0..n)
-            .map(|_| Scalar::<TestCurve>::random(&mut rng))
-            .collect_vec();
+        let seq = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
 
         let domain = Radix2EvaluationDomain::<TestPolyField>::new(domain_size).unwrap();
         let ifft_res = domain.ifft(&seq.iter().map(|s| s.inner()).collect_vec());

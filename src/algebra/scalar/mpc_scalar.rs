@@ -203,11 +203,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         a: &[MpcScalarResult<C>],
         b: &[MpcScalarResult<C>],
     ) -> Vec<MpcScalarResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_add: a and b must be the same length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_add: a and b must be the same length");
 
         let n = a.len();
         let fabric = a[0].fabric();
@@ -219,11 +215,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
             let (a_res, b_res) = scalars.split_at(n);
 
             // Add the values
-            a_res
-                .iter()
-                .zip(b_res.iter())
-                .map(|(a, b)| ResultValue::Scalar(a + b))
-                .collect_vec()
+            a_res.iter().zip(b_res.iter()).map(|(a, b)| ResultValue::Scalar(a + b)).collect_vec()
         });
 
         scalars.into_iter().map(|s| s.into()).collect_vec()
@@ -234,19 +226,11 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],
     ) -> Vec<MpcScalarResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_add_public: a and b must be the same length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_add_public: a and b must be the same length");
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let ids = a
-            .iter()
-            .map(|v| v.id())
-            .chain(b.iter().map(|v| v.id()))
-            .collect_vec();
+        let ids = a.iter().map(|v| v.id()).chain(b.iter().map(|v| v.id())).collect_vec();
 
         let party_id = fabric.party_id();
         let scalars: Vec<ScalarResult<C>> =
@@ -368,19 +352,11 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         a: &[MpcScalarResult<C>],
         b: &[MpcScalarResult<C>],
     ) -> Vec<MpcScalarResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_sub: a and b must be the same length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_sub: a and b must be the same length");
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let ids = a
-            .iter()
-            .map(|v| v.id())
-            .chain(b.iter().map(|v| v.id()))
-            .collect_vec();
+        let ids = a.iter().map(|v| v.id()).chain(b.iter().map(|v| v.id())).collect_vec();
 
         let scalars: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
@@ -405,19 +381,11 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],
     ) -> Vec<MpcScalarResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_sub_public: a and b must be the same length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_sub_public: a and b must be the same length");
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let ids = a
-            .iter()
-            .map(|v| v.id())
-            .chain(b.iter().map(|v| v.id()))
-            .collect_vec();
+        let ids = a.iter().map(|v| v.id()).chain(b.iter().map(|v| v.id())).collect_vec();
 
         let party_id = fabric.party_id();
         let scalars = fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
@@ -474,10 +442,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
             let scalars = args.into_iter().map(Scalar::from).collect_vec();
 
             // Add the values
-            scalars
-                .iter()
-                .map(|a| ResultValue::Scalar(-a))
-                .collect_vec()
+            scalars.iter().map(|a| ResultValue::Scalar(-a)).collect_vec()
         });
 
         scalars.into_iter().map(|s| s.into()).collect_vec()
@@ -549,11 +514,7 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         b: &[MpcScalarResult<C>],
     ) -> Vec<MpcScalarResult<C>> {
         let n = a.len();
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_mul: a and b must be the same length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_mul: a and b must be the same length");
 
         // Sample a beaver triplet for each multiplication
         let fabric = &a[0].fabric();
@@ -584,19 +545,11 @@ impl<C: CurveGroup> MpcScalarResult<C> {
         a: &[MpcScalarResult<C>],
         b: &[ScalarResult<C>],
     ) -> Vec<MpcScalarResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_mul_public: a and b must be the same length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_mul_public: a and b must be the same length");
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let ids = a
-            .iter()
-            .map(|v| v.id())
-            .chain(b.iter().map(|v| v.id))
-            .collect_vec();
+        let ids = a.iter().map(|v| v.id()).chain(b.iter().map(|v| v.id)).collect_vec();
 
         let scalars: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {

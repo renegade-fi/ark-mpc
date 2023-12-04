@@ -53,11 +53,7 @@ impl<C: CurveGroup> PedersenCommitmentResult<C> {
         let generator = CurvePoint::generator();
         let commitment = generator * &value + generator * blinder;
 
-        PedersenCommitmentResult {
-            value,
-            blinder,
-            commitment,
-        }
+        PedersenCommitmentResult { value, blinder, commitment }
     }
 }
 
@@ -128,10 +124,6 @@ impl<C: CurveGroup> HashCommitmentResult<C> {
             ResultValue::Scalar(out)
         });
 
-        HashCommitmentResult {
-            value,
-            blinder,
-            commitment: comm,
-        }
+        HashCommitmentResult { value, blinder, commitment: comm }
     }
 }

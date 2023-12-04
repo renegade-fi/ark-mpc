@@ -73,16 +73,7 @@ impl<C: CurveGroup> UnboundedDuplexStream<C> {
         let (send1, recv1) = unbounded_channel();
         let (send2, recv2) = unbounded_channel();
 
-        (
-            Self {
-                send: send1,
-                recv: recv2,
-            },
-            Self {
-                send: send2,
-                recv: recv1,
-            },
-        )
+        (Self { send: send1, recv: recv2 }, Self { send: send2, recv: recv1 })
     }
 
     /// Send a message on the stream
@@ -107,10 +98,7 @@ pub struct MockNetwork<C: CurveGroup> {
 impl<C: CurveGroup> MockNetwork<C> {
     /// Create a new mock network from one half of a duplex stream
     pub fn new(party_id: PartyId, stream: UnboundedDuplexStream<C>) -> Self {
-        Self {
-            party_id,
-            mock_conn: stream,
-        }
+        Self { party_id, mock_conn: stream }
     }
 }
 
@@ -129,10 +117,7 @@ impl<C: CurveGroup> Stream for MockNetwork<C> {
     type Item = Result<NetworkOutbound<C>, MpcNetworkError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Box::pin(self.mock_conn.recv())
-            .as_mut()
-            .poll(cx)
-            .map(|value| Some(Ok(value)))
+        Box::pin(self.mock_conn.recv()).as_mut().poll(cx).map(|value| Some(Ok(value)))
     }
 }
 

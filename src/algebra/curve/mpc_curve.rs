@@ -199,11 +199,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
                 let points = args.into_iter().map(CurvePoint::from).collect_vec();
                 let (a, b) = points.split_at(n);
 
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(x, y)| x + y)
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                a.iter().zip(b.iter()).map(|(x, y)| x + y).map(ResultValue::Point).collect_vec()
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -222,11 +218,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .map(|v| v.id())
-            .chain(b.iter().map(|b| b.id))
-            .collect_vec();
+        let all_ids = a.iter().map(|v| v.id()).chain(b.iter().map(|b| b.id)).collect_vec();
 
         // Add the shares in a batch gate
         let party_id = fabric.party_id();
@@ -327,11 +319,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
                 let points = args.into_iter().map(CurvePoint::from).collect_vec();
                 let (a, b) = points.split_at(n);
 
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(x, y)| x - y)
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                a.iter().zip(b.iter()).map(|(x, y)| x - y).map(ResultValue::Point).collect_vec()
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -350,11 +338,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .map(|v| v.id())
-            .chain(b.iter().map(|b| b.id))
-            .collect_vec();
+        let all_ids = a.iter().map(|v| v.id()).chain(b.iter().map(|b| b.id)).collect_vec();
 
         // Add the shares in a batch gate
         let party_id = fabric.party_id();
@@ -408,11 +392,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
             .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
                 let points = args.into_iter().map(CurvePoint::from).collect_vec();
 
-                points
-                    .into_iter()
-                    .map(|x| -x)
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                points.into_iter().map(|x| -x).map(ResultValue::Point).collect_vec()
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -524,11 +504,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .map(|v| v.id())
-            .chain(b.iter().map(|b| b.id()))
-            .collect_vec();
+        let all_ids = a.iter().map(|v| v.id()).chain(b.iter().map(|b| b.id())).collect_vec();
 
         // Multiply the shares in a batch gate
         fabric
@@ -564,11 +540,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
                 let scalars = args.into_iter().map(Scalar::from).collect_vec();
                 let generator = CurvePoint::generator();
 
-                scalars
-                    .into_iter()
-                    .map(|x| x * generator)
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                scalars.into_iter().map(|x| x * generator).map(ResultValue::Point).collect_vec()
             })
             .into_iter()
             .map(MpcPointResult::from)

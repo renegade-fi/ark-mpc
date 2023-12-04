@@ -89,18 +89,14 @@ pub(crate) fn await_result<R, T: Future<Output = R>>(res: T) -> R {
 
 /// Await a batch of results
 pub(crate) fn await_result_batch<R, T: Future<Output = R> + Clone>(res: &[T]) -> Vec<R> {
-    res.iter()
-        .map(|res| await_result(res.clone()))
-        .collect_vec()
+    res.iter().map(|res| await_result(res.clone())).collect_vec()
 }
 
 /// Await a result that may error
 pub(crate) fn await_result_with_error<R, E: Debug, T: Future<Output = Result<R, E>>>(
     res: T,
 ) -> Result<R, String> {
-    Handle::current()
-        .block_on(res)
-        .map_err(|err| format!("Error awaiting result: {:?}", err))
+    Handle::current().block_on(res).map_err(|err| format!("Error awaiting result: {:?}", err))
 }
 
 /// Await a batch of results that may error
@@ -132,12 +128,7 @@ pub(crate) fn share_scalar_batch(
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> Vec<MpcScalarResult<TestCurve>> {
-    test_args
-        .fabric
-        .batch_share_scalar(values, sender)
-        .iter()
-        .map(|v| v.mpc_share())
-        .collect_vec()
+    test_args.fabric.batch_share_scalar(values, sender).iter().map(|v| v.mpc_share()).collect_vec()
 }
 
 /// Send or receive a secret shared point from the given party
@@ -157,10 +148,7 @@ pub(crate) fn share_point_batch(
     sender: PartyId,
     test_args: &IntegrationTestArgs,
 ) -> Vec<MpcPointResult<TestCurve>> {
-    values
-        .into_iter()
-        .map(|point| share_point(point, sender, test_args))
-        .collect_vec()
+    values.into_iter().map(|point| share_point(point, sender, test_args)).collect_vec()
 }
 
 /// Send or receive a secret shared scalar from the given party and allocate it
@@ -227,10 +215,7 @@ pub(crate) fn share_plaintext_values_batch<
     sender: PartyId,
     fabric: &MpcFabric<TestCurve>,
 ) -> Vec<ResultHandle<TestCurve, T>> {
-    values
-        .iter()
-        .map(|v| share_plaintext_value(v.clone(), sender, fabric))
-        .collect_vec()
+    values.iter().map(|v| share_plaintext_value(v.clone(), sender, fabric)).collect_vec()
 }
 
 // ---------

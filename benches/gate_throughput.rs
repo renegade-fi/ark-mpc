@@ -36,9 +36,7 @@ impl CriterionProfiler for Profiler {
 }
 
 pub fn config() -> Criterion {
-    Criterion::default()
-        .sample_size(100)
-        .with_profiler(Profiler::new())
+    Criterion::default().sample_size(100).with_profiler(Profiler::new())
 }
 
 /// Create a mock fabric for testing
@@ -73,11 +71,8 @@ pub fn scalar_addition(c: &mut Criterion) {
 
 /// Measures the throughput of the executor thread for scalar operations
 pub fn circuit_scalar_addition(c: &mut Criterion) {
-    let runtime = RuntimeBuilder::new_multi_thread()
-        .worker_threads(3)
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime =
+        RuntimeBuilder::new_multi_thread().worker_threads(3).enable_all().build().unwrap();
 
     let mut group = c.benchmark_group("circuit_scalar_addition");
     for circuit_size in [100, 1000].into_iter() {

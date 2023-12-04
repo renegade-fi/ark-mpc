@@ -12,9 +12,7 @@ pub struct GrowableBuffer<T: Clone> {
 impl<T: Clone> GrowableBuffer<T> {
     /// Constructor, takes a size-hint to pre-allocate buffer slots
     pub fn new(size_hint: usize) -> Self {
-        Self {
-            buf: vec![None; size_hint],
-        }
+        Self { buf: vec![None; size_hint] }
     }
 
     /// Grow the underlying buffer

@@ -23,16 +23,9 @@ pub struct BufferWithCursor {
 impl BufferWithCursor {
     /// Create a new buffer with a cursor at the start of the buffer
     pub fn new(buf: Vec<u8>) -> Self {
-        assert_eq!(
-            buf.len(),
-            buf.capacity(),
-            "buffer must be fully initialized"
-        );
+        assert_eq!(buf.len(), buf.capacity(), "buffer must be fully initialized");
 
-        Self {
-            buffer: buf,
-            cursor: 0,
-        }
+        Self { buffer: buf, cursor: 0 }
     }
 
     /// The number of bytes remaining in the buffer

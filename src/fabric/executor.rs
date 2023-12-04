@@ -76,11 +76,7 @@ impl ExecutorStats {
             .max()
             .unwrap_or(&0);
 
-        let depth = if from_network_op {
-            max_dep + 1
-        } else {
-            *max_dep
-        };
+        let depth = if from_network_op { max_dep + 1 } else { *max_dep };
 
         for id in op.result_ids() {
             self.result_depth_map.insert(id, depth);
@@ -226,11 +222,7 @@ impl<C: CurveGroup> Executor<C> {
     fn insert_result(&mut self, result: OpResult<C>) {
         let id = result.id;
         let prev = self.results.insert(id, result);
-        assert!(
-            prev.is_none(),
-            "duplicate result id: {:?}",
-            prev.unwrap().id
-        );
+        assert!(prev.is_none(), "duplicate result id: {:?}", prev.unwrap().id);
 
         self.wake_waiters_on_result(id);
     }
@@ -265,11 +257,7 @@ impl<C: CurveGroup> Executor<C> {
         }
 
         // Check if all arguments are ready
-        let n_ready = op
-            .args
-            .iter()
-            .filter_map(|id| self.results.get(*id))
-            .count();
+        let n_ready = op.args.iter().filter_map(|id| self.results.get(*id)).count();
         let inflight_args = op.args.len() - n_ready;
         op.inflight_args = inflight_args;
 
@@ -322,19 +310,13 @@ impl<C: CurveGroup> Executor<C> {
         let result_ids = op.result_ids();
 
         // Collect the inputs to the operation
-        let inputs = op
-            .args
-            .iter()
-            .map(|arg| self.results.get(*arg).unwrap().value.clone())
-            .collect_vec();
+        let inputs =
+            op.args.iter().map(|arg| self.results.get(*arg).unwrap().value.clone()).collect_vec();
 
         match op.op_type {
             OperationType::Gate { function } => {
                 let value = (function)(inputs);
-                vec![OpResult {
-                    id: op.result_id,
-                    value,
-                }]
+                vec![OpResult { id: op.result_id, value }]
             },
 
             OperationType::GateBatch { function } => {
@@ -351,23 +333,14 @@ impl<C: CurveGroup> Executor<C> {
                 // buffer
                 let result_id = result_ids[0];
                 let payload = (function)(inputs);
-                let outbound = NetworkOutbound {
-                    result_id,
-                    payload: payload.clone(),
-                };
+                let outbound = NetworkOutbound { result_id, payload: payload.clone() };
 
-                self.fabric
-                    .outbound_queue
-                    .send(outbound)
-                    .expect("error sending network payload");
+                self.fabric.outbound_queue.send(outbound).expect("error sending network payload");
 
                 // On a `send`, the local party receives a copy of the value placed as the
                 // result of the network operation, so we must re-enqueue the
                 // result
-                vec![OpResult {
-                    id: result_id,
-                    value: payload.into(),
-                }]
+                vec![OpResult { id: result_id, value: payload.into() }]
             },
         }
     }
@@ -377,10 +350,7 @@ impl<C: CurveGroup> Executor<C> {
         let id = waiter.result_id;
 
         // Insert the new waiter to the queue
-        self.waiters
-            .entry(waiter.result_id)
-            .or_default()
-            .push(waiter);
+        self.waiters.entry(waiter.result_id).or_default().push(waiter);
 
         // If the result being awaited is already available, wake the waiter
         if self.results.get(id).is_some() {
@@ -395,10 +365,7 @@ impl<C: CurveGroup> Executor<C> {
             let result = &self.results.get(result_id).unwrap().value;
             for waiter in waiters.into_iter() {
                 // Place the result in the waiter's buffer and wake up the waiting thread
-                let mut buffer = waiter
-                    .result_buffer
-                    .write()
-                    .expect(ERR_RESULT_BUFFER_POISONED);
+                let mut buffer = waiter.result_buffer.write().expect(ERR_RESULT_BUFFER_POISONED);
 
                 buffer.replace(result.clone());
                 waiter.waker.wake();

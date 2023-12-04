@@ -197,12 +197,7 @@ impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
 impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
     /// Constructor
     pub(crate) fn new(id: ResultId, fabric: MpcFabric<C>) -> Self {
-        Self {
-            id,
-            result_buffer: Arc::new(RwLock::new(None)),
-            fabric,
-            phantom: PhantomData,
-        }
+        Self { id, result_buffer: Arc::new(RwLock::new(None)), fabric, phantom: PhantomData }
     }
 
     /// Get the ids that this result represents, awaiting these IDs is awaiting
@@ -224,9 +219,7 @@ pub struct ResultWaiter<C: CurveGroup> {
 
 impl<C: CurveGroup> Debug for ResultWaiter<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_struct("ResultWaiter")
-            .field("id", &self.result_id)
-            .finish()
+        f.debug_struct("ResultWaiter").field("id", &self.result_id).finish()
     }
 }
 

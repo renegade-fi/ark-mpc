@@ -72,11 +72,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         // Allocate a zero point for the public modifier
         let public_modifier = fabric_clone.allocate_point(CurvePoint::identity());
 
-        Self {
-            share: mpc_value,
-            mac,
-            public_modifier,
-        }
+        Self { share: mpc_value, mac, public_modifier }
     }
 
     /// Creates a batch of `AuthenticatedPointResult`s from a given batch of
@@ -89,24 +85,15 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         // Create mpc points from the value
         let n = values.len();
         let fabric = values[0].fabric();
-        let mpc_values = values
-            .iter()
-            .map(|p| MpcPointResult::new_shared(p.clone()))
-            .collect_vec();
+        let mpc_values = values.iter().map(|p| MpcPointResult::new_shared(p.clone())).collect_vec();
 
-        let mac_keys = (0..n)
-            .map(|_| fabric.borrow_mac_key().clone())
-            .collect_vec();
+        let mac_keys = (0..n).map(|_| fabric.borrow_mac_key().clone()).collect_vec();
         let macs = MpcPointResult::batch_mul(&mac_keys, &mpc_values);
 
         mpc_values
             .into_iter()
             .zip(macs)
-            .map(|(share, mac)| Self {
-                share,
-                mac,
-                public_modifier: fabric.curve_identity(),
-            })
+            .map(|(share, mac)| Self { share, mac, public_modifier: fabric.curve_identity() })
             .collect_vec()
     }
 
@@ -120,12 +107,10 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
     ) -> Vec<AuthenticatedPointResult<C>> {
         // Convert to a set of scalar results
         let scalar_results: Vec<CurvePointResult<C>> =
-            values
-                .fabric()
-                .new_batch_gate_op(vec![values.id()], n, |mut args| {
-                    let args: Vec<CurvePoint<C>> = args.pop().unwrap().into();
-                    args.into_iter().map(ResultValue::Point).collect_vec()
-                });
+            values.fabric().new_batch_gate_op(vec![values.id()], n, |mut args| {
+                let args: Vec<CurvePoint<C>> = args.pop().unwrap().into();
+                args.into_iter().map(ResultValue::Point).collect_vec()
+            });
 
         Self::new_shared_batch(&scalar_results)
     }
@@ -247,12 +232,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         // Check the peer's commitment and the sum of the MAC checks
         let commitment_check: ScalarResult<C> = self.fabric().new_gate_op(
-            vec![
-                mac_check.id,
-                peer_mac_check.id,
-                peer_blinder.id,
-                peer_commit.id,
-            ],
+            vec![mac_check.id, peer_mac_check.id, peer_blinder.id, peer_commit.id],
             move |mut args| {
                 let my_mac_check: CurvePoint<C> = args.remove(0).into();
                 let peer_mac_check: CurvePoint<C> = args.remove(0).into();
@@ -268,10 +248,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
             },
         );
 
-        AuthenticatedPointOpenResult {
-            value: recovered_value,
-            mac_check: commitment_check,
-        }
+        AuthenticatedPointOpenResult { value: recovered_value, mac_check: commitment_check }
     }
 
     /// Open a batch of values and check the MACs
@@ -315,26 +292,15 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         // --- Commit to the MAC checks --- //
 
-        let my_comms = mac_checks
-            .iter()
-            .cloned()
-            .map(HashCommitmentResult::commit)
-            .collect_vec();
-        let peer_comms = fabric.exchange_values(
-            &my_comms
-                .iter()
-                .map(|comm| comm.commitment.clone())
-                .collect_vec(),
-        );
+        let my_comms = mac_checks.iter().cloned().map(HashCommitmentResult::commit).collect_vec();
+        let peer_comms = fabric
+            .exchange_values(&my_comms.iter().map(|comm| comm.commitment.clone()).collect_vec());
 
         // --- Exchange the MAC Checks and Commitment Blinders --- //
 
         let peer_mac_checks = fabric.exchange_values(&mac_checks);
         let peer_blinders = fabric.exchange_values(
-            &my_comms
-                .iter()
-                .map(|comm| fabric.allocate_scalar(comm.blinder))
-                .collect_vec(),
+            &my_comms.iter().map(|comm| fabric.allocate_scalar(comm.blinder)).collect_vec(),
         );
 
         // --- Check the MAC Checks --- //
@@ -380,10 +346,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         opened_values
             .into_iter()
             .zip(commitment_checks)
-            .map(|(value, check)| AuthenticatedPointOpenResult {
-                value,
-                mac_check: check,
-            })
+            .map(|(value, check)| AuthenticatedPointOpenResult { value, mac_check: check })
             .collect_vec()
     }
 }
@@ -430,9 +393,8 @@ where
 impl<C: CurveGroup> Sum for AuthenticatedPointResult<C> {
     // Assumes the iterator is non-empty
     fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let first = iter
-            .next()
-            .expect("AuthenticatedPointResult<C>::sum requires a non-empty iterator");
+        let first =
+            iter.next().expect("AuthenticatedPointResult<C>::sum requires a non-empty iterator");
         iter.fold(first, |acc, x| acc + x)
     }
 }
@@ -564,37 +526,26 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         a: &[AuthenticatedPointResult<C>],
         b: &[CurvePointResult<C>],
     ) -> Vec<AuthenticatedPointResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_add_public requires equal length vectors"
-        );
+        assert_eq!(a.len(), b.len(), "batch_add_public requires equal length vectors");
         if a.is_empty() {
             return Vec::new();
         }
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .flat_map(|a| a.ids())
-            .chain(b.iter().map(|b| b.id()))
-            .collect_vec();
+        let all_ids = a.iter().flat_map(|a| a.ids()).chain(b.iter().map(|b| b.id())).collect_vec();
 
         let party_id = fabric.party_id();
         let res: Vec<CurvePointResult<C>> = fabric.new_batch_gate_op(
             all_ids,
             AUTHENTICATED_POINT_RESULT_LEN * n,
             move |mut args| {
-                let a_vals = args
-                    .drain(..AUTHENTICATED_POINT_RESULT_LEN * n)
-                    .collect_vec();
+                let a_vals = args.drain(..AUTHENTICATED_POINT_RESULT_LEN * n).collect_vec();
                 let b_vals = args;
 
                 let mut result = Vec::with_capacity(AUTHENTICATED_POINT_RESULT_LEN * n);
-                for (a_chunk, b_val) in a_vals
-                    .chunks(AUTHENTICATED_POINT_RESULT_LEN)
-                    .zip(b_vals.into_iter())
+                for (a_chunk, b_val) in
+                    a_vals.chunks(AUTHENTICATED_POINT_RESULT_LEN).zip(b_vals.into_iter())
                 {
                     let a_share: CurvePoint<C> = a_chunk[0].clone().into();
                     let a_mac: CurvePoint<C> = a_chunk[1].clone().into();
@@ -744,37 +695,26 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         a: &[AuthenticatedPointResult<C>],
         b: &[CurvePointResult<C>],
     ) -> Vec<AuthenticatedPointResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_add_public requires equal length vectors"
-        );
+        assert_eq!(a.len(), b.len(), "batch_add_public requires equal length vectors");
         if a.is_empty() {
             return Vec::new();
         }
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .flat_map(|a| a.ids())
-            .chain(b.iter().map(|b| b.id()))
-            .collect_vec();
+        let all_ids = a.iter().flat_map(|a| a.ids()).chain(b.iter().map(|b| b.id())).collect_vec();
 
         let party_id = fabric.party_id();
         let res: Vec<CurvePointResult<C>> = fabric.new_batch_gate_op(
             all_ids,
             AUTHENTICATED_POINT_RESULT_LEN * n,
             move |mut args| {
-                let a_vals = args
-                    .drain(..AUTHENTICATED_POINT_RESULT_LEN * n)
-                    .collect_vec();
+                let a_vals = args.drain(..AUTHENTICATED_POINT_RESULT_LEN * n).collect_vec();
                 let b_vals = args;
 
                 let mut result = Vec::with_capacity(AUTHENTICATED_POINT_RESULT_LEN * n);
-                for (a_chunk, b_val) in a_vals
-                    .chunks(AUTHENTICATED_POINT_RESULT_LEN)
-                    .zip(b_vals.into_iter())
+                for (a_chunk, b_val) in
+                    a_vals.chunks(AUTHENTICATED_POINT_RESULT_LEN).zip(b_vals.into_iter())
                 {
                     let a_share: CurvePoint<C> = a_chunk[0].clone().into();
                     let a_mac: CurvePoint<C> = a_chunk[1].clone().into();
@@ -855,11 +795,7 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &AuthenticatedPointResult<C> {
         // Multiply the public value in the MAC
         let new_mac = &self.mac * other;
         let new_modifier = &self.public_modifier * other;
-        AuthenticatedPointResult {
-            share: new_share,
-            mac: new_mac,
-            public_modifier: new_modifier,
-        }
+        AuthenticatedPointResult { share: new_share, mac: new_mac, public_modifier: new_modifier }
     }
 }
 impl_borrow_variants!(AuthenticatedPointResult<C>, Mul, mul, *, Scalar<C>, C: CurveGroup);
@@ -874,11 +810,7 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &AuthenticatedPointResult<C> {
         // Multiply the public value in the MAC
         let new_mac = &self.mac * other;
         let new_modifier = &self.public_modifier * other;
-        AuthenticatedPointResult {
-            share: new_share,
-            mac: new_mac,
-            public_modifier: new_modifier,
-        }
+        AuthenticatedPointResult { share: new_share, mac: new_mac, public_modifier: new_modifier }
     }
 }
 impl_borrow_variants!(AuthenticatedPointResult<C>, Mul, mul, *, ScalarResult<C>, C: CurveGroup);
@@ -952,22 +884,14 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         a: &[ScalarResult<C>],
         b: &[AuthenticatedPointResult<C>],
     ) -> Vec<AuthenticatedPointResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_mul_public requires equal length vectors"
-        );
+        assert_eq!(a.len(), b.len(), "batch_mul_public requires equal length vectors");
         if a.is_empty() {
             return Vec::new();
         }
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .map(|a| a.id())
-            .chain(b.iter().flat_map(|p| p.ids()))
-            .collect_vec();
+        let all_ids = a.iter().map(|a| a.id()).chain(b.iter().flat_map(|p| p.ids())).collect_vec();
 
         let results: Vec<CurvePointResult<C>> = fabric.new_batch_gate_op(
             all_ids,
@@ -978,9 +902,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
                     args.into_iter().map(CurvePoint::from).collect_vec();
 
                 let mut result = Vec::with_capacity(AUTHENTICATED_POINT_RESULT_LEN * n);
-                for (scalar, points) in scalars
-                    .into_iter()
-                    .zip(points.chunks(AUTHENTICATED_POINT_RESULT_LEN))
+                for (scalar, points) in
+                    scalars.into_iter().zip(points.chunks(AUTHENTICATED_POINT_RESULT_LEN))
                 {
                     let share: CurvePoint<C> = points[0];
                     let mac: CurvePoint<C> = points[1];
@@ -1018,11 +941,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
                 let scalars = args.into_iter().map(Scalar::from).collect_vec();
                 let generator = CurvePoint::generator();
 
-                scalars
-                    .into_iter()
-                    .map(|x| x * generator)
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                scalars.into_iter().map(|x| x * generator).map(ResultValue::Point).collect_vec()
             },
         );
 
@@ -1041,15 +960,8 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[AuthenticatedPointResult<C>],
     ) -> AuthenticatedPointResult<C> {
-        assert_eq!(
-            scalars.len(),
-            points.len(),
-            "multiscalar_mul requires equal length vectors"
-        );
-        assert!(
-            !scalars.is_empty(),
-            "multiscalar_mul requires non-empty vectors"
-        );
+        assert_eq!(scalars.len(), points.len(), "multiscalar_mul requires equal length vectors");
+        assert!(!scalars.is_empty(), "multiscalar_mul requires non-empty vectors");
 
         let mul_out = AuthenticatedPointResult::batch_mul(scalars, points);
 

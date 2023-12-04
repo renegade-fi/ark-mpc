@@ -105,9 +105,7 @@ impl<C: CurveGroup> CurvePoint<C> {
     /// Serialize this point to a byte buffer
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out: Vec<u8> = Vec::with_capacity(size_of::<CurvePoint<C>>());
-        self.0
-            .serialize_compressed(&mut out)
-            .expect("Failed to serialize point");
+        self.0.serialize_compressed(&mut out).expect("Failed to serialize point");
 
         out
     }
@@ -246,11 +244,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
         a: &[CurvePointResult<C>],
         b: &[CurvePointResult<C>],
     ) -> Vec<CurvePointResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_add cannot compute on vectors of unequal length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_add cannot compute on vectors of unequal length");
 
         let n = a.len();
         let fabric = a[0].fabric();
@@ -260,11 +254,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
             let a = args.drain(..n).map(CurvePoint::from).collect_vec();
             let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
-            a.into_iter()
-                .zip(b)
-                .map(|(a, b)| a + b)
-                .map(ResultValue::Point)
-                .collect_vec()
+            a.into_iter().zip(b).map(|(a, b)| a + b).map(ResultValue::Point).collect_vec()
         })
     }
 }
@@ -332,11 +322,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
         a: &[CurvePointResult<C>],
         b: &[CurvePointResult<C>],
     ) -> Vec<CurvePointResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_sub cannot compute on vectors of unequal length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_sub cannot compute on vectors of unequal length");
 
         let n = a.len();
         let fabric = a[0].fabric();
@@ -346,11 +332,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
             let a = args.drain(..n).map(CurvePoint::from).collect_vec();
             let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
-            a.into_iter()
-                .zip(b)
-                .map(|(a, b)| a - b)
-                .map(ResultValue::Point)
-                .collect_vec()
+            a.into_iter().zip(b).map(|(a, b)| a - b).map(ResultValue::Point).collect_vec()
         })
     }
 }
@@ -462,29 +444,17 @@ impl<C: CurveGroup> CurvePointResult<C> {
     /// Multiply a batch of `CurvePointResult<C>`s with a batch of
     /// `ScalarResult`s
     pub fn batch_mul(a: &[ScalarResult<C>], b: &[CurvePointResult<C>]) -> Vec<CurvePointResult<C>> {
-        assert_eq!(
-            a.len(),
-            b.len(),
-            "batch_mul cannot compute on vectors of unequal length"
-        );
+        assert_eq!(a.len(), b.len(), "batch_mul cannot compute on vectors of unequal length");
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .map(|a| a.id())
-            .chain(b.iter().map(|b| b.id()))
-            .collect_vec();
+        let all_ids = a.iter().map(|a| a.id()).chain(b.iter().map(|b| b.id())).collect_vec();
 
         fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
             let a = args.drain(..n).map(Scalar::from).collect_vec();
             let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
-            a.into_iter()
-                .zip(b)
-                .map(|(a, b)| a * b)
-                .map(ResultValue::Point)
-                .collect_vec()
+            a.into_iter().zip(b).map(|(a, b)| a * b).map(ResultValue::Point).collect_vec()
         })
     }
 
@@ -502,22 +472,14 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a
-            .iter()
-            .map(|a| a.id())
-            .chain(b.iter().map(|b| b.id()))
-            .collect_vec();
+        let all_ids = a.iter().map(|a| a.id()).chain(b.iter().map(|b| b.id())).collect_vec();
 
         fabric
             .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
                 let a = args.drain(..n).map(Scalar::from).collect_vec();
                 let b = args.into_iter().map(CurvePoint::from).collect_vec();
 
-                a.into_iter()
-                    .zip(b)
-                    .map(|(a, b)| a * b)
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                a.into_iter().zip(b).map(|(a, b)| a * b).map(ResultValue::Point).collect_vec()
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -538,11 +500,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = b
-            .iter()
-            .map(|b| b.id())
-            .chain(a.iter().flat_map(|a| a.ids()))
-            .collect_vec();
+        let all_ids = b.iter().map(|b| b.id()).chain(a.iter().flat_map(|a| a.ids())).collect_vec();
 
         let results = fabric.new_batch_gate_op(
             all_ids,
@@ -553,9 +511,8 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
                 let mut results = Vec::with_capacity(AUTHENTICATED_POINT_RESULT_LEN * n);
 
-                for (scalars, point) in args
-                    .chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN)
-                    .zip(points.into_iter())
+                for (scalars, point) in
+                    args.chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN).zip(points.into_iter())
                 {
                     let share = Scalar::from(&scalars[0]);
                     let mac = Scalar::from(&scalars[1]);
@@ -604,11 +561,7 @@ impl<C: CurveGroup> Sum for CurvePointResult<C> {
 impl<C: CurveGroup> CurvePoint<C> {
     /// Compute the multiscalar multiplication of the given scalars and points
     pub fn msm(scalars: &[Scalar<C>], points: &[CurvePoint<C>]) -> CurvePoint<C> {
-        assert_eq!(
-            scalars.len(),
-            points.len(),
-            "msm cannot compute on vectors of unequal length"
-        );
+        assert_eq!(scalars.len(), points.len(), "msm cannot compute on vectors of unequal length");
 
         let n = scalars.len();
         if n < MSM_SIZE_THRESHOLD {
@@ -617,9 +570,7 @@ impl<C: CurveGroup> CurvePoint<C> {
 
         let affine_points = points.iter().map(|p| p.0.into_affine()).collect_vec();
         let stripped_scalars = scalars.iter().map(|s| s.0).collect_vec();
-        C::msm(&affine_points, &stripped_scalars)
-            .map(CurvePoint)
-            .unwrap()
+        C::msm(&affine_points, &stripped_scalars).map(CurvePoint).unwrap()
     }
 
     /// Compute the multiscalar multiplication of the given scalars and points
@@ -652,11 +603,7 @@ impl<C: CurveGroup> CurvePoint<C> {
         scalars: &[ScalarResult<C>],
         points: &[CurvePoint<C>],
     ) -> CurvePointResult<C> {
-        assert_eq!(
-            scalars.len(),
-            points.len(),
-            "msm cannot compute on vectors of unequal length"
-        );
+        assert_eq!(scalars.len(), points.len(), "msm cannot compute on vectors of unequal length");
 
         let fabric = scalars[0].fabric();
         let scalar_ids = scalars.iter().map(|s| s.id()).collect_vec();
@@ -677,10 +624,7 @@ impl<C: CurveGroup> CurvePoint<C> {
         I: IntoIterator<Item = ScalarResult<C>>,
         J: IntoIterator<Item = CurvePoint<C>>,
     {
-        Self::msm_results(
-            &scalars.into_iter().collect_vec(),
-            &points.into_iter().collect_vec(),
-        )
+        Self::msm_results(&scalars.into_iter().collect_vec(), &points.into_iter().collect_vec())
     }
 
     /// Compute the multiscalar multiplication of the given authenticated
@@ -689,11 +633,7 @@ impl<C: CurveGroup> CurvePoint<C> {
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[CurvePoint<C>],
     ) -> AuthenticatedPointResult<C> {
-        assert_eq!(
-            scalars.len(),
-            points.len(),
-            "msm cannot compute on vectors of unequal length"
-        );
+        assert_eq!(scalars.len(), points.len(), "msm cannot compute on vectors of unequal length");
 
         let n = scalars.len();
         let fabric = scalars[0].fabric();
@@ -756,19 +696,12 @@ impl<C: CurveGroup> CurvePointResult<C> {
         points: &[CurvePointResult<C>],
     ) -> CurvePointResult<C> {
         assert!(!scalars.is_empty(), "msm cannot compute on an empty vector");
-        assert_eq!(
-            scalars.len(),
-            points.len(),
-            "msm cannot compute on vectors of unequal length"
-        );
+        assert_eq!(scalars.len(), points.len(), "msm cannot compute on vectors of unequal length");
 
         let n = scalars.len();
         let fabric = scalars[0].fabric();
-        let all_ids = scalars
-            .iter()
-            .map(|s| s.id())
-            .chain(points.iter().map(|p| p.id()))
-            .collect_vec();
+        let all_ids =
+            scalars.iter().map(|s| s.id()).chain(points.iter().map(|p| p.id())).collect_vec();
 
         fabric.new_gate_op(all_ids, move |mut args| {
             let scalars = args.drain(..n).map(Scalar::from).collect_vec();
@@ -788,10 +721,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
         I: IntoIterator<Item = ScalarResult<C>>,
         J: IntoIterator<Item = CurvePointResult<C>>,
     {
-        Self::msm_results(
-            &scalars.into_iter().collect_vec(),
-            &points.into_iter().collect_vec(),
-        )
+        Self::msm_results(&scalars.into_iter().collect_vec(), &points.into_iter().collect_vec())
     }
 
     /// Compute the multiscalar multiplication of the given
@@ -800,19 +730,12 @@ impl<C: CurveGroup> CurvePointResult<C> {
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[CurvePointResult<C>],
     ) -> AuthenticatedPointResult<C> {
-        assert_eq!(
-            scalars.len(),
-            points.len(),
-            "msm cannot compute on vectors of unequal length"
-        );
+        assert_eq!(scalars.len(), points.len(), "msm cannot compute on vectors of unequal length");
 
         let n = scalars.len();
         let fabric = scalars[0].fabric();
-        let all_ids = scalars
-            .iter()
-            .flat_map(|s| s.ids())
-            .chain(points.iter().map(|p| p.id()))
-            .collect_vec();
+        let all_ids =
+            scalars.iter().flat_map(|s| s.ids()).chain(points.iter().map(|p| p.id())).collect_vec();
 
         let res = fabric.new_batch_gate_op(
             all_ids,

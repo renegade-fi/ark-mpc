@@ -213,9 +213,7 @@ impl<'a, C: CurveGroup> QuicTwoPartyNet<C> {
                 .read(read_buffer.get_remaining())
                 .await
                 .map_err(|e| MpcNetworkError::RecvError(e.to_string()))?
-                .ok_or(MpcNetworkError::RecvError(
-                    ERR_STREAM_FINISHED_EARLY.to_string(),
-                ))?;
+                .ok_or(MpcNetworkError::RecvError(ERR_STREAM_FINISHED_EARLY.to_string()))?;
 
             read_buffer.advance_cursor(bytes_read);
         }
@@ -227,9 +225,9 @@ impl<'a, C: CurveGroup> QuicTwoPartyNet<C> {
     /// Read a message length from the stream
     async fn read_message_length(&mut self) -> Result<u64, MpcNetworkError> {
         let read_buffer = self.read_bytes(BYTES_PER_U64).await?;
-        Ok(u64::from_le_bytes(read_buffer.try_into().map_err(
-            |_| MpcNetworkError::SerializationError(ERR_READ_MESSAGE_LENGTH.to_string()),
-        )?))
+        Ok(u64::from_le_bytes(read_buffer.try_into().map_err(|_| {
+            MpcNetworkError::SerializationError(ERR_READ_MESSAGE_LENGTH.to_string())
+        })?))
     }
 
     /// Receive a message from the peer
@@ -281,10 +279,7 @@ where
     type Item = Result<NetworkOutbound<C>, MpcNetworkError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Box::pin(self.get_mut().receive_message())
-            .as_mut()
-            .poll(cx)
-            .map(Some)
+        Box::pin(self.get_mut().receive_message()).as_mut().poll(cx).map(Some)
     }
 }
 

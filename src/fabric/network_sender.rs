@@ -45,26 +45,22 @@ pub struct NetworkStats {
 impl NetworkStats {
     /// Increment the number of bytes sent
     pub fn increment_bytes_sent(&self, bytes: usize) {
-        self.bytes_sent
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
+        self.bytes_sent.fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Increment the number of bytes received
     pub fn increment_bytes_received(&self, bytes: usize) {
-        self.bytes_received
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
+        self.bytes_received.fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Increment the number of messages sent
     pub fn increment_messages_sent(&self) {
-        self.messages_sent
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.messages_sent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Increment the number of messages received
     pub fn increment_messages_received(&self) {
-        self.messages_received
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.messages_received.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -94,23 +90,13 @@ impl<C: CurveGroup, N: MpcNetwork<C> + 'static> NetworkSender<C, N> {
         network: N,
         shutdown: BroadcastReceiver<()>,
     ) -> Self {
-        NetworkSender {
-            outbound,
-            result_queue,
-            network,
-            shutdown,
-        }
+        NetworkSender { outbound, result_queue, network, shutdown }
     }
 
     /// A helper for the `run` method that allows error handling in the caller
     pub async fn run(self) {
         // Destructure `self` to take ownership of each field
-        let NetworkSender {
-            outbound,
-            result_queue,
-            network,
-            mut shutdown,
-        } = self;
+        let NetworkSender { outbound, result_queue, network, mut shutdown } = self;
 
         // Setup the stats for the network
         let stats = Arc::new(NetworkStats::default());

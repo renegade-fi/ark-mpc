@@ -28,30 +28,17 @@ fn test_inner_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
 
     // Share the values in plaintext
-    let allocd_vals = my_vals
-        .iter()
-        .map(|val| fabric.allocate_scalar(*val))
-        .collect_vec();
+    let allocd_vals = my_vals.iter().map(|val| fabric.allocate_scalar(*val)).collect_vec();
     let a_plaintext =
         await_result_batch(&share_plaintext_values_batch(&allocd_vals, PARTY0, fabric));
     let b_plaintext =
         await_result_batch(&share_plaintext_values_batch(&allocd_vals, PARTY1, fabric));
 
-    let expected_res: TestScalar = a_plaintext
-        .iter()
-        .zip(b_plaintext)
-        .map(|(a, b)| a * b)
-        .sum();
+    let expected_res: TestScalar = a_plaintext.iter().zip(b_plaintext).map(|(a, b)| a * b).sum();
 
     // Share the values
-    let a = my_vals
-        .iter()
-        .map(|val| fabric.share_scalar(*val, PARTY0))
-        .collect_vec();
-    let b = my_vals
-        .iter()
-        .map(|val| fabric.share_scalar(*val, PARTY1))
-        .collect_vec();
+    let a = my_vals.iter().map(|val| fabric.share_scalar(*val, PARTY0)).collect_vec();
+    let b = my_vals.iter().map(|val| fabric.share_scalar(*val, PARTY1)).collect_vec();
 
     // Compute the inner product
     let res: AuthenticatedScalarResult<TestCurve> =
@@ -75,36 +62,21 @@ fn test_msm(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let my_points = (0..n).map(|_| random_point()).collect_vec();
 
     // Share the values in plaintext
-    let allocd_scalars = my_scalars
-        .iter()
-        .map(|scalar| fabric.allocate_scalar(*scalar))
-        .collect_vec();
-    let allocd_points = my_points
-        .iter()
-        .map(|point| fabric.allocate_point(*point))
-        .collect_vec();
-    let plaintext_scalars = await_result_batch(&share_plaintext_values_batch(
-        &allocd_scalars,
-        PARTY0,
-        fabric,
-    ));
-    let plaintext_points = await_result_batch(&share_plaintext_values_batch(
-        &allocd_points,
-        PARTY1,
-        fabric,
-    ));
+    let allocd_scalars =
+        my_scalars.iter().map(|scalar| fabric.allocate_scalar(*scalar)).collect_vec();
+    let allocd_points = my_points.iter().map(|point| fabric.allocate_point(*point)).collect_vec();
+    let plaintext_scalars =
+        await_result_batch(&share_plaintext_values_batch(&allocd_scalars, PARTY0, fabric));
+    let plaintext_points =
+        await_result_batch(&share_plaintext_values_batch(&allocd_points, PARTY1, fabric));
 
     let expected_res = TestCurvePoint::msm(&plaintext_scalars, &plaintext_points);
 
     // Share the values in an MPC circuit
-    let shared_scalars = my_scalars
-        .iter()
-        .map(|scalar| fabric.share_scalar(*scalar, PARTY0))
-        .collect_vec();
-    let shared_points = my_points
-        .iter()
-        .map(|point| fabric.share_point(*point, PARTY1))
-        .collect_vec();
+    let shared_scalars =
+        my_scalars.iter().map(|scalar| fabric.share_scalar(*scalar, PARTY0)).collect_vec();
+    let shared_points =
+        my_points.iter().map(|point| fabric.share_point(*point, PARTY1)).collect_vec();
 
     // Compare results
     let res = AuthenticatedPointResult::msm(&shared_scalars, &shared_points);
@@ -131,30 +103,22 @@ fn test_polynomial_eval(test_args: &IntegrationTestArgs) -> Result<(), String> {
     // Party 0 chooses the first three coefficients, party 1 chooses the second
     // three
     let my_coeffs = (0..3).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let my_allocated_coeffs = my_coeffs
-        .iter()
-        .map(|coeff| fabric.allocate_scalar(*coeff))
-        .collect_vec();
+    let my_allocated_coeffs =
+        my_coeffs.iter().map(|coeff| fabric.allocate_scalar(*coeff)).collect_vec();
 
     // Open the coefficients
-    let first_coeffs = await_result_batch(&share_plaintext_values_batch(
-        &my_allocated_coeffs,
-        PARTY0,
-        fabric,
-    ))
-    .iter()
-    .map(|x| x + &public_modifier)
-    .map(await_result)
-    .collect_vec();
-    let second_coeffs = await_result_batch(&share_plaintext_values_batch(
-        &my_allocated_coeffs,
-        PARTY1,
-        fabric,
-    ))
-    .iter()
-    .map(|x| x + &public_modifier)
-    .map(await_result)
-    .collect_vec();
+    let first_coeffs =
+        await_result_batch(&share_plaintext_values_batch(&my_allocated_coeffs, PARTY0, fabric))
+            .iter()
+            .map(|x| x + &public_modifier)
+            .map(await_result)
+            .collect_vec();
+    let second_coeffs =
+        await_result_batch(&share_plaintext_values_batch(&my_allocated_coeffs, PARTY1, fabric))
+            .iter()
+            .map(|x| x + &public_modifier)
+            .map(await_result)
+            .collect_vec();
 
     // Compute the expected result
     let expected_res = x_res
@@ -196,10 +160,7 @@ inventory::submit!(IntegrationTest {
     test_fn: test_inner_product
 });
 
-inventory::submit!(IntegrationTest {
-    name: "circuits::test_msm",
-    test_fn: test_msm
-});
+inventory::submit!(IntegrationTest { name: "circuits::test_msm", test_fn: test_msm });
 
 inventory::submit!(IntegrationTest {
     name: "circuits::test_polynomial_eval",

@@ -40,11 +40,7 @@ pub fn stop_cpu_profiler(profiled: bool) {
 
 pub fn start_heap_profiler(profiled: bool) {
     if profiled {
-        HEAP_PROFILER
-            .lock()
-            .unwrap()
-            .start("./heap.profile")
-            .unwrap();
+        HEAP_PROFILER.lock().unwrap().start("./heap.profile").unwrap();
     }
 }
 

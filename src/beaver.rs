@@ -16,17 +16,13 @@ pub trait SharedValueSource<C: CurveGroup>: Send + Sync {
     fn next_shared_bit(&mut self) -> Scalar<C>;
     /// Fetch the next shared batch of bits
     fn next_shared_bit_batch(&mut self, num_values: usize) -> Vec<Scalar<C>> {
-        (0..num_values)
-            .map(|_| self.next_shared_bit())
-            .collect_vec()
+        (0..num_values).map(|_| self.next_shared_bit()).collect_vec()
     }
     /// Fetch the next shared single value
     fn next_shared_value(&mut self) -> Scalar<C>;
     /// Fetch a batch of shared single values
     fn next_shared_value_batch(&mut self, num_values: usize) -> Vec<Scalar<C>> {
-        (0..num_values)
-            .map(|_| self.next_shared_value())
-            .collect_vec()
+        (0..num_values).map(|_| self.next_shared_value()).collect_vec()
     }
     /// Fetch the next pair of values that are multiplicative inverses of one
     /// another
@@ -36,9 +32,7 @@ pub trait SharedValueSource<C: CurveGroup>: Send + Sync {
         &mut self,
         num_pairs: usize,
     ) -> (Vec<Scalar<C>>, Vec<Scalar<C>>) {
-        (0..num_pairs)
-            .map(|_| self.next_shared_inverse_pair())
-            .unzip()
+        (0..num_pairs).map(|_| self.next_shared_inverse_pair()).unzip()
     }
     /// Fetch the next beaver triplet
     fn next_triplet(&mut self) -> (Scalar<C>, Scalar<C>, Scalar<C>);

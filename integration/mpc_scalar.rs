@@ -73,10 +73,7 @@ fn test_batch_addition(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.fabric;
     let mut rng = thread_rng();
     let my_values = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let allocated_values = my_values
-        .iter()
-        .map(|v| fabric.allocate_scalar(*v))
-        .collect_vec();
+    let allocated_values = my_values.iter().map(|v| fabric.allocate_scalar(*v)).collect_vec();
 
     // Share the values in plaintext with the counterparty
     let party0_values = share_plaintext_values_batch(&allocated_values, PARTY0, fabric);
@@ -105,10 +102,7 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     let fabric = &test_args.fabric;
     let mut rng = thread_rng();
     let my_values = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let allocated_values = my_values
-        .iter()
-        .map(|v| fabric.allocate_scalar(*v))
-        .collect_vec();
+    let allocated_values = my_values.iter().map(|v| fabric.allocate_scalar(*v)).collect_vec();
 
     // Share the values in the plaintext with the counterparty, party 1's values are
     // made public
@@ -187,10 +181,7 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.fabric;
     let mut rng = thread_rng();
     let my_values = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let allocated_values = my_values
-        .iter()
-        .map(|v| fabric.allocate_scalar(*v))
-        .collect_vec();
+    let allocated_values = my_values.iter().map(|v| fabric.allocate_scalar(*v)).collect_vec();
 
     // Share the values in plaintext with the counterparty
     let party0_values = share_plaintext_values_batch(&allocated_values, PARTY0, fabric);
@@ -219,10 +210,7 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     let fabric = &test_args.fabric;
     let mut rng = thread_rng();
     let my_values = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let allocated_values = my_values
-        .iter()
-        .map(|v| fabric.allocate_scalar(*v))
-        .collect_vec();
+    let allocated_values = my_values.iter().map(|v| fabric.allocate_scalar(*v)).collect_vec();
 
     // Share the values in the plaintext with the counterparty, party 1's values are
     // made public
@@ -273,17 +261,13 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let mut rng = thread_rng();
     let my_values = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let allocated_values = my_values
-        .iter()
-        .map(|v| test_args.fabric.allocate_scalar(*v))
-        .collect_vec();
+    let allocated_values =
+        my_values.iter().map(|v| test_args.fabric.allocate_scalar(*v)).collect_vec();
 
     // Share the values with the counterparty
     let party0_values = share_plaintext_values_batch(&allocated_values, PARTY0, &test_args.fabric);
-    let expected_result = await_result_batch(&party0_values)
-        .into_iter()
-        .map(Scalar::neg)
-        .collect_vec();
+    let expected_result =
+        await_result_batch(&party0_values).into_iter().map(Scalar::neg).collect_vec();
 
     // Compute the negation in the MPC
     let shared_values = share_scalar_batch(my_values, PARTY0, test_args);
@@ -352,10 +336,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.fabric;
     let mut rng = thread_rng();
     let my_values = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let allocated_values = my_values
-        .iter()
-        .map(|v| fabric.allocate_scalar(*v))
-        .collect_vec();
+    let allocated_values = my_values.iter().map(|v| fabric.allocate_scalar(*v)).collect_vec();
 
     // Share the values in plaintext with the counterparty
     let party0_values = share_plaintext_values_batch(&allocated_values, PARTY0, fabric);
@@ -384,10 +365,7 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     let fabric = &test_args.fabric;
     let mut rng = thread_rng();
     let my_values = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-    let allocated_values = my_values
-        .iter()
-        .map(|v| fabric.allocate_scalar(*v))
-        .collect_vec();
+    let allocated_values = my_values.iter().map(|v| fabric.allocate_scalar(*v)).collect_vec();
 
     // Share the values in the plaintext with the counterparty, party 1's values are
     // made public
@@ -410,10 +388,7 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 
 // === Take Inventory === //
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_scalar::test_add",
-    test_fn: test_add,
-});
+inventory::submit!(IntegrationTest { name: "mpc_scalar::test_add", test_fn: test_add });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_scalar::test_add_scalar_constant",
@@ -430,50 +405,32 @@ inventory::submit!(IntegrationTest {
     test_fn: test_batch_add_public,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_scalar::test_sub",
-    test_fn: test_sub,
-});
+inventory::submit!(IntegrationTest { name: "mpc_scalar::test_sub", test_fn: test_sub });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_scalar::test_sub_scalar_constant",
     test_fn: test_sub_scalar_constant,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_scalar::test_batch_sub",
-    test_fn: test_batch_sub,
-});
+inventory::submit!(IntegrationTest { name: "mpc_scalar::test_batch_sub", test_fn: test_batch_sub });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_scalar::test_batch_sub_public",
     test_fn: test_batch_sub_public,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_scalar::test_neg",
-    test_fn: test_neg,
-});
+inventory::submit!(IntegrationTest { name: "mpc_scalar::test_neg", test_fn: test_neg });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_scalar::test_batch_neg",
-    test_fn: test_batch_neg,
-});
+inventory::submit!(IntegrationTest { name: "mpc_scalar::test_batch_neg", test_fn: test_batch_neg });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_scalar::test_mul",
-    test_fn: test_mul,
-});
+inventory::submit!(IntegrationTest { name: "mpc_scalar::test_mul", test_fn: test_mul });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_scalar::test_mul_scalar_constant",
     test_fn: test_mul_scalar_constant,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_scalar::test_batch_mul",
-    test_fn: test_batch_mul,
-});
+inventory::submit!(IntegrationTest { name: "mpc_scalar::test_batch_mul", test_fn: test_batch_mul });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_scalar::test_batch_mul_public",

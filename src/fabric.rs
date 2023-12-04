@@ -221,18 +221,9 @@ impl<C: CurveGroup> FabricInner<C> {
         let identity = ResultValue::Point(CurvePoint::identity());
 
         for initial_result in vec![
-            OpResult {
-                id: RESULT_ZERO,
-                value: zero,
-            },
-            OpResult {
-                id: RESULT_ONE,
-                value: one,
-            },
-            OpResult {
-                id: RESULT_IDENTITY,
-                value: identity,
-            },
+            OpResult { id: RESULT_ZERO, value: zero },
+            OpResult { id: RESULT_ONE, value: one },
+            OpResult { id: RESULT_IDENTITY, value: identity },
         ]
         .into_iter()
         {
@@ -254,8 +245,7 @@ impl<C: CurveGroup> FabricInner<C> {
 
     /// Register a waiter on a result    
     pub(crate) fn register_waiter(&self, waiter: ResultWaiter<C>) {
-        self.execution_queue
-            .push(ExecutorMessage::NewWaiter(waiter));
+        self.execution_queue.push(ExecutorMessage::NewWaiter(waiter));
     }
 
     /// Shutdown the inner fabric, by sending a shutdown message to the executor
@@ -300,8 +290,7 @@ impl<C: CurveGroup> FabricInner<C> {
     pub(crate) fn allocate_value(&self, value: ResultValue<C>) -> ResultId {
         // Forward the result to the executor
         let id = self.new_result_id();
-        self.execution_queue
-            .push(ExecutorMessage::Result(OpResult { id, value }));
+        self.execution_queue.push(ExecutorMessage::Result(OpResult { id, value }));
 
         id
     }
@@ -314,16 +303,12 @@ impl<C: CurveGroup> FabricInner<C> {
     ) -> ResultId {
         // Forward the local party's share to the executor
         let id = self.new_result_id();
-        self.execution_queue.push(ExecutorMessage::Result(OpResult {
-            id,
-            value: my_share,
-        }));
+        self.execution_queue.push(ExecutorMessage::Result(OpResult { id, value: my_share }));
 
         // Send the counterparty their share
-        if let Err(e) = self.outbound_queue.send(NetworkOutbound {
-            result_id: id,
-            payload: their_share.into(),
-        }) {
+        if let Err(e) =
+            self.outbound_queue.send(NetworkOutbound { result_id: id, payload: their_share.into() })
+        {
             log::error!("error sending share to counterparty: {e:?}");
         }
 
@@ -355,9 +340,7 @@ impl<C: CurveGroup> FabricInner<C> {
         }
 
         // Allocate IDs for the results
-        let ids = (0..output_arity)
-            .map(|_| self.new_result_id())
-            .collect_vec();
+        let ids = (0..output_arity).map(|_| self.new_result_id()).collect_vec();
 
         // Build the operation
         let op = Operation {
@@ -419,19 +402,12 @@ impl<C: CurveGroup> MpcFabric<C> {
         tokio::task::spawn_blocking(move || executor.run());
 
         // Create the fabric and fill in the MAC key after
-        let mut self_ = Self {
-            inner: Arc::new(fabric.clone()),
-            shutdown: shutdown_sender,
-            mac_key: None,
-        };
+        let mut self_ =
+            Self { inner: Arc::new(fabric.clone()), shutdown: shutdown_sender, mac_key: None };
 
         // Sample a MAC key from the pre-shared values in the beaver source
         let mac_key_id = fabric.allocate_value(ResultValue::Scalar(
-            fabric
-                .beaver_source
-                .lock()
-                .expect("beaver source poisoned")
-                .next_shared_value(),
+            fabric.beaver_source.lock().expect("beaver source poisoned").next_shared_value(),
         ));
         let mac_key = MpcScalarResult::new_shared(ResultHandle::new(mac_key_id, self_.clone()));
 
@@ -450,9 +426,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     pub fn shutdown(self) {
         log::debug!("shutting down fabric");
         self.inner.shutdown();
-        self.shutdown
-            .send(())
-            .expect("error sending shutdown signal");
+        self.shutdown.send(()).expect("error sending shutdown signal");
     }
 
     /// Register a waiter on a result
@@ -619,14 +593,9 @@ impl<C: CurveGroup> MpcFabric<C> {
             let vals = vals.into_iter().map(|val| val.into()).collect_vec();
             let mut rng = thread_rng();
 
-            let peer_shares = (0..vals.len())
-                .map(|_| Scalar::random(&mut rng))
-                .collect_vec();
-            let my_shares = vals
-                .iter()
-                .zip(peer_shares.iter())
-                .map(|(val, share)| val - share)
-                .collect_vec();
+            let peer_shares = (0..vals.len()).map(|_| Scalar::random(&mut rng)).collect_vec();
+            let my_shares =
+                vals.iter().zip(peer_shares.iter()).map(|(val, share)| val - share).collect_vec();
 
             self.allocate_shared_value(
                 ResultValue::ScalarBatch(my_shares),
@@ -680,11 +649,8 @@ impl<C: CurveGroup> MpcFabric<C> {
                     discrete_log * generator
                 })
                 .collect_vec();
-            let my_shares = vals
-                .iter()
-                .zip(peer_shares.iter())
-                .map(|(val, share)| val - share)
-                .collect_vec();
+            let my_shares =
+                vals.iter().zip(peer_shares.iter()).map(|(val, share)| val - share).collect_vec();
 
             self.allocate_shared_value(
                 ResultValue::PointBatch(my_shares),
@@ -705,10 +671,7 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Allocate a batch of scalars in the fabric
     pub fn allocate_scalars<T: Into<Scalar<C>>>(&self, values: Vec<T>) -> Vec<ScalarResult<C>> {
-        values
-            .into_iter()
-            .map(|value| self.allocate_scalar(value))
-            .collect_vec()
+        values.into_iter().map(|value| self.allocate_scalar(value)).collect_vec()
     }
 
     /// Allocate a scalar as a secret share of an already shared value
@@ -737,10 +700,7 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Allocate a batch of points in the fabric
     pub fn allocate_points(&self, values: Vec<CurvePoint<C>>) -> Vec<CurvePointResult<C>> {
-        values
-            .into_iter()
-            .map(|value| self.allocate_point(value))
-            .collect_vec()
+        values.into_iter().map(|value| self.allocate_point(value)).collect_vec()
     }
 
     /// Send a value to the peer, placing the identity in the local result
@@ -870,12 +830,8 @@ impl<C: CurveGroup> MpcFabric<C> {
         T: From<ResultValue<C>>,
     {
         let function = Box::new(function);
-        let ids = self
-            .inner
-            .new_op(args, output_arity, OperationType::GateBatch { function });
-        ids.into_iter()
-            .map(|id| ResultHandle::new(id, self.clone()))
-            .collect_vec()
+        let ids = self.inner.new_op(args, output_arity, OperationType::GateBatch { function });
+        ids.into_iter().map(|id| ResultHandle::new(id, self.clone())).collect_vec()
     }
 
     /// Construct a new network operation in the fabric, i.e. one that requires
@@ -904,12 +860,8 @@ impl<C: CurveGroup> MpcFabric<C> {
     ) -> (MpcScalarResult<C>, MpcScalarResult<C>, MpcScalarResult<C>) {
         // Sample the triple and allocate it in the fabric, the counterparty will do the
         // same
-        let (a, b, c) = self
-            .inner
-            .beaver_source
-            .lock()
-            .expect("beaver source poisoned")
-            .next_triplet();
+        let (a, b, c) =
+            self.inner.beaver_source.lock().expect("beaver source poisoned").next_triplet();
 
         let a_val = self.allocate_scalar(a);
         let b_val = self.allocate_scalar(b);
@@ -927,17 +879,9 @@ impl<C: CurveGroup> MpcFabric<C> {
     pub fn next_beaver_triple_batch(
         &self,
         n: usize,
-    ) -> (
-        Vec<MpcScalarResult<C>>,
-        Vec<MpcScalarResult<C>>,
-        Vec<MpcScalarResult<C>>,
-    ) {
-        let (a_vals, b_vals, c_vals) = self
-            .inner
-            .beaver_source
-            .lock()
-            .expect("beaver source poisoned")
-            .next_triplet_batch(n);
+    ) -> (Vec<MpcScalarResult<C>>, Vec<MpcScalarResult<C>>, Vec<MpcScalarResult<C>>) {
+        let (a_vals, b_vals, c_vals) =
+            self.inner.beaver_source.lock().expect("beaver source poisoned").next_triplet_batch(n);
 
         let a_vals = self
             .allocate_scalars(a_vals)
@@ -964,17 +908,10 @@ impl<C: CurveGroup> MpcFabric<C> {
     /// phase as per the SPDZ paper
     pub fn next_authenticated_triple(
         &self,
-    ) -> (
-        AuthenticatedScalarResult<C>,
-        AuthenticatedScalarResult<C>,
-        AuthenticatedScalarResult<C>,
-    ) {
-        let (a, b, c) = self
-            .inner
-            .beaver_source
-            .lock()
-            .expect("beaver source poisoned")
-            .next_triplet();
+    ) -> (AuthenticatedScalarResult<C>, AuthenticatedScalarResult<C>, AuthenticatedScalarResult<C>)
+    {
+        let (a, b, c) =
+            self.inner.beaver_source.lock().expect("beaver source poisoned").next_triplet();
 
         let a_val = self.allocate_scalar(a);
         let b_val = self.allocate_scalar(b);
@@ -997,12 +934,8 @@ impl<C: CurveGroup> MpcFabric<C> {
         Vec<AuthenticatedScalarResult<C>>,
         Vec<AuthenticatedScalarResult<C>>,
     ) {
-        let (a_vals, b_vals, c_vals) = self
-            .inner
-            .beaver_source
-            .lock()
-            .expect("beaver source poisoned")
-            .next_triplet_batch(n);
+        let (a_vals, b_vals, c_vals) =
+            self.inner.beaver_source.lock().expect("beaver source poisoned").next_triplet_batch(n);
 
         let a_allocated = self.allocate_scalars(a_vals);
         let b_allocated = self.allocate_scalars(b_vals);
@@ -1025,10 +958,7 @@ impl<C: CurveGroup> MpcFabric<C> {
             .next_shared_value_batch(n);
 
         // Wrap the values in a result handle
-        values_raw
-            .into_iter()
-            .map(|value| self.allocate_scalar(value))
-            .collect_vec()
+        values_raw.into_iter().map(|value| self.allocate_scalar(value)).collect_vec()
     }
 
     /// Sample a batch of random shared values from the beaver source and
@@ -1058,12 +988,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     pub fn random_inverse_pair(
         &self,
     ) -> (AuthenticatedScalarResult<C>, AuthenticatedScalarResult<C>) {
-        let (l, r) = self
-            .inner
-            .beaver_source
-            .lock()
-            .unwrap()
-            .next_shared_inverse_pair();
+        let (l, r) = self.inner.beaver_source.lock().unwrap().next_shared_inverse_pair();
         (
             AuthenticatedScalarResult::new_shared(self.allocate_scalar(l)),
             AuthenticatedScalarResult::new_shared(self.allocate_scalar(r)),
@@ -1074,16 +999,9 @@ impl<C: CurveGroup> MpcFabric<C> {
     pub fn random_inverse_pairs(
         &self,
         n: usize,
-    ) -> (
-        Vec<AuthenticatedScalarResult<C>>,
-        Vec<AuthenticatedScalarResult<C>>,
-    ) {
-        let (left, right) = self
-            .inner
-            .beaver_source
-            .lock()
-            .unwrap()
-            .next_shared_inverse_pair_batch(n);
+    ) -> (Vec<AuthenticatedScalarResult<C>>, Vec<AuthenticatedScalarResult<C>>) {
+        let (left, right) =
+            self.inner.beaver_source.lock().unwrap().next_shared_inverse_pair_batch(n);
 
         let left_right = left.into_iter().chain(right).collect_vec();
         let allocated_left_right = self.allocate_scalars(left_right);
@@ -1097,12 +1015,8 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Sample a random shared bit from the beaver source
     pub fn random_shared_bit(&self) -> AuthenticatedScalarResult<C> {
-        let bit = self
-            .inner
-            .beaver_source
-            .lock()
-            .expect("beaver source poisoned")
-            .next_shared_bit();
+        let bit =
+            self.inner.beaver_source.lock().expect("beaver source poisoned").next_shared_bit();
 
         let bit = self.allocate_scalar(bit);
         AuthenticatedScalarResult::new_shared(bit)

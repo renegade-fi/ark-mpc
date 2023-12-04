@@ -247,10 +247,7 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let party0_values = share_plaintext_values_batch(&my_values, PARTY0, &test_args.fabric);
 
     // Add the values together to get the plaintext, expected result
-    let expected_result = await_result_batch(&party0_values)
-        .into_iter()
-        .map(|x| -x)
-        .collect_vec();
+    let expected_result = await_result_batch(&party0_values).into_iter().map(|x| -x).collect_vec();
 
     // Secret share the values and add them together in the MPC circuit
     let party0_values = share_point_batch(points, PARTY0, test_args);
@@ -270,16 +267,10 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
     let scalar = Scalar::random(&mut rng);
 
     // Share the values with the counterparty
-    let plaintext_point: CurvePointResult<TestCurve> = share_plaintext_value(
-        test_args.fabric.allocate_point(point),
-        PARTY0,
-        &test_args.fabric,
-    );
-    let plaintext_scalar: ScalarResult<TestCurve> = share_plaintext_value(
-        test_args.fabric.allocate_scalar(scalar),
-        PARTY1,
-        &test_args.fabric,
-    );
+    let plaintext_point: CurvePointResult<TestCurve> =
+        share_plaintext_value(test_args.fabric.allocate_point(point), PARTY0, &test_args.fabric);
+    let plaintext_scalar: ScalarResult<TestCurve> =
+        share_plaintext_value(test_args.fabric.allocate_scalar(scalar), PARTY1, &test_args.fabric);
 
     // Multiply the values together to get the plaintext, expected result
     let expected_result = await_result(plaintext_point) * await_result(plaintext_scalar);
@@ -303,16 +294,10 @@ fn test_mul_scalar_constant(test_args: &IntegrationTestArgs) -> Result<(), Strin
     let scalar = Scalar::random(&mut rng);
 
     // Share the values with the counterparty
-    let plaintext_point = share_plaintext_value(
-        test_args.fabric.allocate_point(point),
-        PARTY0,
-        &test_args.fabric,
-    );
-    let plaintext_scalar: ScalarResult<TestCurve> = share_plaintext_value(
-        test_args.fabric.allocate_scalar(scalar),
-        PARTY1,
-        &test_args.fabric,
-    );
+    let plaintext_point =
+        share_plaintext_value(test_args.fabric.allocate_point(point), PARTY0, &test_args.fabric);
+    let plaintext_scalar: ScalarResult<TestCurve> =
+        share_plaintext_value(test_args.fabric.allocate_scalar(scalar), PARTY1, &test_args.fabric);
 
     let plaintext_constant = await_result(plaintext_scalar);
 
@@ -394,70 +379,46 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
     assert_point_batches_eq(res_open, expected_result)
 }
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_add",
-    test_fn: test_add,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_add", test_fn: test_add });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_point::test_add_point_constant",
     test_fn: test_add_point_constant,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_batch_add",
-    test_fn: test_batch_add,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_batch_add", test_fn: test_batch_add });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_point::test_batch_add_public",
     test_fn: test_batch_add_public,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_sub",
-    test_fn: test_sub,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_sub", test_fn: test_sub });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_point::test_sub_point_constant",
     test_fn: test_sub_point_constant,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_batch_sub",
-    test_fn: test_batch_sub,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_batch_sub", test_fn: test_batch_sub });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_point::test_batch_sub_public",
     test_fn: test_batch_sub_public,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_neg",
-    test_fn: test_neg,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_neg", test_fn: test_neg });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_batch_neg",
-    test_fn: test_batch_neg,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_batch_neg", test_fn: test_batch_neg });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_mul",
-    test_fn: test_mul,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_mul", test_fn: test_mul });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_point::test_mul_scalar_constant",
     test_fn: test_mul_scalar_constant,
 });
 
-inventory::submit!(IntegrationTest {
-    name: "mpc_point::test_batch_mul",
-    test_fn: test_batch_mul,
-});
+inventory::submit!(IntegrationTest { name: "mpc_point::test_batch_mul", test_fn: test_batch_mul });
 
 inventory::submit!(IntegrationTest {
     name: "mpc_point::test_batch_mul_public",

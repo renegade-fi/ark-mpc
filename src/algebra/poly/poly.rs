@@ -114,10 +114,8 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
             move |args| {
                 let x_to_t = x_to_t::<C>(t);
 
-                let self_coeffs = args
-                    .into_iter()
-                    .map(|res| Scalar::<C>::from(res).inner())
-                    .collect_vec();
+                let self_coeffs =
+                    args.into_iter().map(|res| Scalar::<C>::from(res).inner()).collect_vec();
                 let self_poly = DensePolynomial::from_coefficients_vec(self_coeffs);
 
                 // Compute the bezout coefficients of the two polynomials
@@ -129,9 +127,8 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
                 // f * f^{-1}(x) = 1 \in F[x] / (x^t)
                 let self_constant_coeff = self_poly.coeffs[0];
                 let inverse_constant_coeff = inverse_poly.coeffs[0];
-                let constant_coeff_inv = (self_constant_coeff * inverse_constant_coeff)
-                    .inverse()
-                    .unwrap();
+                let constant_coeff_inv =
+                    (self_constant_coeff * inverse_constant_coeff).inverse().unwrap();
 
                 inverse_poly
                     .coeffs
@@ -155,10 +152,7 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
     fn compute_bezout_polynomials(
         a: &DensePolynomial<C::ScalarField>,
         b: &DensePolynomial<C::ScalarField>,
-    ) -> (
-        DensePolynomial<C::ScalarField>,
-        DensePolynomial<C::ScalarField>,
-    ) {
+    ) -> (DensePolynomial<C::ScalarField>, DensePolynomial<C::ScalarField>) {
         if b.is_zero() {
             return (
                 DensePolynomial::from_coefficients_vec(vec![C::ScalarField::one()]), // f(x) = 1
@@ -209,17 +203,9 @@ impl<C: CurveGroup> Add<&DensePolynomial<C::ScalarField>> for &DensePolynomialRe
         let max_degree = cmp::max(self.coeffs.len(), rhs.coeffs.len());
 
         // Pad the coefficients to be of the same length
-        let padded_coeffs0 = self
-            .coeffs
-            .iter()
-            .cloned()
-            .chain(iter::repeat(fabric.zero()));
-        let padded_coeffs1 = rhs
-            .coeffs
-            .iter()
-            .copied()
-            .map(Scalar::<C>::new)
-            .chain(iter::repeat(Scalar::zero()));
+        let padded_coeffs0 = self.coeffs.iter().cloned().chain(iter::repeat(fabric.zero()));
+        let padded_coeffs1 =
+            rhs.coeffs.iter().copied().map(Scalar::<C>::new).chain(iter::repeat(Scalar::zero()));
 
         // Add component-wise
         for (lhs_coeff, rhs_coeff) in padded_coeffs0.zip(padded_coeffs1).take(max_degree) {
@@ -245,11 +231,8 @@ impl<C: CurveGroup> Add<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
         };
 
         for (i, longer_coeff) in longer.iter().enumerate() {
-            let new_coeff = if i < shorter.len() {
-                &shorter[i] + longer_coeff
-            } else {
-                longer_coeff.clone()
-            };
+            let new_coeff =
+                if i < shorter.len() { &shorter[i] + longer_coeff } else { longer_coeff.clone() };
 
             coeffs.push(new_coeff);
         }
