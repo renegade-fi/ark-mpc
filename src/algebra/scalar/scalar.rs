@@ -254,6 +254,26 @@ impl<C: CurveGroup> ScalarResult<C> {
             res
         })
     }
+
+    /// Add a batch of `ScalarResult`s to a batch of `Scalar`s
+    pub fn batch_add_constant(a: &[ScalarResult<C>], b: &[Scalar<C>]) -> Vec<ScalarResult<C>> {
+        assert_eq!(a.len(), b.len(), "Batch add constant requires equal length inputs");
+
+        let n = a.len();
+        let fabric = &a[0].fabric;
+        let b = b.to_vec();
+
+        let ids = a.iter().map(|v| v.id).collect_vec();
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let a_vals = args.into_iter().map(Scalar::from).collect_vec();
+            a_vals
+                .into_iter()
+                .zip(b.iter())
+                .map(|(a, b)| a + b)
+                .map(ResultValue::Scalar)
+                .collect_vec()
+        })
+    }
 }
 
 // === AddAssign === //
@@ -400,6 +420,26 @@ impl<C: CurveGroup> ScalarResult<C> {
             }
 
             res
+        })
+    }
+
+    /// Multiply a batch of `ScalarResult`s by a batch of `Scalar`s
+    pub fn batch_mul_constant(a: &[ScalarResult<C>], b: &[Scalar<C>]) -> Vec<ScalarResult<C>> {
+        assert_eq!(a.len(), b.len(), "Batch mul constant requires equal length inputs");
+
+        let n = a.len();
+        let fabric = &a[0].fabric;
+        let b = b.to_vec();
+
+        let ids = a.iter().map(|v| v.id).collect_vec();
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let a_vals = args.into_iter().map(Scalar::from).collect_vec();
+            a_vals
+                .into_iter()
+                .zip(b.iter())
+                .map(|(a, b)| a * b)
+                .map(ResultValue::Scalar)
+                .collect_vec()
         })
     }
 }
@@ -621,6 +661,30 @@ mod test {
         fabric.shutdown();
     }
 
+    #[tokio::test]
+    async fn test_batch_add_constant() {
+        const N: usize = 1000;
+        let mut rng = thread_rng();
+
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a + b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(move |fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_alloc = a.iter().map(|x| fabric.allocate_scalar(*x)).collect_vec();
+
+                let res = ScalarResult::batch_add_constant(&a_alloc, &b);
+                future::join_all(res.into_iter()).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
+    }
+
     /// Tests subtraction of raw scalars in the circuit
     #[tokio::test]
     async fn test_scalar_sub() {
@@ -680,6 +744,30 @@ mod test {
 
         assert_eq!(res_final, expected_res);
         fabric.shutdown();
+    }
+
+    #[tokio::test]
+    async fn test_batch_mul_constant() {
+        const N: usize = 1000;
+        let mut rng = thread_rng();
+
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(move |fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_alloc = a.iter().map(|x| fabric.allocate_scalar(*x)).collect_vec();
+
+                let res = ScalarResult::batch_mul_constant(&a_alloc, &b);
+                future::join_all(res.into_iter()).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
     }
 
     /// Tests exponentiation or raw scalars in a circuit

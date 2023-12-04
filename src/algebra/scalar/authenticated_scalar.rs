@@ -623,6 +623,52 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         // Collect the gate results into a series of `AuthenticatedScalarResult<C>`s
         AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
     }
+
+    /// Add a batch of `Scalar`s to a batch of  `AuthenticatedScalarResult`s
+    pub fn batch_add_constant(
+        a: &[AuthenticatedScalarResult<C>],
+        b: &[Scalar<C>],
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
+
+        let n = a.len();
+        let results_per_value = 3;
+        let fabric = a[0].fabric();
+        let all_ids = a.iter().flat_map(|v| v.ids()).collect_vec();
+
+        // Add the underlying values
+        let b = b.to_vec();
+        let party_id = fabric.party_id();
+        let gate_results: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
+            all_ids,
+            results_per_value * n, // output_arity
+            move |args| {
+                let mut result = Vec::with_capacity(results_per_value * n);
+                for (mut a_vals, public_value) in
+                    args.into_iter().chunks(results_per_value).into_iter().zip(b.into_iter())
+                {
+                    let a_share: Scalar<C> = a_vals.next().unwrap().into();
+                    let a_mac_share: Scalar<C> = a_vals.next().unwrap().into();
+                    let a_modifier: Scalar<C> = a_vals.next().unwrap().into();
+
+                    // Only the first party adds the public value to their share
+                    if party_id == PARTY0 {
+                        result.push(ResultValue::Scalar(a_share + public_value));
+                    } else {
+                        result.push(ResultValue::Scalar(a_share));
+                    }
+
+                    result.push(ResultValue::Scalar(a_mac_share));
+                    result.push(ResultValue::Scalar(a_modifier - public_value));
+                }
+
+                result
+            },
+        );
+
+        // Collect the gate results into a series of `AuthenticatedScalarResult<C>`s
+        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+    }
 }
 
 /// TODO: Maybe use a batch gate for this; performance depends on whether
@@ -1003,6 +1049,46 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         AuthenticatedScalarResult::from_flattened_iterator(scalars.into_iter())
     }
+
+    /// Multiply a batch of `AuthenticatedScalarResult`s by a batch of `Scalar`s
+    pub fn batch_mul_constant(
+        a: &[AuthenticatedScalarResult<C>],
+        b: &[Scalar<C>],
+    ) -> Vec<AuthenticatedScalarResult<C>> {
+        assert_eq!(a.len(), b.len(), "Cannot multiply batches of different sizes");
+        if a.is_empty() {
+            return vec![];
+        }
+
+        let n = a.len();
+        let fabric = a[0].fabric();
+
+        let b = b.to_vec();
+        let all_ids = a.iter().flat_map(|a| a.ids()).collect_vec();
+
+        let scalars = fabric.new_batch_gate_op(
+            all_ids,
+            AUTHENTICATED_SCALAR_RESULT_LEN * n, // output_arity
+            move |args| {
+                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
+                for (a_vals, b_val) in
+                    args.chunks(AUTHENTICATED_SCALAR_RESULT_LEN).zip(b.into_iter())
+                {
+                    let a_share: Scalar<C> = a_vals[0].to_owned().into();
+                    let a_mac_share: Scalar<C> = a_vals[1].to_owned().into();
+                    let a_modifier: Scalar<C> = a_vals[2].to_owned().into();
+
+                    result.push(ResultValue::Scalar(a_share * b_val));
+                    result.push(ResultValue::Scalar(a_mac_share * b_val));
+                    result.push(ResultValue::Scalar(a_modifier * b_val));
+                }
+
+                result
+            },
+        );
+
+        AuthenticatedScalarResult::from_flattened_iterator(scalars.into_iter())
+    }
 }
 
 // === Division === //
@@ -1194,6 +1280,37 @@ mod tests {
         PARTY0, PARTY1,
     };
 
+    /// Tests batch addition with constant values
+    #[tokio::test]
+    async fn test_batch_add_constant() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a + b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+
+            async move {
+                let a_shared = fabric.batch_share_scalar(a, PARTY0 /* sender */);
+                let res = AuthenticatedScalarResult::batch_add_constant(&a_shared, &b);
+
+                let opening = AuthenticatedScalarResult::open_authenticated_batch(&res);
+                future::join_all(opening.into_iter())
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+            }
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
+    }
+
     /// Test subtraction across non-commutative types
     #[tokio::test]
     async fn test_sub() {
@@ -1251,6 +1368,35 @@ mod tests {
 
         assert!(res.0);
         assert!(res.1)
+    }
+
+    /// Tests the `batch_mul_constant` method
+    #[tokio::test]
+    async fn test_batch_mul_constant() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let shared_values = fabric.batch_share_scalar(a, PARTY0 /* sender */);
+                let res = AuthenticatedScalarResult::batch_mul_constant(&shared_values, &b);
+
+                let opening = AuthenticatedScalarResult::open_authenticated_batch(&res);
+                future::join_all(opening.into_iter())
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+            }
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
     }
 
     /// Tests division between a shared and public scalar
