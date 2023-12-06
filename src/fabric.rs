@@ -262,6 +262,12 @@ impl<C: CurveGroup> FabricInner<C> {
         self.next_result_id.fetch_add(1, Ordering::Relaxed)
     }
 
+    /// Increment the operation counter by a given amount
+    fn new_result_id_batch(&self, n: usize) -> Vec<ResultId> {
+        let start = self.next_result_id.fetch_add(n, Ordering::Relaxed);
+        (start..start + n).collect_vec()
+    }
+
     /// Increment the operation counter and return the existing value
     fn new_op_id(&self) -> OperationId {
         self.next_op_id.fetch_add(1, Ordering::Relaxed)
@@ -293,6 +299,22 @@ impl<C: CurveGroup> FabricInner<C> {
         self.execution_queue.push(ExecutorMessage::Result(OpResult { id, value }));
 
         id
+    }
+
+    /// Allocate a batch of values in the fabric
+    pub(crate) fn allocate_values(&self, values: Vec<ResultValue<C>>) -> Vec<ResultId> {
+        // Forward the results to the executor
+        let n = values.len();
+        let ids = self.new_result_id_batch(n);
+
+        let mut results = Vec::with_capacity(n);
+        for (id, value) in ids.iter().zip(values.into_iter()) {
+            results.push(OpResult { id: *id, value });
+        }
+
+        self.execution_queue.push(ExecutorMessage::ResultBatch(results));
+
+        ids
     }
 
     /// Allocate a secret shared value in the network
@@ -340,7 +362,7 @@ impl<C: CurveGroup> FabricInner<C> {
         }
 
         // Allocate IDs for the results
-        let ids = (0..output_arity).map(|_| self.new_result_id()).collect_vec();
+        let ids = self.new_result_id_batch(output_arity);
 
         // Build the operation
         let op = Operation {
@@ -671,7 +693,14 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Allocate a batch of scalars in the fabric
     pub fn allocate_scalars<T: Into<Scalar<C>>>(&self, values: Vec<T>) -> Vec<ScalarResult<C>> {
-        values.into_iter().map(|value| self.allocate_scalar(value)).collect_vec()
+        let result_values =
+            values.into_iter().map(|value| ResultValue::Scalar(value.into())).collect_vec();
+
+        self.inner
+            .allocate_values(result_values)
+            .into_iter()
+            .map(|id| ResultHandle::new(id, self.clone()))
+            .collect_vec()
     }
 
     /// Allocate a scalar as a secret share of an already shared value

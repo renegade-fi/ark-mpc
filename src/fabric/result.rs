@@ -16,10 +16,12 @@ use futures::Future;
 use crate::{
     algebra::{CurvePoint, Scalar},
     network::NetworkPayload,
-    Shared,
 };
 
 use super::MpcFabric;
+
+/// A type alias representing a shared reference to a value
+pub(crate) type Shared<T> = Arc<RwLock<T>>;
 
 /// Error message when a result buffer lock is poisoned
 pub(crate) const ERR_RESULT_BUFFER_POISONED: &str = "result buffer lock poisoned";
@@ -43,6 +45,8 @@ pub struct OpResult<C: CurveGroup> {
 /// The value of a result
 #[derive(Clone)]
 pub enum ResultValue<C: CurveGroup> {
+    /// A placeholder value for buffers that have not yet resolved
+    Placeholder,
     /// A byte value
     Bytes(Vec<u8>),
     /// A scalar value
@@ -58,6 +62,7 @@ pub enum ResultValue<C: CurveGroup> {
 impl<C: CurveGroup> Debug for ResultValue<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
+            ResultValue::Placeholder => f.debug_tuple("Placeholder").finish(),
             ResultValue::Bytes(bytes) => f.debug_tuple("Bytes").field(bytes).finish(),
             ResultValue::Scalar(scalar) => f.debug_tuple("Scalar").field(scalar).finish(),
             ResultValue::ScalarBatch(scalars) => {
@@ -89,6 +94,7 @@ impl<C: CurveGroup> From<ResultValue<C>> for NetworkPayload<C> {
             ResultValue::ScalarBatch(scalars) => NetworkPayload::ScalarBatch(scalars),
             ResultValue::Point(point) => NetworkPayload::Point(point),
             ResultValue::PointBatch(points) => NetworkPayload::PointBatch(points),
+            _ => unimplemented!("Cannot convert {value:?} to network payload"),
         }
     }
 }
@@ -170,16 +176,22 @@ impl<C: CurveGroup> From<ResultValue<C>> for Vec<CurvePoint<C>> {
 /// This allows for construction of the graph concurrently with execution,
 /// giving the fabric the opportunity to schedule all results onto the network
 /// optimistically
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ResultHandle<C: CurveGroup, T: From<ResultValue<C>>> {
     /// The id of the result
     pub(crate) id: ResultId,
     /// The buffer that the result will be written to when it becomes available
-    pub(crate) result_buffer: Shared<Option<ResultValue<C>>>,
+    pub(crate) result_buffer: Option<Shared<ResultValue<C>>>,
     /// The underlying fabric
     pub(crate) fabric: MpcFabric<C>,
     /// A phantom for the type of the result
     phantom: PhantomData<T>,
+}
+
+impl<C: CurveGroup, T: From<ResultValue<C>>> Clone for ResultHandle<C, T> {
+    fn clone(&self) -> Self {
+        Self { id: self.id, result_buffer: None, fabric: self.fabric.clone(), phantom: PhantomData }
+    }
 }
 
 impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
@@ -197,7 +209,7 @@ impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
 impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
     /// Constructor
     pub(crate) fn new(id: ResultId, fabric: MpcFabric<C>) -> Self {
-        Self { id, result_buffer: Arc::new(RwLock::new(None)), fabric, phantom: PhantomData }
+        Self { id, result_buffer: None, fabric, phantom: PhantomData }
     }
 
     /// Get the ids that this result represents, awaiting these IDs is awaiting
@@ -212,7 +224,7 @@ pub struct ResultWaiter<C: CurveGroup> {
     /// The id of the result that the task is waiting on
     pub result_id: ResultId,
     /// The buffer that the result will be written to when it becomes available
-    pub result_buffer: Shared<Option<ResultValue<C>>>,
+    pub result_buffer: Shared<ResultValue<C>>,
     /// The waker of the task
     pub waker: Waker,
 }
@@ -223,27 +235,28 @@ impl<C: CurveGroup> Debug for ResultWaiter<C> {
     }
 }
 
-impl<C: CurveGroup, T: From<ResultValue<C>> + Debug> Future for ResultHandle<C, T> {
+impl<C: CurveGroup, T: From<ResultValue<C>> + Unpin + Debug> Future for ResultHandle<C, T> {
     type Output = T;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Lock the result buffer
-        let locked_result = self.result_buffer.read().expect(ERR_RESULT_BUFFER_POISONED);
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // If the result buffer is not yet initialized, initialize it and alert the
+        // executor that the polling task is waiting on it
+        if self.result_buffer.is_none() {
+            let result_buffer = Arc::new(RwLock::new(ResultValue::Placeholder));
+            self.result_buffer = Some(result_buffer.clone());
+
+            let waiter =
+                ResultWaiter { result_id: self.id, result_buffer, waker: cx.waker().clone() };
+            self.fabric.register_waiter(waiter);
+        }
 
         // If the result is ready, return it, otherwise register the current context's
         // waker with the `Executor`
+        let locked_result =
+            self.result_buffer.as_ref().unwrap().read().expect(ERR_RESULT_BUFFER_POISONED);
         match locked_result.clone() {
-            Some(res) => Poll::Ready(res.into()),
-            None => {
-                let waiter = ResultWaiter {
-                    result_id: self.id,
-                    result_buffer: self.result_buffer.clone(),
-                    waker: cx.waker().clone(),
-                };
-
-                self.fabric.register_waiter(waiter);
-                Poll::Pending
-            },
+            ResultValue::Placeholder => Poll::Pending,
+            _ => Poll::Ready(locked_result.clone().into()),
         }
     }
 }
