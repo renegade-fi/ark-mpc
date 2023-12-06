@@ -141,6 +141,8 @@ pub struct Executor<C: CurveGroup> {
 pub enum ExecutorMessage<C: CurveGroup> {
     /// A result of an operation
     Result(OpResult<C>),
+    /// A batch of results
+    ResultBatch(Vec<OpResult<C>>),
     /// An operation that is ready for execution
     Op(Operation<C>),
     /// A new waiter has registered itself for a result
@@ -188,6 +190,11 @@ impl<C: CurveGroup> Executor<C> {
             if let Some(job) = self.job_queue.pop() {
                 match job {
                     ExecutorMessage::Result(res) => self.handle_new_result(res),
+                    ExecutorMessage::ResultBatch(res) => {
+                        for result in res.into_iter() {
+                            self.handle_new_result(result);
+                        }
+                    },
                     ExecutorMessage::Op(operation) => self.handle_new_operation(operation),
                     ExecutorMessage::NewWaiter(waiter) => self.handle_new_waiter(waiter),
                     ExecutorMessage::Shutdown => {
@@ -367,7 +374,7 @@ impl<C: CurveGroup> Executor<C> {
                 // Place the result in the waiter's buffer and wake up the waiting thread
                 let mut buffer = waiter.result_buffer.write().expect(ERR_RESULT_BUFFER_POISONED);
 
-                buffer.replace(result.clone());
+                *buffer = result.clone();
                 waiter.waker.wake();
             }
         }

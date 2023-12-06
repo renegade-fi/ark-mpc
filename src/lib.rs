@@ -8,8 +8,6 @@
 //! Defines an MPC implementation over the a generic Arkworks curve that allows
 //! for out-of-order execution of the underlying MPC circuit
 
-use std::sync::{Arc, RwLock};
-
 use algebra::{CurvePoint, Scalar};
 use ark_ec::CurveGroup;
 
@@ -50,9 +48,6 @@ pub fn random_point<C: CurveGroup>() -> CurvePoint<C> {
 // --------------------
 // | Crate-wide Types |
 // --------------------
-
-/// A type alias for a shared locked value
-type Shared<T> = Arc<RwLock<T>>;
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
