@@ -131,12 +131,6 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         Self::from_coeffs(coeffs)
     }
 
-    /// Get a random, shared masking polynomial of degree `n`
-    pub fn random_polynomial(n: usize, fabric: &MpcFabric<C>) -> Self {
-        let coeffs = fabric.random_shared_scalars_authenticated(n + 1);
-        Self::from_coeffs(coeffs)
-    }
-
     /// Compute the multiplicative inverse of a polynomial in the quotient ring
     /// F[x] / (x^t)
     ///
@@ -144,7 +138,7 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
     ///     https://dl.acm.org/doi/pdf/10.1145/72981.72995
     pub fn mul_inverse_mod_t(&self, t: usize) -> Self {
         let fabric = self.fabric();
-        let masking_poly = Self::random_polynomial(t /* degree */, fabric);
+        let masking_poly = Self::random(t /* degree */, fabric);
 
         // Mask the polynomial and open the result
         let masked_poly = (&masking_poly * self).open_authenticated();
@@ -276,8 +270,7 @@ impl<C: CurveGroup> Neg for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
     fn neg(self) -> Self::Output {
-        let coeffs = self.coeffs.iter().map(|coeff| coeff.neg()).collect::<Vec<_>>();
-
+        let coeffs = AuthenticatedScalarResult::batch_neg(&self.coeffs);
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
 }

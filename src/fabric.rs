@@ -444,6 +444,11 @@ impl<C: CurveGroup> MpcFabric<C> {
         self.inner.party_id
     }
 
+    /// Get the total number of ops that have been allocated in the fabric
+    pub fn num_gates(&self) -> usize {
+        self.inner.next_op_id.load(Ordering::Relaxed)
+    }
+
     /// Shutdown the fabric and the threads it has spawned
     pub fn shutdown(self) {
         log::debug!("shutting down fabric");
@@ -494,8 +499,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     /// Get a batch of references to the zero wire as an
     /// `AuthenticatedScalarResult`
     pub fn zeros_authenticated(&self, n: usize) -> Vec<AuthenticatedScalarResult<C>> {
-        let val = self.zero_authenticated();
-        (0..n).map(|_| val.clone()).collect_vec()
+        vec![self.zero_authenticated(); n]
     }
 
     /// Get the hardcoded one wire as a raw `ScalarResult`
@@ -1004,13 +1008,7 @@ impl<C: CurveGroup> MpcFabric<C> {
             .next_shared_value_batch(n);
 
         // Wrap the values in an authenticated wrapper
-        values_raw
-            .into_iter()
-            .map(|value| {
-                let value = self.allocate_scalar(value);
-                AuthenticatedScalarResult::new_shared(value)
-            })
-            .collect_vec()
+        AuthenticatedScalarResult::new_shared_batch(&self.allocate_scalars(values_raw))
     }
 
     /// Sample a pair of values that are multiplicative inverses of one another

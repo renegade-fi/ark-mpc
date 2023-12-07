@@ -2,7 +2,7 @@
 //! `ark_poly::DensePolynomial` type
 
 use std::{
-    cmp, iter,
+    cmp,
     ops::{Add, Div, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
@@ -12,7 +12,7 @@ use ark_ec::CurveGroup;
 use ark_ff::{Field, One, Zero};
 use ark_poly::{
     univariate::{DenseOrSparsePolynomial, DensePolynomial},
-    DenseUVPolynomial,
+    DenseUVPolynomial, EvaluationDomain, Polynomial, Radix2EvaluationDomain,
 };
 use futures::FutureExt;
 use futures::{ready, Future};
@@ -96,6 +96,15 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
 
             ResultValue::Scalar(res)
         })
+    }
+
+    /// Extend to a polynomial of degree `n` by padding with zeros
+    pub fn extend_to_degree(&self, n: usize) -> Self {
+        let fabric = self.fabric();
+        let mut coeffs = self.coeffs.clone();
+        coeffs.resize(n + 1, fabric.zero());
+
+        Self::from_coeffs(coeffs)
     }
 }
 
@@ -198,20 +207,16 @@ impl<C: CurveGroup> Add<&DensePolynomial<C::ScalarField>> for &DensePolynomialRe
     fn add(self, rhs: &DensePolynomial<C::ScalarField>) -> Self::Output {
         assert!(!self.coeffs.is_empty(), "cannot add an empty polynomial");
         let fabric = self.coeffs[0].fabric();
-
-        let mut coeffs = Vec::new();
         let max_degree = cmp::max(self.coeffs.len(), rhs.coeffs.len());
 
         // Pad the coefficients to be of the same length
-        let padded_coeffs0 = self.coeffs.iter().cloned().chain(iter::repeat(fabric.zero()));
-        let padded_coeffs1 =
-            rhs.coeffs.iter().copied().map(Scalar::<C>::new).chain(iter::repeat(Scalar::zero()));
+        let mut padded_coeffs0 = self.coeffs.clone();
+        let mut padded_coeffs1 = rhs.coeffs.iter().copied().map(Scalar::new).collect_vec();
 
-        // Add component-wise
-        for (lhs_coeff, rhs_coeff) in padded_coeffs0.zip(padded_coeffs1).take(max_degree) {
-            coeffs.push(lhs_coeff + rhs_coeff);
-        }
+        padded_coeffs0.resize(max_degree, fabric.zero());
+        padded_coeffs1.resize(max_degree, Scalar::zero());
 
+        let coeffs = ScalarResult::batch_add_constant(&padded_coeffs0, &padded_coeffs1);
         DensePolynomialResult::from_coeffs(coeffs)
     }
 }
@@ -223,19 +228,17 @@ impl<C: CurveGroup> Add<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
     fn add(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
         // We do not pad the coefficients here, it requires fewer gates if we avoid
         // padding
-        let mut coeffs = Vec::new();
-        let (shorter, longer) = if self.coeffs.len() < rhs.coeffs.len() {
-            (&self.coeffs, &rhs.coeffs)
+        let min_degree = cmp::min(self.coeffs.len(), rhs.coeffs.len());
+        let top_coeffs = if self.coeffs.len() < rhs.coeffs.len() {
+            &rhs.coeffs[min_degree..]
         } else {
-            (&rhs.coeffs, &self.coeffs)
+            &self.coeffs[min_degree..]
         };
 
-        for (i, longer_coeff) in longer.iter().enumerate() {
-            let new_coeff =
-                if i < shorter.len() { &shorter[i] + longer_coeff } else { longer_coeff.clone() };
-
-            coeffs.push(new_coeff);
-        }
+        // Add the overlapping coefficients then concatenate the remaining coefficients
+        let mut coeffs =
+            ScalarResult::batch_add(&self.coeffs[..min_degree], &rhs.coeffs[..min_degree]);
+        coeffs.extend_from_slice(top_coeffs);
 
         DensePolynomialResult::from_coeffs(coeffs)
     }
@@ -246,11 +249,7 @@ impl_borrow_variants!(DensePolynomialResult<C>, Add, add, +, DensePolynomialResu
 impl<C: CurveGroup> Neg for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
     fn neg(self) -> Self::Output {
-        let mut coeffs = Vec::with_capacity(self.coeffs.len());
-        for coeff in self.coeffs.iter() {
-            coeffs.push(-coeff);
-        }
-
+        let coeffs = ScalarResult::batch_neg(&self.coeffs);
         DensePolynomialResult::from_coeffs(coeffs)
     }
 }
@@ -286,20 +285,27 @@ impl<C: CurveGroup> Sub<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 impl<C: CurveGroup> Mul<&DensePolynomial<C::ScalarField>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn mul(self, rhs: &DensePolynomial<C::ScalarField>) -> Self::Output {
-        let fabric = self.coeffs[0].fabric();
+        // Extend both polynomials coefficient vectors to their resultant degree
+        let resulting_degree = self.degree() + rhs.degree();
+        let self_extended = self.extend_to_degree(resulting_degree);
 
-        let mut coeffs = Vec::with_capacity(self.coeffs.len() + rhs.coeffs.len() - 1);
-        for _ in 0..self.coeffs.len() + rhs.coeffs.len() - 1 {
-            coeffs.push(fabric.zero());
-        }
+        let mut rhs_extended_coeffs = rhs.coeffs.clone();
+        rhs_extended_coeffs.resize(resulting_degree, C::ScalarField::zero());
 
-        for (i, lhs_coeff) in self.coeffs.iter().enumerate() {
-            for (j, rhs_coeff) in rhs.coeffs.iter().copied().map(Scalar::new).enumerate() {
-                coeffs[i + j] = &coeffs[i + j] + lhs_coeff * rhs_coeff;
-            }
-        }
+        // Take the forward FFT of the two polynomials
+        let domain: Radix2EvaluationDomain<C::ScalarField> =
+            Radix2EvaluationDomain::new(resulting_degree).unwrap();
+        let lhs_fft = ScalarResult::fft_with_domain(&self_extended.coeffs, domain);
+        domain.fft_in_place(&mut rhs_extended_coeffs);
 
+        // Multiply the two polynomials in the FFT domain
+        let rhs_fft = rhs_extended_coeffs.into_iter().map(Scalar::new).collect_vec();
+        let mul_res = ScalarResult::batch_mul_constant(&lhs_fft, &rhs_fft);
+
+        // Take the inverse FFT of the result to get the coefficients of the product
+        let coeffs = ScalarResult::ifft_with_domain(&mul_res, domain);
         DensePolynomialResult::from_coeffs(coeffs)
     }
 }
@@ -309,20 +315,24 @@ impl_commutative!(DensePolynomialResult<C>, Mul, mul, *, DensePolynomial<C::Scal
 impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn mul(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
-        let fabric = self.coeffs[0].fabric();
+        // Extend both polynomials coefficient vectors to their resultant degree
+        let resulting_degree = self.degree() + rhs.degree();
+        let lhs_extended = self.extend_to_degree(resulting_degree);
+        let rhs_extended = rhs.extend_to_degree(resulting_degree);
 
-        let mut coeffs = Vec::with_capacity(self.coeffs.len() + rhs.coeffs.len() - 1);
-        for _ in 0..self.coeffs.len() + rhs.coeffs.len() - 1 {
-            coeffs.push(fabric.zero());
-        }
+        // Take the forward FFT of the two polynomials
+        let domain: Radix2EvaluationDomain<C::ScalarField> =
+            Radix2EvaluationDomain::new(resulting_degree).unwrap();
+        let lhs_fft = ScalarResult::fft_with_domain(&lhs_extended.coeffs, domain);
+        let rhs_fft = ScalarResult::fft_with_domain(&rhs_extended.coeffs, domain);
 
-        for (i, lhs_coeff) in self.coeffs.iter().enumerate() {
-            for (j, rhs_coeff) in rhs.coeffs.iter().enumerate() {
-                coeffs[i + j] = &coeffs[i + j] + lhs_coeff * rhs_coeff;
-            }
-        }
+        // Multiply the two polynomials in the FFT domain
+        let mul_res = ScalarResult::batch_mul(&lhs_fft, &rhs_fft);
 
+        // Take the inverse FFT of the result to get the coefficients of the product
+        let coeffs = ScalarResult::ifft_with_domain(&mul_res, domain);
         DensePolynomialResult::from_coeffs(coeffs)
     }
 }
@@ -334,7 +344,9 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
 
     fn mul(self, rhs: &Scalar<C>) -> Self::Output {
-        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        let n = self.coeffs.len();
+        let new_coeffs = ScalarResult::batch_mul_constant(&self.coeffs, &vec![*rhs; n]);
+
         DensePolynomialResult::from_coeffs(new_coeffs)
     }
 }
@@ -345,7 +357,9 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
 
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
-        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        let n = self.coeffs.len();
+        let new_coeffs = ScalarResult::batch_mul(&self.coeffs, &vec![rhs.clone(); n]);
+
         DensePolynomialResult::from_coeffs(new_coeffs)
     }
 }
@@ -356,7 +370,10 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &DensePolynomialResul
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
-        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        let n = self.coeffs.len();
+        let new_coeffs =
+            AuthenticatedScalarResult::batch_mul_public(&vec![rhs.clone(); n], &self.coeffs);
+
         AuthenticatedDensePoly::from_coeffs(new_coeffs)
     }
 }
