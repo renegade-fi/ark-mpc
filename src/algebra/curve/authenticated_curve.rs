@@ -176,7 +176,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         // Check that the MAC check value is the correct opening of the
         // given commitment
         let peer_comm = HashCommitment {
-            value: peer_mac_share,
+            values: vec![peer_mac_share],
             blinder: peer_blinder,
             commitment: peer_mac_commitment,
         };
@@ -226,7 +226,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         // Once the parties have exchanged their commitments, they can open the
         // underlying MAC check value as they are bound by the commitment
-        let peer_mac_check = self.fabric().exchange_value(my_comm.value.clone());
+        let peer_mac_check = self.fabric().exchange_value(my_comm.values[0].clone());
         let blinder_result: ScalarResult<C> = self.fabric().allocate_scalar(my_comm.blinder);
         let peer_blinder = self.fabric().exchange_value(blinder_result);
 
@@ -305,7 +305,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         // --- Check the MAC Checks --- //
 
-        let mut mac_check_gate_deps = my_comms.iter().map(|comm| comm.value.id).collect_vec();
+        let mut mac_check_gate_deps = my_comms.iter().map(|comm| comm.values[0].id).collect_vec();
         mac_check_gate_deps.push(peer_mac_checks.id);
         mac_check_gate_deps.push(peer_blinders.id);
         mac_check_gate_deps.push(peer_comms.id);

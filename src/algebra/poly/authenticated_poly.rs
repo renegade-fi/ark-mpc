@@ -25,7 +25,7 @@ use crate::{
         AuthenticatedScalarOpenResult, AuthenticatedScalarResult, Scalar, ScalarResult,
     },
     error::MpcError,
-    MpcFabric,
+    MpcFabric, ResultValue,
 };
 
 use super::DensePolynomialResult;
@@ -82,13 +82,25 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
     /// TODO: Opt for a more efficient implementation that allocates fewer
     /// gates, i.e. by awaiting all results then creating the evaluation
     pub fn eval(&self, x: &ScalarResult<C>) -> AuthenticatedScalarResult<C> {
-        // Evaluate the polynomial at the given point
-        let mut result = x.fabric().zero_authenticated();
-        for coeff in self.coeffs.iter().rev() {
-            result = result * x + coeff;
-        }
+        // Compute the powers of x from 0 to n
+        let n = self.degree();
+        let powers_of_x = self.fabric().new_batch_gate_op(vec![x.id()], n + 1, move |mut args| {
+            let x: Scalar<C> = args.pop().unwrap().into();
+            let mut res = Vec::with_capacity(n + 1);
+            res.push(Scalar::one());
 
-        result
+            let mut curr = x;
+            for _ in 0..n {
+                res.push(curr);
+                curr *= x;
+            }
+
+            res.into_iter().map(ResultValue::Scalar).collect_vec()
+        });
+
+        // Multiply the coefficients by the powers of x
+        let coeff_muls = AuthenticatedScalarResult::batch_mul_public(&self.coeffs, &powers_of_x);
+        coeff_muls.into_iter().sum()
     }
 
     /// Extend to a polynomial of degree `n` by padding with zeros
@@ -435,55 +447,34 @@ impl_commutative!(AuthenticatedDensePoly<C>, Mul, mul, *, AuthenticatedScalarRes
 /// party shares a_1, a_2 We can divide each share locally to obtain a secret
 /// sharing of \floor{a(x) / b(x)}
 ///
-/// To see this, consider that a_1(x) = q_1(x)b(x) + r_1(x) and a_2(x) =
-/// q_2(x)b(x) + r_2(x) where:
-///     - deg(q_1) = deg(a_1) - deg(b)
-///     - deg(q_2) = deg(a_2) - deg(b)
-///     - deg(r_1) < deg(b)
-///     - deg(r_2) < deg(b)
-/// The floor division operator for a(x), b(x) returns q(x) such that there
-/// exists r(x): deg(r) < deg(b) where a(x) = q(x)b(x) + r(x)
-/// Note that a_1(x) + a_2(x) = (q_1(x) + q_2(x))b(x) + r_1(x) + r_2(x), where
-/// of course deg(r_1 + r_2) < deg(b), so \floor{a(x) / b(x)} = q_1(x) + q_2(x);
-/// making q_1, q_2 additive secret shares of the result as desired
+/// The public division implementation uses the same approach as the private
+/// divisor implementation. See the docstring below for more details
 impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
     fn div(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
-        // We cannot break early if the remainder is exhausted because this will cause
-        // the gate sequencing to differ between parties in the MPC. Instead we
-        // execute the whole computation on both ends of the MPC
         assert!(!rhs.coeffs.is_empty(), "cannot divide by zero polynomial");
-        let fabric = self.coeffs[0].fabric();
 
-        let quotient_degree = self.degree().saturating_sub(rhs.degree());
-        if quotient_degree == 0 {
-            return AuthenticatedDensePoly::zero(fabric);
+        let n = self.degree();
+        let m = rhs.degree();
+        if n < m {
+            return AuthenticatedDensePoly::zero(self.fabric());
         }
 
-        let mut remainder = self.clone();
-        let mut quotient_coeffs = fabric.zeros_authenticated(quotient_degree + 1);
+        let modulus = n - m + 1;
 
-        let divisor_leading_inverse = rhs.coeffs.last().unwrap().inverse();
-        for deg in (0..=quotient_degree).rev() {
-            // Compute the quotient coefficient for this round
-            let remainder_leading_coeff = remainder.coeffs.last().unwrap();
-            let next_quotient_coeff = remainder_leading_coeff * &divisor_leading_inverse;
+        // Apply the rev transformation
+        let rev_f = self.rev();
+        let rev_g = rhs.rev();
 
-            // Update the remainder and record the coefficient
-            for (i, divisor_coeff) in rhs.coeffs.iter().enumerate() {
-                let remainder_ind = deg + i;
-                remainder.coeffs[remainder_ind] =
-                    &remainder.coeffs[remainder_ind] - divisor_coeff * &next_quotient_coeff;
-            }
+        // Invert `rev_g` in the quotient ring
+        let rev_g_inv = rev_g.mul_inverse_mod_t(modulus);
 
-            quotient_coeffs[deg] = next_quotient_coeff;
+        // Compute rev_f * rev_g_inv and "mod out" rev_r; what is left is `rev_q`
+        let rev_q = (&rev_f * &rev_g_inv).mod_xn(modulus);
 
-            // Pop the leading coefficient (now zero) from the remainder
-            remainder.coeffs.pop();
-        }
-
-        AuthenticatedDensePoly::from_coeffs(quotient_coeffs)
+        // Undo the `rev` transformation
+        rev_q.rev()
     }
 }
 impl_borrow_variants!(AuthenticatedDensePoly<C>, Div, div, /, DensePolynomialResult<C>, C: CurveGroup);

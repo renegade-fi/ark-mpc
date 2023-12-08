@@ -235,7 +235,7 @@ impl<C: CurveGroup> Debug for ResultWaiter<C> {
     }
 }
 
-impl<C: CurveGroup, T: From<ResultValue<C>> + Unpin + Debug> Future for ResultHandle<C, T> {
+impl<C: CurveGroup, T: From<ResultValue<C>> + Unpin> Future for ResultHandle<C, T> {
     type Output = T;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

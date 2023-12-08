@@ -80,10 +80,10 @@ tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 # == Arithemtic + Crypto == #
 ark-bn254 = { version = "0.4", optional = true }
 ark-ec = { version = "0.4", features = ["parallel"] }
-ark-ff = "0.4"
+ark-ff = { version = "0.4", features = ["parallel"] }
 ark-poly = { version = "0.4", features = ["std", "parallel"] }
 ark-serialize = "0.4"
-ark-std = "0.4"
+ark-std = { version = "0.4", features = ["parallel"] }
 digest = "0.10"
 num-bigint = "0.4"
 rand = "0.8"
