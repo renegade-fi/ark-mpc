@@ -19,7 +19,7 @@ use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::algebra::macros::*;
+use crate::algebra::{macros::*, ToBytes};
 use crate::fabric::{ResultHandle, ResultValue};
 
 // -----------
@@ -144,6 +144,12 @@ impl<C: CurveGroup> One for Scalar<C> {
     }
 }
 
+impl<C: CurveGroup> ToBytes for Scalar<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_bytes_be()
+    }
+}
+
 impl<C: CurveGroup> Display for Scalar<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.to_biguint())
@@ -186,8 +192,6 @@ impl<C: CurveGroup> ScalarResult<C> {
 // | Arithmetic |
 // --------------
 
-// === Addition === //
-
 impl<C: CurveGroup> ScalarResult<C> {
     /// Compute the multiplicative inverse of the scalar in its field
     pub fn inverse(&self) -> ScalarResult<C> {
@@ -196,7 +200,23 @@ impl<C: CurveGroup> ScalarResult<C> {
             ResultValue::Scalar(Scalar(val.0.inverse().unwrap()))
         })
     }
+
+    /// Compute the inverse of a batch of values
+    pub fn batch_inverse(values: &[ScalarResult<C>]) -> Vec<ScalarResult<C>> {
+        let n = values.len();
+        let fabric = &values[0].fabric;
+        let ids = values.iter().map(|v| v.id).collect_vec();
+
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let mut scalars: Vec<Scalar<C>> = args.into_iter().map(Into::into).collect_vec();
+            Scalar::batch_inverse(&mut scalars);
+
+            scalars.into_iter().map(ResultValue::Scalar).collect_vec()
+        })
+    }
 }
+
+// === Addition === //
 
 impl<C: CurveGroup> Add<&Scalar<C>> for &Scalar<C> {
     type Output = Scalar<C>;

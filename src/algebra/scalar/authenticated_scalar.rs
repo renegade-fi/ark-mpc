@@ -2,7 +2,7 @@
 
 use std::{
     fmt::Debug,
-    iter::Sum,
+    iter::{self, Sum},
     ops::{Add, Div, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
@@ -16,7 +16,7 @@ use itertools::{izip, Itertools};
 
 use crate::{
     algebra::{macros::*, AuthenticatedPointResult, CurvePoint, CurvePointResult},
-    commitment::{PedersenCommitment, PedersenCommitmentResult},
+    commitment::{HashCommitment, HashCommitmentResult},
     error::MpcError,
     fabric::{MpcFabric, ResultId, ResultValue},
     PARTY0,
@@ -176,8 +176,8 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         let masked_values_open = Self::open_authenticated_batch(&masked_values);
 
         // 3. Compute the inverse of the masked values: m_i^-1 = (x_i^-1 * r_i^-1)
-        let inverted_openings =
-            masked_values_open.into_iter().map(|val| val.value.inverse()).collect_vec();
+        let opening_values = masked_values_open.into_iter().map(|val| val.value).collect_vec();
+        let inverted_openings = ScalarResult::batch_inverse(&opening_values);
 
         // 4. Multiply these inverted openings with the original shared scalars r_i:
         //    m_i^-1 * r_i = (x_i^-1 * r_i^-1) * r_i = x_i^-1
@@ -239,11 +239,11 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
     pub fn verify_mac_check(
         my_mac_share: Scalar<C>,
         peer_mac_share: Scalar<C>,
-        peer_mac_commitment: CurvePoint<C>,
+        peer_mac_commitment: Scalar<C>,
         peer_commitment_blinder: Scalar<C>,
     ) -> bool {
-        let their_comm = PedersenCommitment {
-            value: peer_mac_share,
+        let their_comm = HashCommitment {
+            values: vec![peer_mac_share],
             blinder: peer_commitment_blinder,
             commitment: peer_mac_commitment,
         };
@@ -259,6 +259,28 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         }
 
         true
+    }
+
+    /// Verify a batch of MAC checks
+    pub fn batch_verify_mac_check(
+        my_mac_shares: &[Scalar<C>],
+        peer_mac_shares: &[Scalar<C>],
+        peer_commitment_blinder: Scalar<C>,
+        peer_mac_commitment: Scalar<C>,
+    ) -> bool {
+        // Verify a commitment to the openings
+        let comm = HashCommitment {
+            values: peer_mac_shares.to_vec(),
+            blinder: peer_commitment_blinder,
+            commitment: peer_mac_commitment,
+        };
+        if !comm.verify() {
+            return false;
+        }
+
+        // Build a commitment from the gate inputs
+        izip!(my_mac_shares, peer_mac_shares)
+            .all(|(my_share, peer_share)| my_share + peer_share == Scalar::zero())
     }
 
     /// Open the value and check its MAC
@@ -290,25 +312,25 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         );
 
         // Compute a commitment to this value and share it with the peer
-        let my_comm = PedersenCommitmentResult::commit(mac_check_value);
+        let my_comm = HashCommitmentResult::commit(mac_check_value);
         let peer_commit = self.fabric().exchange_value(my_comm.commitment);
 
         // Once the parties have exchanged their commitments, they can open them, they
         // have already exchanged the underlying values and their commitments so
         // all that is left is the blinder
-        let peer_mac_check = self.fabric().exchange_value(my_comm.value.clone());
+        let peer_mac_check = self.fabric().exchange_value(my_comm.values[0].clone());
 
         let blinder_result: ScalarResult<C> = self.fabric().allocate_scalar(my_comm.blinder);
         let peer_blinder = self.fabric().exchange_value(blinder_result);
 
         // Check the commitment and the MAC result
         let commitment_check: ScalarResult<C> = self.fabric().new_gate_op(
-            vec![my_comm.value.id, peer_mac_check.id, peer_blinder.id, peer_commit.id],
+            vec![my_comm.values[0].id, peer_mac_check.id, peer_blinder.id, peer_commit.id],
             |mut args| {
                 let my_comm_value: Scalar<C> = args.remove(0).into();
                 let peer_value: Scalar<C> = args.remove(0).into();
                 let blinder: Scalar<C> = args.remove(0).into();
-                let commitment: CurvePoint<C> = args.remove(0).into();
+                let commitment: Scalar<C> = args.remove(0).into();
 
                 // Build a commitment from the gate inputs
                 ResultValue::Scalar(Scalar::from(Self::verify_mac_check(
@@ -364,60 +386,42 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         // --- Commit to MAC Checks --- //
 
-        let my_comms =
-            mac_checks.iter().cloned().map(PedersenCommitmentResult::commit).collect_vec();
-        let peer_comms = fabric
-            .exchange_values(&my_comms.iter().map(|comm| comm.commitment.clone()).collect_vec());
+        let my_comm = HashCommitmentResult::batch_commit(mac_checks.clone());
+        let peer_comm = fabric.exchange_value(my_comm.commitment);
 
         // --- Exchange the MAC Checks and Commitment Blinders --- //
 
         let peer_mac_checks = fabric.exchange_values(&mac_checks);
-        let peer_blinders = fabric.exchange_values(
-            &my_comms.iter().map(|comm| fabric.allocate_scalar(comm.blinder)).collect_vec(),
-        );
+        let peer_blinder = fabric.exchange_value(fabric.allocate_scalar(my_comm.blinder));
 
         // --- Check the MAC Checks --- //
 
-        let mut mac_check_gate_deps = my_comms.iter().map(|comm| comm.value.id).collect_vec();
+        let mut mac_check_gate_deps = my_comm.values.iter().map(|v| v.id()).collect_vec();
         mac_check_gate_deps.push(peer_mac_checks.id);
-        mac_check_gate_deps.push(peer_blinders.id);
-        mac_check_gate_deps.push(peer_comms.id);
+        mac_check_gate_deps.push(peer_blinder.id);
+        mac_check_gate_deps.push(peer_comm.id);
 
-        let commitment_checks: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
-            mac_check_gate_deps,
-            n, // output_arity
-            move |mut args| {
+        let commitment_check: ScalarResult<C> =
+            fabric.new_gate_op(mac_check_gate_deps, move |mut args| {
                 let my_comms: Vec<Scalar<C>> = args.drain(..n).map(|comm| comm.into()).collect();
                 let peer_mac_checks: Vec<Scalar<C>> = args.remove(0).into();
-                let peer_blinders: Vec<Scalar<C>> = args.remove(0).into();
-                let peer_comms: Vec<CurvePoint<C>> = args.remove(0).into();
+                let peer_blinder: Scalar<C> = args.remove(0).into();
+                let peer_comm: Scalar<C> = args.remove(0).into();
 
-                // Build a commitment from the gate inputs
-                let mut mac_checks = Vec::with_capacity(n);
-                for (my_mac_share, peer_mac_share, peer_blinder, peer_commitment) in izip!(
-                    my_comms.into_iter(),
-                    peer_mac_checks.into_iter(),
-                    peer_blinders.into_iter(),
-                    peer_comms.into_iter()
-                ) {
-                    let mac_check = Self::verify_mac_check(
-                        my_mac_share,
-                        peer_mac_share,
-                        peer_commitment,
-                        peer_blinder,
-                    );
-                    mac_checks.push(ResultValue::Scalar(Scalar::from(mac_check)));
-                }
-
-                mac_checks
-            },
-        );
+                let res = Self::batch_verify_mac_check(
+                    &my_comms,
+                    &peer_mac_checks,
+                    peer_blinder,
+                    peer_comm,
+                );
+                ResultValue::Scalar(Scalar::from(res))
+            });
 
         // --- Return the results --- //
 
         values_open
             .into_iter()
-            .zip(commitment_checks)
+            .zip(iter::repeat(commitment_check))
             .map(|(value, check)| AuthenticatedScalarOpenResult { value, mac_check: check })
             .collect_vec()
     }
@@ -675,9 +679,36 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 /// materializing the iterator is burdensome
 impl<C: CurveGroup> Sum for AuthenticatedScalarResult<C> {
     /// Assumes the iterator is non-empty
-    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let seed = iter.next().expect("Cannot sum empty iterator");
-        iter.fold(seed, |acc, val| acc + &val)
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        let values = iter.collect_vec();
+        let n = values.len();
+        let fabric = values[0].fabric();
+
+        // Order the result ids as shares, mac, public modifier
+        let mut ids = Vec::with_capacity(n * AUTHENTICATED_SCALAR_RESULT_LEN);
+        ids.append(&mut values.iter().map(|v| v.share.id()).collect_vec());
+        ids.append(&mut values.iter().map(|v| v.mac.id()).collect_vec());
+        ids.append(&mut values.iter().map(|v| v.public_modifier.id).collect_vec());
+
+        // Add the underlying values
+        let res =
+            fabric.new_batch_gate_op(ids, AUTHENTICATED_SCALAR_RESULT_LEN, move |mut args| {
+                let new_share: Scalar<C> = args.drain(..n).map(Scalar::from).sum();
+                let new_mac_share: Scalar<C> = args.drain(..n).map(Scalar::from).sum();
+                let new_modifier: Scalar<C> = args.drain(..n).map(Scalar::from).sum();
+
+                vec![
+                    ResultValue::Scalar(new_share),
+                    ResultValue::Scalar(new_mac_share),
+                    ResultValue::Scalar(new_modifier),
+                ]
+            });
+
+        let share = res[0].clone().into();
+        let mac = res[1].clone().into();
+        let public_modifier = res[2].clone();
+
+        Self { share, mac, public_modifier }
     }
 }
 
@@ -1304,6 +1335,29 @@ mod tests {
                     .await
                     .into_iter()
                     .collect::<Result<Vec<_>, _>>()
+            }
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected_res)
+    }
+
+    /// Tests summing values
+    #[tokio::test]
+    async fn test_sum() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+
+        let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected_res = values.iter().cloned().sum();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let values = values.clone();
+            async move {
+                let values_shared = fabric.batch_share_scalar(values, PARTY0);
+
+                let res: AuthenticatedScalarResult<TestCurve> = values_shared.into_iter().sum();
+                res.open_authenticated().await
             }
         })
         .await;

@@ -110,6 +110,14 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
 
 /// Modular inversion implementation
 impl<C: CurveGroup> DensePolynomialResult<C> {
+    /// Reverse the order of the coefficients in the polynomial
+    pub fn rev(&self) -> Self {
+        let mut coeffs = self.coeffs.clone();
+        coeffs.reverse();
+
+        Self::from_coeffs(coeffs)
+    }
+
     /// Compute the multiplicative inverse of the polynomial mod x^t
     ///
     /// Done using the extended Euclidean algorithm

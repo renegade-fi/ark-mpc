@@ -270,7 +270,7 @@ impl<C: CurveGroup> FabricInner<C> {
 
     /// Increment the operation counter and return the existing value
     fn new_op_id(&self) -> OperationId {
-        self.next_op_id.fetch_add(1, Ordering::Relaxed)
+        self.next_op_id.fetch_add(1, Ordering::Acquire)
     }
 
     /// Get the hardcoded zero value in the fabric
@@ -446,7 +446,7 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Get the total number of ops that have been allocated in the fabric
     pub fn num_gates(&self) -> usize {
-        self.inner.next_op_id.load(Ordering::Relaxed)
+        self.inner.next_op_id.load(Ordering::Acquire)
     }
 
     /// Shutdown the fabric and the threads it has spawned

@@ -24,7 +24,7 @@ use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::{
     algebra::{
-        macros::*, n_bytes_field, scalar::*, AUTHENTICATED_POINT_RESULT_LEN,
+        macros::*, n_bytes_field, scalar::*, ToBytes, AUTHENTICATED_POINT_RESULT_LEN,
         AUTHENTICATED_SCALAR_RESULT_LEN,
     },
     fabric::{ResultHandle, ResultValue},
@@ -173,6 +173,12 @@ where
     /// element
     fn hash_to_field(buf: &[u8]) -> C::BaseField {
         Self::BaseField::from_be_bytes_mod_order(buf)
+    }
+}
+
+impl<C: CurveGroup> ToBytes for CurvePoint<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_bytes()
     }
 }
 
