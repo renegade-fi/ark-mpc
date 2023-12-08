@@ -226,8 +226,7 @@ impl_commutative!(DensePolynomialResult<C>, Add, add, +, DensePolynomial<C::Scal
 impl<C: CurveGroup> Add<&DensePolynomialResult<C>> for &DensePolynomialResult<C> {
     type Output = DensePolynomialResult<C>;
     fn add(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
-        // We do not pad the coefficients here, it requires fewer gates if we avoid
-        // padding
+        // Split out the top coefficients that do not overlap
         let min_degree = cmp::min(self.coeffs.len(), rhs.coeffs.len());
         let top_coeffs = if self.coeffs.len() < rhs.coeffs.len() {
             &rhs.coeffs[min_degree..]
@@ -292,15 +291,15 @@ impl<C: CurveGroup> Mul<&DensePolynomial<C::ScalarField>> for &DensePolynomialRe
         let self_extended = self.extend_to_degree(resulting_degree);
 
         let mut rhs_extended_coeffs = rhs.coeffs.clone();
-        rhs_extended_coeffs.resize(resulting_degree, C::ScalarField::zero());
+        rhs_extended_coeffs.resize(resulting_degree + 1, C::ScalarField::zero());
 
         // Take the forward FFT of the two polynomials
         let domain: Radix2EvaluationDomain<C::ScalarField> =
-            Radix2EvaluationDomain::new(resulting_degree).unwrap();
+            Radix2EvaluationDomain::new(resulting_degree + 1).unwrap();
         let lhs_fft = ScalarResult::fft_with_domain(&self_extended.coeffs, domain);
         domain.fft_in_place(&mut rhs_extended_coeffs);
 
-        // Multiply the two polynomials in the FFT domain
+        // Multiply the two polynomials in the FFT image
         let rhs_fft = rhs_extended_coeffs.into_iter().map(Scalar::new).collect_vec();
         let mul_res = ScalarResult::batch_mul_constant(&lhs_fft, &rhs_fft);
 
@@ -324,11 +323,11 @@ impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
 
         // Take the forward FFT of the two polynomials
         let domain: Radix2EvaluationDomain<C::ScalarField> =
-            Radix2EvaluationDomain::new(resulting_degree).unwrap();
+            Radix2EvaluationDomain::new(resulting_degree + 1).unwrap();
         let lhs_fft = ScalarResult::fft_with_domain(&lhs_extended.coeffs, domain);
         let rhs_fft = ScalarResult::fft_with_domain(&rhs_extended.coeffs, domain);
 
-        // Multiply the two polynomials in the FFT domain
+        // Multiply the two polynomials in the FFT image
         let mul_res = ScalarResult::batch_mul(&lhs_fft, &rhs_fft);
 
         // Take the inverse FFT of the result to get the coefficients of the product

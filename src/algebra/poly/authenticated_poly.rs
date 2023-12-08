@@ -4,14 +4,18 @@
 //! fabric
 
 use std::{
-    cmp, iter,
+    cmp,
     ops::{Add, Div, Mul, Neg, Sub},
     pin::Pin,
     task::{Context, Poll},
 };
 
 use ark_ec::CurveGroup;
-use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
+use ark_ff::Zero;
+use ark_poly::{
+    univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Polynomial,
+    Radix2EvaluationDomain,
+};
 use futures::{ready, Future, FutureExt};
 use itertools::Itertools;
 
@@ -85,6 +89,15 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         }
 
         result
+    }
+
+    /// Extend to a polynomial of degree `n` by padding with zeros
+    pub fn extend_to_degree(&self, n: usize) -> Self {
+        let fabric = self.fabric();
+        let mut coeffs = self.coeffs.clone();
+        coeffs.resize(n + 1, fabric.zero_authenticated());
+
+        Self::from_coeffs(coeffs)
     }
 
     /// Open the polynomial to the base type `DensePolynomial`
@@ -197,21 +210,17 @@ impl<C: CurveGroup> Add<&DensePolynomial<C::ScalarField>> for &AuthenticatedDens
     fn add(self, rhs: &DensePolynomial<C::ScalarField>) -> Self::Output {
         assert!(!self.coeffs.is_empty(), "cannot add to an empty polynomial");
         let fabric = self.coeffs[0].fabric();
-
         let max_degree = cmp::max(self.degree(), rhs.degree());
 
         // Pad the coefficients to the same length
-        let padded_coeffs0 =
-            self.coeffs.iter().cloned().chain(iter::repeat(fabric.zero_authenticated()));
-        let padded_coeffs1 =
-            rhs.coeffs.iter().copied().map(Scalar::<C>::new).chain(iter::repeat(Scalar::zero()));
+        let mut padded_coeffs0 = self.coeffs.clone();
+        let mut padded_coeffs1 = rhs.coeffs.iter().copied().map(Scalar::new).collect_vec();
 
-        // Add the coefficients component-wise
-        let mut coeffs = Vec::new();
-        for (lhs_coeff, rhs_coeff) in padded_coeffs0.zip(padded_coeffs1).take(max_degree + 1) {
-            coeffs.push(lhs_coeff + rhs_coeff);
-        }
+        padded_coeffs0.resize(max_degree + 1, fabric.zero_authenticated());
+        padded_coeffs1.resize(max_degree + 1, Scalar::zero());
 
+        let coeffs =
+            AuthenticatedScalarResult::batch_add_constant(&padded_coeffs0, &padded_coeffs1);
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
 }
@@ -222,21 +231,17 @@ impl<C: CurveGroup> Add<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
     type Output = AuthenticatedDensePoly<C>;
     fn add(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
         assert!(!self.coeffs.is_empty(), "cannot add to an empty polynomial");
+        let fabric = self.coeffs[0].fabric();
+        let max_degree = cmp::max(self.degree(), rhs.degree());
 
-        // Pad both polynomials to the same length
-        let n_coeffs = cmp::max(self.coeffs.len(), rhs.coeffs.len());
-        let zero = self.fabric().zero();
-        let zero_authenticated = self.fabric().zero_authenticated();
+        // Pad the coefficients to the same length
+        let mut padded_coeffs0 = self.coeffs.clone();
+        let mut padded_coeffs1 = rhs.coeffs.clone();
 
-        let padded_lhs = self.coeffs.iter().chain(iter::repeat(&zero_authenticated)).take(n_coeffs);
-        let padded_rhs = rhs.coeffs.iter().chain(iter::repeat(&zero)).take(n_coeffs);
+        padded_coeffs0.resize(max_degree + 1, fabric.zero_authenticated());
+        padded_coeffs1.resize(max_degree + 1, fabric.zero());
 
-        // Add the coefficients component-wise
-        let mut coeffs = Vec::with_capacity(n_coeffs);
-        for (lhs_coeff, rhs_coeff) in padded_lhs.zip(padded_rhs) {
-            coeffs.push(lhs_coeff + rhs_coeff);
-        }
-
+        let coeffs = AuthenticatedScalarResult::batch_add_public(&padded_coeffs0, &padded_coeffs1);
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
 }
@@ -246,19 +251,19 @@ impl_commutative!(AuthenticatedDensePoly<C>, Add, add, +, DensePolynomialResult<
 impl<C: CurveGroup> Add<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
     fn add(self, rhs: &AuthenticatedDensePoly<C>) -> Self::Output {
-        // Don't pad the coefficients as it requires fewer gates when we don't have to
-        let (shorter, longer) = if self.coeffs.len() < rhs.coeffs.len() {
-            (&self.coeffs, &rhs.coeffs)
+        // Split out the top coefficients that do not overlap
+        let min_degree = cmp::min(self.coeffs.len(), rhs.coeffs.len());
+        let top_coeffs = if self.degree() < rhs.degree() {
+            &rhs.coeffs[min_degree..]
         } else {
-            (&rhs.coeffs, &self.coeffs)
+            &self.coeffs[min_degree..]
         };
 
-        let mut coeffs = Vec::new();
-        for (i, longer_coeff) in longer.iter().enumerate() {
-            let new_coeff =
-                if i < shorter.len() { &shorter[i] + longer_coeff } else { longer_coeff.clone() };
-            coeffs.push(new_coeff);
-        }
+        let mut coeffs = AuthenticatedScalarResult::batch_add(
+            &self.coeffs[..min_degree],
+            &rhs.coeffs[..min_degree],
+        );
+        coeffs.extend_from_slice(top_coeffs);
 
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
@@ -299,33 +304,31 @@ impl<C: CurveGroup> Sub<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<
 impl_borrow_variants!(AuthenticatedDensePoly<C>, Sub, sub, -, AuthenticatedDensePoly<C>, C: CurveGroup);
 
 // --- Multiplication --- //
-// TODO: We can use an FFT-based approach here, it takes a bit more care because
-// evaluations needed are more expensive, but it could provide a performance
-// boost
-//
-// For now we leave this as an optimization, the current implementation can be
-// executed in one round, although with many gates
 impl<C: CurveGroup> Mul<&DensePolynomial<C::ScalarField>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &DensePolynomial<C::ScalarField>) -> Self::Output {
         assert!(!self.coeffs.is_empty(), "cannot multiply an empty polynomial");
-        let fabric = self.coeffs[0].fabric();
 
-        // Setup the zero coefficients
-        let result_degree = self.degree() + rhs.degree();
-        let mut coeffs = Vec::with_capacity(result_degree + 1);
-        for _ in 0..(result_degree + 1) {
-            coeffs.push(fabric.zero_authenticated());
-        }
+        // Extend the lhs and rhs polynomials to the size of their product
+        let resulting_degree = self.degree() + rhs.degree();
+        let self_extended = self.extend_to_degree(resulting_degree);
 
-        // Multiply the coefficients component-wise
-        for (i, lhs_coeff) in self.coeffs.iter().enumerate() {
-            for (j, rhs_coeff) in rhs.coeffs.iter().enumerate() {
-                coeffs[i + j] = &coeffs[i + j] + (lhs_coeff * Scalar::<C>::new(*rhs_coeff));
-            }
-        }
+        let mut rhs_extended_coeffs = rhs.coeffs.clone();
+        rhs_extended_coeffs.resize(resulting_degree + 1, C::ScalarField::zero());
 
+        // Take the forward FFT of each polynomial to get their evals over the domain
+        let domain: Radix2EvaluationDomain<C::ScalarField> =
+            Radix2EvaluationDomain::new(resulting_degree + 1).unwrap();
+        let lhs_fft = AuthenticatedScalarResult::fft_with_domain(&self_extended.coeffs, domain);
+        domain.fft_in_place(&mut rhs_extended_coeffs);
+
+        // Multiply the two polynomials in the FFT image
+        let rhs_fft = rhs_extended_coeffs.into_iter().map(Scalar::new).collect_vec();
+        let mul_res = AuthenticatedScalarResult::batch_mul_constant(&lhs_fft, &rhs_fft);
+
+        // Take the inverse FFT to get the coefficients of the product
+        let coeffs = AuthenticatedScalarResult::ifft_with_domain(&mul_res, domain);
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
 }
@@ -335,22 +338,23 @@ impl<C: CurveGroup> Mul<&DensePolynomialResult<C>> for &AuthenticatedDensePoly<C
 
     fn mul(self, rhs: &DensePolynomialResult<C>) -> Self::Output {
         assert!(!self.coeffs.is_empty(), "cannot multiply an empty polynomial");
-        let fabric = self.coeffs[0].fabric();
 
-        // Setup the zero coefficients
-        let result_degree = self.degree() + rhs.degree();
-        let mut coeffs = Vec::with_capacity(result_degree + 1);
-        for _ in 0..(result_degree + 1) {
-            coeffs.push(fabric.zero_authenticated());
-        }
+        // Extend the lhs and rhs polynomials to the size of their product
+        let resulting_degree = self.degree() + rhs.degree();
+        let self_extended = self.extend_to_degree(resulting_degree);
+        let rhs_extended = rhs.extend_to_degree(resulting_degree);
 
-        // Multiply the coefficients component-wise
-        for (i, lhs_coeff) in self.coeffs.iter().enumerate() {
-            for (j, rhs_coeff) in rhs.coeffs.iter().enumerate() {
-                coeffs[i + j] = &coeffs[i + j] + (lhs_coeff * rhs_coeff);
-            }
-        }
+        // Take the forward FFT of each polynomial to get their evals over the domain
+        let domain: Radix2EvaluationDomain<C::ScalarField> =
+            Radix2EvaluationDomain::new(resulting_degree + 1).unwrap();
+        let lhs_fft = AuthenticatedScalarResult::fft_with_domain(&self_extended.coeffs, domain);
+        let rhs_fft = ScalarResult::fft_with_domain(&rhs_extended.coeffs, domain);
 
+        // Multiply the two polynomials in the FFT image
+        let mul_res = AuthenticatedScalarResult::batch_mul_public(&lhs_fft, &rhs_fft);
+
+        // Take the inverse FFT to get the coefficients of the product
+        let coeffs = AuthenticatedScalarResult::ifft_with_domain(&mul_res, domain);
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
 }
@@ -362,22 +366,23 @@ impl<C: CurveGroup> Mul<&AuthenticatedDensePoly<C>> for &AuthenticatedDensePoly<
 
     fn mul(self, rhs: &AuthenticatedDensePoly<C>) -> Self::Output {
         assert!(!self.coeffs.is_empty(), "cannot multiply an empty polynomial");
-        let fabric = self.coeffs[0].fabric();
 
-        // Setup the zero coefficients
-        let result_degree = self.degree() + rhs.degree();
-        let mut coeffs = Vec::with_capacity(result_degree + 1);
-        for _ in 0..(result_degree + 1) {
-            coeffs.push(fabric.zero_authenticated());
-        }
+        // Extend the lhs and rhs polynomials to the size of their product
+        let resulting_degree = self.degree() + rhs.degree();
+        let self_extended = self.extend_to_degree(resulting_degree);
+        let rhs_extended = rhs.extend_to_degree(resulting_degree);
 
-        // Multiply the coefficients component-wise
-        for (i, lhs_coeff) in self.coeffs.iter().enumerate() {
-            for (j, rhs_coeff) in rhs.coeffs.iter().enumerate() {
-                coeffs[i + j] = &coeffs[i + j] + (lhs_coeff * rhs_coeff);
-            }
-        }
+        // Take the forward FFT of each polynomial to get their evals over the domain
+        let domain: Radix2EvaluationDomain<C::ScalarField> =
+            Radix2EvaluationDomain::new(resulting_degree + 1).unwrap();
+        let lhs_fft = AuthenticatedScalarResult::fft_with_domain(&self_extended.coeffs, domain);
+        let rhs_fft = AuthenticatedScalarResult::fft_with_domain(&rhs_extended.coeffs, domain);
 
+        // Multiply the two polynomials in the FFT image
+        let mul_res = AuthenticatedScalarResult::batch_mul(&lhs_fft, &rhs_fft);
+
+        // Take the inverse FFT to get the coefficients of the product
+        let coeffs = AuthenticatedScalarResult::ifft_with_domain(&mul_res, domain);
         AuthenticatedDensePoly::from_coeffs(coeffs)
     }
 }
@@ -388,7 +393,10 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &Scalar<C>) -> Self::Output {
-        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        let n = self.coeffs.len();
+        let new_coeffs =
+            AuthenticatedScalarResult::batch_mul_constant(&self.coeffs, &vec![*rhs; n]);
+
         AuthenticatedDensePoly::from_coeffs(new_coeffs)
     }
 }
@@ -399,7 +407,10 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &AuthenticatedDensePoly<C> {
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
-        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        let n = self.coeffs.len();
+        let new_coeffs =
+            AuthenticatedScalarResult::batch_mul_public(&self.coeffs, &vec![rhs.clone(); n]);
+
         AuthenticatedDensePoly::from_coeffs(new_coeffs)
     }
 }
@@ -410,7 +421,9 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &AuthenticatedDensePo
     type Output = AuthenticatedDensePoly<C>;
 
     fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
-        let new_coeffs = self.coeffs.iter().map(|coeff| coeff * rhs).collect_vec();
+        let n = self.coeffs.len();
+        let new_coeffs = AuthenticatedScalarResult::batch_mul(&self.coeffs, &vec![rhs.clone(); n]);
+
         AuthenticatedDensePoly::from_coeffs(new_coeffs)
     }
 }
