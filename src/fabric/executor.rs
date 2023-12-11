@@ -368,14 +368,14 @@ impl<C: CurveGroup> Executor<C> {
     /// Wake all the waiters for a given result
     pub fn wake_waiters_on_result(&mut self, result_id: ResultId) {
         // Wake all tasks awaiting this result
-        if let Some(waiters) = self.waiters.remove(&result_id) {
+        if let Some(waiters) = self.waiters.get(&result_id) {
             let result = &self.results.get(result_id).unwrap().value;
-            for waiter in waiters.into_iter() {
+            for waiter in waiters {
                 // Place the result in the waiter's buffer and wake up the waiting thread
                 let mut buffer = waiter.result_buffer.write().expect(ERR_RESULT_BUFFER_POISONED);
 
                 *buffer = result.clone();
-                waiter.waker.wake();
+                waiter.waker.wake_by_ref();
             }
         }
     }

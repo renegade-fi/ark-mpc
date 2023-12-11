@@ -62,7 +62,7 @@ const RESULT_IDENTITY: ResultId = 2;
 const N_CONSTANT_RESULTS: usize = 3;
 
 /// The default size hint to give the fabric for buffer pre-allocation
-const DEFAULT_SIZE_HINT: usize = 10_000;
+const DEFAULT_SIZE_HINT: usize = 50_000;
 
 /// A type alias for the identifier used for a gate
 pub type OperationId = usize;
