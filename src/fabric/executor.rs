@@ -11,7 +11,6 @@ use std::fmt::{Formatter, Result as FmtResult};
 
 use ark_ec::CurveGroup;
 use crossbeam::queue::SegQueue;
-use itertools::Itertools;
 use tracing::log;
 
 use crate::buffer::GrowableBuffer;
@@ -313,21 +312,21 @@ impl<C: CurveGroup> Executor<C> {
     }
 
     /// Compute the result of an operation
-    fn compute_result(&mut self, op: Operation<C>) -> Vec<OpResult<C>> {
+    fn compute_result(&self, op: Operation<C>) -> Vec<OpResult<C>> {
         let result_ids = op.result_ids();
 
         // Collect the inputs to the operation
-        let inputs =
-            op.args.iter().map(|arg| self.results.get(*arg).unwrap().value.clone()).collect_vec();
+        let args = op.args.into_iter().map(|arg| self.results.get(arg).unwrap().value.clone());
+        let input = Box::new(args);
 
         match op.op_type {
             OperationType::Gate { function } => {
-                let value = (function)(inputs);
+                let value = (function)(input);
                 vec![OpResult { id: op.result_id, value }]
             },
 
             OperationType::GateBatch { function } => {
-                let output = (function)(inputs);
+                let output = (function)(input);
                 result_ids
                     .into_iter()
                     .zip(output)
@@ -339,7 +338,7 @@ impl<C: CurveGroup> Executor<C> {
                 // Derive a network payload from the gate inputs and forward it to the outbound
                 // buffer
                 let result_id = result_ids[0];
-                let payload = (function)(inputs);
+                let payload = (function)(input);
                 let outbound = NetworkOutbound { result_id, payload: payload.clone() };
 
                 self.fabric.outbound_queue.send(outbound).expect("error sending network payload");

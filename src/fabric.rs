@@ -100,12 +100,16 @@ impl<C: CurveGroup> Debug for Operation<C> {
     }
 }
 
+/// A type alias for the iter type used in gates
+type BoxedResultIter<'a, C> = Box<dyn Iterator<Item = ResultValue<C>> + 'a>;
+
 /// Defines the different types of operations available in the computation graph
 pub enum OperationType<C: CurveGroup> {
     /// A gate operation; may be evaluated locally given its ready inputs
     Gate {
         /// The function to apply to the inputs
-        function: Box<dyn FnOnce(Vec<ResultValue<C>>) -> ResultValue<C> + Send + Sync>,
+        #[allow(clippy::type_complexity)]
+        function: Box<dyn for<'a> FnOnce(BoxedResultIter<'a, C>) -> ResultValue<C> + Send + Sync>,
     },
     /// A gate operation that has output arity greater than one
     ///
@@ -114,12 +118,13 @@ pub enum OperationType<C: CurveGroup> {
     GateBatch {
         /// The function to apply to the inputs
         #[allow(clippy::type_complexity)]
-        function: Box<dyn FnOnce(Vec<ResultValue<C>>) -> Vec<ResultValue<C>> + Send + Sync>,
+        function: Box<dyn FnOnce(BoxedResultIter<C>) -> Vec<ResultValue<C>> + Send + Sync>,
     },
     /// A network operation, requires that a value be sent over the network
     Network {
         /// The function to apply to the inputs to derive a Network payload
-        function: Box<dyn FnOnce(Vec<ResultValue<C>>) -> NetworkPayload<C> + Send + Sync>,
+        #[allow(clippy::type_complexity)]
+        function: Box<dyn FnOnce(BoxedResultIter<C>) -> NetworkPayload<C> + Send + Sync>,
     },
 }
 
@@ -742,7 +747,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         &self,
         value: ResultHandle<C, T>,
     ) -> ResultHandle<C, T> {
-        self.new_network_op(vec![value.id], |mut args| args.remove(0).into())
+        self.new_network_op(vec![value.id], |mut args| args.next().unwrap().into())
     }
 
     /// Send a batch of values to the counterparty
@@ -835,7 +840,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     /// evaluated immediate given its inputs
     pub fn new_gate_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<C, T>
     where
-        F: 'static + FnOnce(Vec<ResultValue<C>>) -> ResultValue<C> + Send + Sync,
+        F: 'static + FnOnce(BoxedResultIter<C>) -> ResultValue<C> + Send + Sync,
         T: From<ResultValue<C>>,
     {
         let function = Box::new(function);
@@ -859,7 +864,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         function: F,
     ) -> Vec<ResultHandle<C, T>>
     where
-        F: 'static + FnOnce(Vec<ResultValue<C>>) -> Vec<ResultValue<C>> + Send + Sync,
+        F: 'static + FnOnce(BoxedResultIter<C>) -> Vec<ResultValue<C>> + Send + Sync,
         T: From<ResultValue<C>>,
     {
         let function = Box::new(function);
@@ -871,7 +876,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     /// a value to be sent over the channel
     pub fn new_network_op<F, T>(&self, args: Vec<ResultId>, function: F) -> ResultHandle<C, T>
     where
-        F: 'static + FnOnce(Vec<ResultValue<C>>) -> NetworkPayload<C> + Send + Sync,
+        F: 'static + FnOnce(BoxedResultIter<C>) -> NetworkPayload<C> + Send + Sync,
         T: From<ResultValue<C>>,
     {
         let function = Box::new(function);

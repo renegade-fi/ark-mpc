@@ -85,7 +85,7 @@ impl<C: CurveGroup> AuthenticatedDensePoly<C> {
         // Compute the powers of x from 0 to n
         let n = self.degree();
         let powers_of_x = self.fabric().new_batch_gate_op(vec![x.id()], n + 1, move |mut args| {
-            let x: Scalar<C> = args.pop().unwrap().into();
+            let x: Scalar<C> = args.next().unwrap().into();
             let mut res = Vec::with_capacity(n + 1);
             res.push(Scalar::one());
 

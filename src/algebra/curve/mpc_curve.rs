@@ -47,19 +47,22 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
     /// Open the value; both parties send their shares to the counterparty
     pub fn open(&self) -> CurvePointResult<C> {
-        let send_my_share =
-            |args: Vec<ResultValue<C>>| NetworkPayload::Point(args[0].to_owned().into());
-
         // Party zero sends first then receives
         let (share0, share1): (CurvePointResult<C>, CurvePointResult<C>) =
             if self.fabric().party_id() == PARTY0 {
-                let party0_value = self.fabric().new_network_op(vec![self.id()], send_my_share);
+                let party0_value = self.fabric().new_network_op(vec![self.id()], |mut args| {
+                    let share: CurvePoint<C> = args.next().unwrap().into();
+                    NetworkPayload::Point(share)
+                });
                 let party1_value = self.fabric().receive_value();
 
                 (party0_value, party1_value)
             } else {
                 let party0_value = self.fabric().receive_value();
-                let party1_value = self.fabric().new_network_op(vec![self.id()], send_my_share);
+                let party1_value = self.fabric().new_network_op(vec![self.id()], |mut args| {
+                    let share: CurvePoint<C> = args.next().unwrap().into();
+                    NetworkPayload::Point(share)
+                });
 
                 (party0_value, party1_value)
             };
@@ -76,20 +79,26 @@ impl<C: CurveGroup> MpcPointResult<C> {
         let n = values.len();
         let fabric = &values[0].fabric();
         let all_ids = values.iter().map(|v| v.id()).collect_vec();
-        let send_my_shares = |args: Vec<ResultValue<C>>| {
-            NetworkPayload::PointBatch(args.into_iter().map(|arg| arg.into()).collect_vec())
-        };
+        // let send_my_shares = |args: Box<dyn Iterator<Item = ResultValue<C>>>| {
+        //     NetworkPayload::PointBatch(args.into_iter().map(|arg|
+        // arg.into()).collect_vec()) };
 
         // Party zero sends first then receives
         let (party0_values, party1_values): (BatchCurvePointResult<C>, BatchCurvePointResult<C>) =
             if fabric.party_id() == PARTY0 {
-                let party0_values = fabric.new_network_op(all_ids, send_my_shares);
+                let party0_values = fabric.new_network_op(all_ids, |args| {
+                    let shares = args.map(CurvePoint::from).collect_vec();
+                    NetworkPayload::PointBatch(shares)
+                });
                 let party1_values = fabric.receive_value();
 
                 (party0_values, party1_values)
             } else {
                 let party0_values = fabric.receive_value();
-                let party1_values = fabric.new_network_op(all_ids, send_my_shares);
+                let party1_values = fabric.new_network_op(all_ids, |args| {
+                    let shares = args.map(CurvePoint::from).collect_vec();
+                    NetworkPayload::PointBatch(shares)
+                });
 
                 (party0_values, party1_values)
             };
@@ -99,8 +108,8 @@ impl<C: CurveGroup> MpcPointResult<C> {
             vec![party0_values.id(), party1_values.id()],
             n, // output_arity
             |mut args| {
-                let party0_values: Vec<CurvePoint<C>> = args.remove(0).into();
-                let party1_values: Vec<CurvePoint<C>> = args.remove(0).into();
+                let party0_values: Vec<CurvePoint<C>> = args.next().unwrap().into();
+                let party1_values: Vec<CurvePoint<C>> = args.next().unwrap().into();
 
                 party0_values
                     .into_iter()
@@ -127,8 +136,8 @@ impl<C: CurveGroup> Add<&CurvePoint<C>> for &MpcPointResult<C> {
         let rhs = *rhs;
         let party_id = self.fabric().party_id();
         self.fabric()
-            .new_gate_op(vec![self.id()], move |args| {
-                let lhs: CurvePoint<C> = args[0].to_owned().into();
+            .new_gate_op(vec![self.id()], move |mut args| {
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
 
                 if party_id == PARTY0 {
                     ResultValue::Point(lhs + rhs)
@@ -150,8 +159,8 @@ impl<C: CurveGroup> Add<&CurvePointResult<C>> for &MpcPointResult<C> {
         let party_id = self.fabric().party_id();
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
-                let lhs: CurvePoint<C> = args.remove(0).into();
-                let rhs: CurvePoint<C> = args.remove(0).into();
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
+                let rhs: CurvePoint<C> = args.next().unwrap().into();
 
                 if party_id == PARTY0 {
                     ResultValue::Point(lhs + rhs)
@@ -170,9 +179,9 @@ impl<C: CurveGroup> Add<&MpcPointResult<C>> for &MpcPointResult<C> {
 
     fn add(self, rhs: &MpcPointResult<C>) -> Self::Output {
         self.fabric()
-            .new_gate_op(vec![self.id(), rhs.id()], |args| {
-                let lhs: CurvePoint<C> = args[0].to_owned().into();
-                let rhs: CurvePoint<C> = args[1].to_owned().into();
+            .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
+                let rhs: CurvePoint<C> = args.next().unwrap().into();
 
                 ResultValue::Point(lhs + rhs)
             })
@@ -191,15 +200,21 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().chain(b.iter()).map(|v| v.id()).collect_vec();
 
-        // Create a gate to component-wise add the shares
+        let lhs = a.iter().map(|v| v.share.id());
+        let rhs = b.iter().map(|v| v.share.id());
+        let all_ids = lhs.interleave(rhs).collect_vec();
         fabric
             .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
-                let points = args.into_iter().map(CurvePoint::from).collect_vec();
-                let (a, b) = points.split_at(n);
+                let mut res = Vec::with_capacity(n);
+                for mut chunk in &args.map(CurvePoint::from).chunks(2) {
+                    let lhs = chunk.next().unwrap();
+                    let rhs = chunk.next().unwrap();
 
-                a.iter().zip(b.iter()).map(|(x, y)| x + y).map(ResultValue::Point).collect_vec()
+                    res.push(ResultValue::Point(lhs + rhs));
+                }
+
+                res
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -218,21 +233,23 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().map(|v| v.id()).chain(b.iter().map(|b| b.id)).collect_vec();
 
-        // Add the shares in a batch gate
+        let lhs = a.iter().map(|v| v.share.id());
+        let rhs = b.iter().map(|v| v.id());
+        let all_ids = lhs.interleave(rhs).collect_vec();
         let party_id = fabric.party_id();
         fabric
-            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-                let lhs_points = args.drain(..n).map(CurvePoint::from).collect_vec();
-                let rhs_points = args.into_iter().map(CurvePoint::from).collect_vec();
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let mut res = Vec::with_capacity(n);
+                for mut chunk in &args.map(CurvePoint::from).chunks(2) {
+                    let lhs = chunk.next().unwrap();
+                    let rhs = chunk.next().unwrap();
 
-                lhs_points
-                    .into_iter()
-                    .zip(rhs_points)
-                    .map(|(x, y)| if party_id == PARTY0 { x + y } else { x })
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                    let val = if party_id == PARTY0 { lhs + rhs } else { lhs };
+                    res.push(ResultValue::Point(val));
+                }
+
+                res
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -250,8 +267,8 @@ impl<C: CurveGroup> Sub<&CurvePoint<C>> for &MpcPointResult<C> {
         let rhs = *rhs;
         let party_id = self.fabric().party_id();
         self.fabric()
-            .new_gate_op(vec![self.id()], move |args| {
-                let lhs: CurvePoint<C> = args[0].to_owned().into();
+            .new_gate_op(vec![self.id()], move |mut args| {
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
 
                 if party_id == PARTY0 {
                     ResultValue::Point(lhs - rhs)
@@ -271,8 +288,8 @@ impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &MpcPointResult<C> {
         let party_id = self.fabric().party_id();
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
-                let lhs: CurvePoint<C> = args.remove(0).into();
-                let rhs: CurvePoint<C> = args.remove(0).into();
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
+                let rhs: CurvePoint<C> = args.next().unwrap().into();
 
                 if party_id == PARTY0 {
                     ResultValue::Point(lhs - rhs)
@@ -290,9 +307,9 @@ impl<C: CurveGroup> Sub<&MpcPointResult<C>> for &MpcPointResult<C> {
 
     fn sub(self, rhs: &MpcPointResult<C>) -> Self::Output {
         self.fabric()
-            .new_gate_op(vec![self.id(), rhs.id()], |args| {
-                let lhs: CurvePoint<C> = args[0].to_owned().into();
-                let rhs: CurvePoint<C> = args[1].to_owned().into();
+            .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
+                let rhs: CurvePoint<C> = args.next().unwrap().into();
 
                 ResultValue::Point(lhs - rhs)
             })
@@ -311,15 +328,21 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().chain(b.iter()).map(|v| v.id()).collect_vec();
 
-        // Create a gate to component-wise add the shares
+        let lhs = a.iter().map(|v| v.share.id());
+        let rhs = b.iter().map(|v| v.share.id());
+        let all_ids = lhs.interleave(rhs).collect_vec();
         fabric
             .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
-                let points = args.into_iter().map(CurvePoint::from).collect_vec();
-                let (a, b) = points.split_at(n);
+                let mut res = Vec::with_capacity(n);
+                for mut chunk in &args.map(CurvePoint::from).chunks(2) {
+                    let lhs = chunk.next().unwrap();
+                    let rhs = chunk.next().unwrap();
 
-                a.iter().zip(b.iter()).map(|(x, y)| x - y).map(ResultValue::Point).collect_vec()
+                    res.push(ResultValue::Point(lhs - rhs));
+                }
+
+                res
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -338,21 +361,24 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().map(|v| v.id()).chain(b.iter().map(|b| b.id)).collect_vec();
-
-        // Add the shares in a batch gate
         let party_id = fabric.party_id();
-        fabric
-            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-                let lhs_points = args.drain(..n).map(CurvePoint::from).collect_vec();
-                let rhs_points = args.into_iter().map(CurvePoint::from).collect_vec();
 
-                lhs_points
-                    .into_iter()
-                    .zip(rhs_points)
-                    .map(|(x, y)| if party_id == PARTY0 { x - y } else { x })
-                    .map(ResultValue::Point)
-                    .collect_vec()
+        let lhs = a.iter().map(|v| v.share.id());
+        let rhs = b.iter().map(|v| v.id());
+        let all_ids = lhs.interleave(rhs).collect_vec();
+        fabric
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let mut res = Vec::with_capacity(n);
+
+                for mut chunk in &args.map(CurvePoint::from).chunks(2) {
+                    let lhs = chunk.next().unwrap();
+                    let rhs = chunk.next().unwrap();
+
+                    let val = if party_id == PARTY0 { lhs - rhs } else { lhs };
+                    res.push(ResultValue::Point(val));
+                }
+
+                res
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -368,7 +394,7 @@ impl<C: CurveGroup> Neg for &MpcPointResult<C> {
     fn neg(self) -> Self::Output {
         self.fabric()
             .new_gate_op(vec![self.id()], |mut args| {
-                let mpc_val: CurvePoint<C> = args.remove(0).into();
+                let mpc_val: CurvePoint<C> = args.next().unwrap().into();
                 ResultValue::Point(-mpc_val)
             })
             .into()
@@ -390,9 +416,7 @@ impl<C: CurveGroup> MpcPointResult<C> {
         // Create a gate to component-wise add the shares
         fabric
             .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
-                let points = args.into_iter().map(CurvePoint::from).collect_vec();
-
-                points.into_iter().map(|x| -x).map(ResultValue::Point).collect_vec()
+                args.map(CurvePoint::from).map(Neg::neg).map(ResultValue::Point).collect_vec()
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -408,8 +432,8 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &MpcPointResult<C> {
     fn mul(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
         self.fabric()
-            .new_gate_op(vec![self.id()], move |args| {
-                let lhs: CurvePoint<C> = args[0].to_owned().into();
+            .new_gate_op(vec![self.id()], move |mut args| {
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
                 ResultValue::Point(lhs * rhs)
             })
             .into()
@@ -424,8 +448,8 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &MpcPointResult<C> {
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric()
             .new_gate_op(vec![self.id(), rhs.id()], |mut args| {
-                let lhs: CurvePoint<C> = args.remove(0).into();
-                let rhs: Scalar<C> = args.remove(0).into();
+                let lhs: CurvePoint<C> = args.next().unwrap().into();
+                let rhs: Scalar<C> = args.next().unwrap().into();
 
                 ResultValue::Point(lhs * rhs)
             })
@@ -504,20 +528,21 @@ impl<C: CurveGroup> MpcPointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().map(|v| v.id()).chain(b.iter().map(|b| b.id())).collect_vec();
 
-        // Multiply the shares in a batch gate
+        let lhs = a.iter().map(|v| v.id());
+        let rhs = b.iter().map(|v| v.id());
+        let all_ids = lhs.interleave(rhs).collect_vec();
         fabric
-            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-                let scalars = args.drain(..n).map(Scalar::from).collect_vec();
-                let points = args.into_iter().map(CurvePoint::from).collect_vec();
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let mut res = Vec::with_capacity(n);
+                for mut chunk in &args.chunks(2) {
+                    let lhs: Scalar<C> = chunk.next().unwrap().into();
+                    let rhs: CurvePoint<C> = chunk.next().unwrap().into();
 
-                scalars
-                    .into_iter()
-                    .zip(points)
-                    .map(|(x, y)| x * y)
-                    .map(ResultValue::Point)
-                    .collect_vec()
+                    res.push(ResultValue::Point(lhs * rhs));
+                }
+
+                res
             })
             .into_iter()
             .map(MpcPointResult::from)

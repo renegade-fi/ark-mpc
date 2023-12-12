@@ -81,13 +81,13 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
     /// Evaluate the polynomial at a given point
     pub fn eval(&self, point: ScalarResult<C>) -> ScalarResult<C> {
         let fabric = self.fabric();
-        let mut deps = self.coeffs.iter().map(|coeff| coeff.id()).collect_vec();
+        let mut deps = Vec::with_capacity(self.coeffs.len() + 1);
         deps.push(point.id());
+        deps.extend(self.coeffs.iter().map(|coeff| coeff.id()));
 
-        let n_coeffs = self.coeffs.len();
         fabric.new_gate_op(deps, move |mut args| {
-            let coeffs: Vec<Scalar<C>> = args.drain(..n_coeffs).map(|res| res.into()).collect_vec();
-            let point: Scalar<C> = args.pop().unwrap().into();
+            let point: Scalar<C> = args.next().unwrap().into();
+            let coeffs: Vec<Scalar<C>> = args.map(Scalar::from).collect_vec();
 
             let mut res = Scalar::zero();
             for coeff in coeffs.iter().rev() {
@@ -401,7 +401,6 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
         }
 
         let n_lhs_coeffs = self.coeffs.len();
-        let n_rhs_coeffs = rhs.coeffs.len();
 
         let mut deps = self.coeffs.iter().map(|coeff| coeff.id()).collect_vec();
         deps.extend(rhs.coeffs.iter().map(|coeff| coeff.id()));
@@ -409,18 +408,12 @@ impl<C: CurveGroup> Div<&DensePolynomialResult<C>> for &DensePolynomialResult<C>
         // Allocate a gate to return the coefficients of the quotient polynomial
         let result_degree = self.degree().saturating_sub(rhs.degree());
         let coeff_results =
-            fabric.new_batch_gate_op(deps, result_degree + 1 /* arity */, move |mut args| {
-                let lhs_coeffs: Vec<C::ScalarField> = args
-                    .drain(..n_lhs_coeffs)
-                    .map(|res| Scalar::<C>::from(res).inner())
-                    .collect_vec();
-                let rhs_coeffs = args
-                    .drain(..n_rhs_coeffs)
-                    .map(|res| Scalar::<C>::from(res).inner())
-                    .collect_vec();
+            fabric.new_batch_gate_op(deps, result_degree + 1 /* arity */, move |args| {
+                let coeffs = args.map(|c| Scalar::from(c).inner()).collect_vec();
+                let (lhs_coeffs, rhs_coeffs) = coeffs.split_at(n_lhs_coeffs);
 
-                let lhs_poly = DensePolynomial::from_coefficients_vec(lhs_coeffs);
-                let rhs_poly = DensePolynomial::from_coefficients_vec(rhs_coeffs);
+                let lhs_poly = DensePolynomial::from_coefficients_slice(lhs_coeffs);
+                let rhs_poly = DensePolynomial::from_coefficients_slice(rhs_coeffs);
 
                 let res = &lhs_poly / &rhs_poly;
                 res.coeffs

@@ -221,9 +221,9 @@ impl<C: CurveGroup> Add<&CurvePointResult<C>> for &CurvePointResult<C> {
     type Output = CurvePointResult<C>;
 
     fn add(self, rhs: &CurvePointResult<C>) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: CurvePoint<C> = args[0].to_owned().into();
-            let rhs: CurvePoint<C> = args[1].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: CurvePoint<C> = args.next().unwrap().into();
+            let rhs: CurvePoint<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(lhs.0 + rhs.0))
         })
     }
@@ -235,8 +235,8 @@ impl<C: CurveGroup> Add<&CurvePoint<C>> for &CurvePointResult<C> {
 
     fn add(self, rhs: &CurvePoint<C>) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: CurvePoint<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], move |mut args| {
+            let lhs: CurvePoint<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(lhs.0 + rhs.0))
         })
     }
@@ -254,13 +254,20 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().chain(b.iter()).map(|r| r.id).collect_vec();
 
-        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-            let a = args.drain(..n).map(CurvePoint::from).collect_vec();
-            let b = args.into_iter().map(CurvePoint::from).collect_vec();
+        let lhs = a.iter().map(|r| r.id);
+        let rhs = b.iter().map(|r| r.id);
+        let all_ids = lhs.interleave(rhs).collect_vec();
+        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+            let mut res = Vec::with_capacity(n);
+            for mut chunk in &args.map(CurvePoint::from).chunks(2) {
+                let lhs = chunk.next().unwrap();
+                let rhs = chunk.next().unwrap();
 
-            a.into_iter().zip(b).map(|(a, b)| a + b).map(ResultValue::Point).collect_vec()
+                res.push(ResultValue::Point(lhs + rhs));
+            }
+
+            res
         })
     }
 }
@@ -288,9 +295,9 @@ impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &CurvePointResult<C> {
     type Output = CurvePointResult<C>;
 
     fn sub(self, rhs: &CurvePointResult<C>) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: CurvePoint<C> = args[0].to_owned().into();
-            let rhs: CurvePoint<C> = args[1].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: CurvePoint<C> = args.next().unwrap().into();
+            let rhs: CurvePoint<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(lhs.0 - rhs.0))
         })
     }
@@ -302,8 +309,8 @@ impl<C: CurveGroup> Sub<&CurvePoint<C>> for &CurvePointResult<C> {
 
     fn sub(self, rhs: &CurvePoint<C>) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: CurvePoint<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], move |mut args| {
+            let lhs: CurvePoint<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(lhs.0 - rhs.0))
         })
     }
@@ -315,8 +322,8 @@ impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &CurvePoint<C> {
 
     fn sub(self, rhs: &CurvePointResult<C>) -> Self::Output {
         let self_owned = *self;
-        rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let rhs: CurvePoint<C> = args[0].to_owned().into();
+        rhs.fabric.new_gate_op(vec![rhs.id], move |mut args| {
+            let rhs: CurvePoint<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(self_owned.0 - rhs.0))
         })
     }
@@ -332,13 +339,20 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().chain(b.iter()).map(|r| r.id).collect_vec();
 
-        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-            let a = args.drain(..n).map(CurvePoint::from).collect_vec();
-            let b = args.into_iter().map(CurvePoint::from).collect_vec();
+        let lhs = a.iter().map(|v| v.id);
+        let rhs = b.iter().map(|v| v.id);
+        let all_ids = lhs.interleave(rhs).collect_vec();
+        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+            let mut res = Vec::with_capacity(n);
+            for mut chunk in &args.map(CurvePoint::from).chunks(2) {
+                let lhs = chunk.next().unwrap();
+                let rhs = chunk.next().unwrap();
 
-            a.into_iter().zip(b).map(|(a, b)| a - b).map(ResultValue::Point).collect_vec()
+                res.push(ResultValue::Point(lhs - rhs));
+            }
+
+            res
         })
     }
 }
@@ -366,8 +380,8 @@ impl<C: CurveGroup> Neg for &CurvePointResult<C> {
     type Output = CurvePointResult<C>;
 
     fn neg(self) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id], |args| {
-            let lhs: CurvePoint<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], |mut args| {
+            let lhs: CurvePoint<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(-lhs.0))
         })
     }
@@ -382,11 +396,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
         let all_ids = a.iter().map(|r| r.id).collect_vec();
 
         fabric.new_batch_gate_op(all_ids, n /* output_arity */, |args| {
-            args.into_iter()
-                .map(CurvePoint::from)
-                .map(CurvePoint::neg)
-                .map(ResultValue::Point)
-                .collect_vec()
+            args.map(CurvePoint::from).map(CurvePoint::neg).map(ResultValue::Point).collect_vec()
         })
     }
 }
@@ -408,8 +418,8 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &CurvePointResult<C> {
 
     fn mul(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: CurvePoint<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], move |mut args| {
+            let lhs: CurvePoint<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(lhs.0 * rhs.0))
         })
     }
@@ -422,8 +432,8 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &CurvePoint<C> {
 
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         let self_owned = *self;
-        rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let rhs: Scalar<C> = args[0].to_owned().into();
+        rhs.fabric.new_gate_op(vec![rhs.id], move |mut args| {
+            let rhs: Scalar<C> = args.next().unwrap().into();
             ResultValue::Point(CurvePoint(self_owned.0 * rhs.0))
         })
     }
@@ -436,8 +446,8 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &CurvePointResult<C> {
 
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
         self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
-            let lhs: CurvePoint<C> = args.remove(0).into();
-            let rhs: Scalar<C> = args.remove(0).into();
+            let lhs: CurvePoint<C> = args.next().unwrap().into();
+            let rhs: Scalar<C> = args.next().unwrap().into();
 
             ResultValue::Point(CurvePoint(lhs.0 * rhs.0))
         })
@@ -454,13 +464,20 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().map(|a| a.id()).chain(b.iter().map(|b| b.id())).collect_vec();
 
-        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-            let a = args.drain(..n).map(Scalar::from).collect_vec();
-            let b = args.into_iter().map(CurvePoint::from).collect_vec();
+        let lhs = a.iter().map(|r| r.id);
+        let rhs = b.iter().map(|r| r.id);
+        let all_ids = lhs.interleave(rhs).collect_vec();
+        fabric.new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+            let mut res = Vec::with_capacity(n);
+            for mut chunk in &args.chunks(2) {
+                let lhs: Scalar<C> = chunk.next().unwrap().into();
+                let rhs: CurvePoint<C> = chunk.next().unwrap().into();
 
-            a.into_iter().zip(b).map(|(a, b)| a * b).map(ResultValue::Point).collect_vec()
+                res.push(ResultValue::Point(lhs * rhs));
+            }
+
+            res
         })
     }
 
@@ -478,14 +495,21 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().map(|a| a.id()).chain(b.iter().map(|b| b.id())).collect_vec();
 
+        let lhs = a.iter().map(|r| r.id());
+        let rhs = b.iter().map(|r| r.id);
+        let all_ids = lhs.interleave(rhs).collect_vec();
         fabric
-            .new_batch_gate_op(all_ids, n /* output_arity */, move |mut args| {
-                let a = args.drain(..n).map(Scalar::from).collect_vec();
-                let b = args.into_iter().map(CurvePoint::from).collect_vec();
+            .new_batch_gate_op(all_ids, n /* output_arity */, move |args| {
+                let mut res = Vec::with_capacity(n);
+                for mut chunk in &args.chunks(2) {
+                    let lhs: Scalar<C> = chunk.next().unwrap().into();
+                    let rhs: CurvePoint<C> = chunk.next().unwrap().into();
 
-                a.into_iter().zip(b).map(|(a, b)| a * b).map(ResultValue::Point).collect_vec()
+                    res.push(ResultValue::Point(lhs * rhs));
+                }
+
+                res
             })
             .into_iter()
             .map(MpcPointResult::from)
@@ -506,23 +530,24 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = b.iter().map(|b| b.id()).chain(a.iter().flat_map(|a| a.ids())).collect_vec();
+
+        let chunk_size = AUTHENTICATED_SCALAR_RESULT_LEN + 1;
+        let mut all_ids = Vec::with_capacity(n * chunk_size);
+        for (a, b) in a.iter().zip(b.iter()) {
+            all_ids.extend(a.ids());
+            all_ids.push(b.id);
+        }
 
         let results = fabric.new_batch_gate_op(
             all_ids,
             AUTHENTICATED_POINT_RESULT_LEN * n, // output_arity
-            move |mut args| {
-                let points: Vec<CurvePoint<C>> =
-                    args.drain(..n).map(CurvePoint::from).collect_vec();
-
-                let mut results = Vec::with_capacity(AUTHENTICATED_POINT_RESULT_LEN * n);
-
-                for (scalars, point) in
-                    args.chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN).zip(points.into_iter())
-                {
-                    let share = Scalar::from(&scalars[0]);
-                    let mac = Scalar::from(&scalars[1]);
-                    let public_modifier = Scalar::from(&scalars[2]);
+            move |args| {
+                let mut results = Vec::with_capacity(n * AUTHENTICATED_POINT_RESULT_LEN);
+                for mut chunk in &args.chunks(chunk_size) {
+                    let share = Scalar::from(&chunk.next().unwrap());
+                    let mac = Scalar::from(&chunk.next().unwrap());
+                    let public_modifier = Scalar::from(&chunk.next().unwrap());
+                    let point = CurvePoint::from(&chunk.next().unwrap());
 
                     results.push(ResultValue::Point(point * share));
                     results.push(ResultValue::Point(point * mac));
@@ -617,7 +642,7 @@ impl<C: CurveGroup> CurvePoint<C> {
         // Clone `points` so that the gate closure may capture it
         let points = points.to_vec();
         fabric.new_gate_op(scalar_ids, move |args| {
-            let scalars = args.into_iter().map(Scalar::from).collect_vec();
+            let scalars = args.map(Scalar::from).collect_vec();
 
             ResultValue::Point(CurvePoint::msm(&scalars, &points))
         })
@@ -655,10 +680,10 @@ impl<C: CurveGroup> CurvePoint<C> {
                 let mut macs = Vec::with_capacity(n);
                 let mut modifiers = Vec::with_capacity(n);
 
-                for chunk in args.chunks_exact(AUTHENTICATED_SCALAR_RESULT_LEN) {
-                    shares.push(Scalar::from(chunk[0].to_owned()));
-                    macs.push(Scalar::from(chunk[1].to_owned()));
-                    modifiers.push(Scalar::from(chunk[2].to_owned()));
+                for mut chunk in &args.map(Scalar::from).chunks(AUTHENTICATED_SCALAR_RESULT_LEN) {
+                    shares.push(chunk.next().unwrap());
+                    macs.push(chunk.next().unwrap());
+                    modifiers.push(chunk.next().unwrap());
                 }
 
                 // Compute the MSM of the point
@@ -706,12 +731,17 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = scalars.len();
         let fabric = scalars[0].fabric();
-        let all_ids =
-            scalars.iter().map(|s| s.id()).chain(points.iter().map(|p| p.id())).collect_vec();
 
-        fabric.new_gate_op(all_ids, move |mut args| {
-            let scalars = args.drain(..n).map(Scalar::from).collect_vec();
-            let points = args.into_iter().map(CurvePoint::from).collect_vec();
+        let lhs = scalars.iter().map(|s| s.id());
+        let rhs = points.iter().map(|p| p.id);
+        let all_ids = lhs.interleave(rhs).collect_vec();
+        fabric.new_gate_op(all_ids, move |args| {
+            let mut scalars = Vec::with_capacity(n);
+            let mut points = Vec::with_capacity(n);
+            for mut chunk in &args.chunks(2) {
+                scalars.push(chunk.next().unwrap().into());
+                points.push(chunk.next().unwrap().into());
+            }
 
             let res = CurvePoint::msm(&scalars, &points);
             ResultValue::Point(res)
@@ -740,29 +770,29 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
         let n = scalars.len();
         let fabric = scalars[0].fabric();
-        let all_ids =
-            scalars.iter().flat_map(|s| s.ids()).chain(points.iter().map(|p| p.id())).collect_vec();
+
+        let chunk_size = AUTHENTICATED_SCALAR_RESULT_LEN + 1;
+        let mut all_ids = Vec::with_capacity(n * chunk_size);
+
+        for (a, b) in scalars.iter().zip(points.iter()) {
+            all_ids.extend(a.ids());
+            all_ids.push(b.id);
+        }
 
         let res = fabric.new_batch_gate_op(
             all_ids,
             AUTHENTICATED_POINT_RESULT_LEN, // output_arity
-            move |mut args| {
+            move |args| {
                 let mut shares = Vec::with_capacity(n);
                 let mut macs = Vec::with_capacity(n);
                 let mut modifiers = Vec::with_capacity(n);
-
-                for mut chunk in args
-                    .drain(..AUTHENTICATED_SCALAR_RESULT_LEN * n)
-                    .map(Scalar::from)
-                    .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
-                    .into_iter()
-                {
-                    shares.push(chunk.next().unwrap());
-                    macs.push(chunk.next().unwrap());
-                    modifiers.push(chunk.next().unwrap());
+                let mut points = Vec::with_capacity(n);
+                for mut chunk in &args.chunks(chunk_size) {
+                    shares.push(chunk.next().unwrap().into());
+                    macs.push(chunk.next().unwrap().into());
+                    modifiers.push(chunk.next().unwrap().into());
+                    points.push(chunk.next().unwrap().into());
                 }
-
-                let points = args.into_iter().map(CurvePoint::from).collect_vec();
 
                 vec![
                     CurvePoint::msm(&shares, &points),

@@ -180,7 +180,7 @@ impl<C: CurveGroup> ScalarResult<C> {
     /// Exponentiation
     pub fn pow(&self, exp: u64) -> Self {
         self.fabric().new_gate_op(vec![self.id()], move |mut args| {
-            let base: Scalar<C> = args.pop().unwrap().into();
+            let base: Scalar<C> = args.next().unwrap().into();
             let res = base.inner().pow([exp]);
 
             ResultValue::Scalar(Scalar::new(res))
@@ -196,7 +196,7 @@ impl<C: CurveGroup> ScalarResult<C> {
     /// Compute the multiplicative inverse of the scalar in its field
     pub fn inverse(&self) -> ScalarResult<C> {
         self.fabric.new_gate_op(vec![self.id], |mut args| {
-            let val: Scalar<C> = args.remove(0).into();
+            let val: Scalar<C> = args.next().unwrap().into();
             ResultValue::Scalar(Scalar(val.0.inverse().unwrap()))
         })
     }
@@ -233,8 +233,8 @@ impl<C: CurveGroup> Add<&Scalar<C>> for &ScalarResult<C> {
 
     fn add(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: Scalar<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], move |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
             ResultValue::Scalar(Scalar(lhs.0 + rhs.0))
         })
     }
@@ -246,9 +246,9 @@ impl<C: CurveGroup> Add<&ScalarResult<C>> for &ScalarResult<C> {
     type Output = ScalarResult<C>;
 
     fn add(self, rhs: &ScalarResult<C>) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: Scalar<C> = args[0].to_owned().into();
-            let rhs: Scalar<C> = args[1].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
+            let rhs: Scalar<C> = args.next().unwrap().into();
             ResultValue::Scalar(Scalar(lhs.0 + rhs.0))
         })
     }
@@ -262,12 +262,17 @@ impl<C: CurveGroup> ScalarResult<C> {
 
         let n = a.len();
         let fabric = &a[0].fabric;
-        let ids = a.iter().chain(b.iter()).map(|v| v.id).collect_vec();
+
+        let lhs = a.iter().map(|v| v.id);
+        let rhs = b.iter().map(|v| v.id);
+        let ids = lhs.interleave(rhs).collect_vec();
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             let mut res = Vec::with_capacity(n);
-            for i in 0..n {
-                let lhs: Scalar<C> = args[i].to_owned().into();
-                let rhs: Scalar<C> = args[i + n].to_owned().into();
+
+            for mut chunk in &args.map(Scalar::from).chunks(2) {
+                let lhs = chunk.next().unwrap();
+                let rhs = chunk.next().unwrap();
+
                 res.push(ResultValue::Scalar(Scalar(lhs.0 + rhs.0)));
             }
 
@@ -321,8 +326,8 @@ impl<C: CurveGroup> Sub<&Scalar<C>> for &ScalarResult<C> {
 
     fn sub(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: Scalar<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], move |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
             ResultValue::Scalar(Scalar(lhs.0 - rhs.0))
         })
     }
@@ -334,8 +339,8 @@ impl<C: CurveGroup> Sub<&ScalarResult<C>> for &Scalar<C> {
 
     fn sub(self, rhs: &ScalarResult<C>) -> Self::Output {
         let lhs = *self;
-        rhs.fabric.new_gate_op(vec![rhs.id], move |args| {
-            let rhs: Scalar<C> = args[0].to_owned().into();
+        rhs.fabric.new_gate_op(vec![rhs.id], move |mut args| {
+            let rhs: Scalar<C> = args.next().unwrap().to_owned().into();
             ResultValue::Scalar(lhs - rhs)
         })
     }
@@ -346,9 +351,9 @@ impl<C: CurveGroup> Sub<&ScalarResult<C>> for &ScalarResult<C> {
     type Output = ScalarResult<C>;
 
     fn sub(self, rhs: &ScalarResult<C>) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: Scalar<C> = args[0].to_owned().into();
-            let rhs: Scalar<C> = args[1].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
+            let rhs: Scalar<C> = args.next().unwrap().into();
             ResultValue::Scalar(Scalar(lhs.0 - rhs.0))
         })
     }
@@ -362,12 +367,16 @@ impl<C: CurveGroup> ScalarResult<C> {
 
         let n = a.len();
         let fabric = &a[0].fabric;
-        let ids = a.iter().chain(b.iter()).map(|v| v.id).collect_vec();
+
+        let lhs = a.iter().map(|v| v.id);
+        let rhs = b.iter().map(|v| v.id);
+        let ids = lhs.interleave(rhs).collect_vec();
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             let mut res = Vec::with_capacity(n);
-            for i in 0..n {
-                let lhs: Scalar<C> = args[i].to_owned().into();
-                let rhs: Scalar<C> = args[i + n].to_owned().into();
+            for mut chunk in &args.map(Scalar::from).chunks(2) {
+                let lhs = chunk.next().unwrap();
+                let rhs = chunk.next().unwrap();
+
                 res.push(ResultValue::Scalar(Scalar(lhs.0 - rhs.0)));
             }
 
@@ -401,8 +410,8 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &ScalarResult<C> {
 
     fn mul(self, rhs: &Scalar<C>) -> Self::Output {
         let rhs = *rhs;
-        self.fabric.new_gate_op(vec![self.id], move |args| {
-            let lhs: Scalar<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], move |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
             ResultValue::Scalar(Scalar(lhs.0 * rhs.0))
         })
     }
@@ -414,9 +423,10 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &ScalarResult<C> {
     type Output = ScalarResult<C>;
 
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id, rhs.id], |args| {
-            let lhs: Scalar<C> = args[0].to_owned().into();
-            let rhs: Scalar<C> = args[1].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id, rhs.id], |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
+            let rhs: Scalar<C> = args.next().unwrap().into();
+
             ResultValue::Scalar(Scalar(lhs.0 * rhs.0))
         })
     }
@@ -430,12 +440,17 @@ impl<C: CurveGroup> ScalarResult<C> {
 
         let n = a.len();
         let fabric = &a[0].fabric;
-        let ids = a.iter().chain(b.iter()).map(|v| v.id).collect_vec();
+
+        let lhs = a.iter().map(|v| v.id);
+        let rhs = b.iter().map(|v| v.id);
+        let ids = lhs.interleave(rhs).collect_vec();
         fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
             let mut res = Vec::with_capacity(n);
-            for i in 0..n {
-                let lhs: Scalar<C> = args[i].to_owned().into();
-                let rhs: Scalar<C> = args[i + n].to_owned().into();
+
+            for mut chunk in &args.map(Scalar::from).chunks(2) {
+                let lhs = chunk.next().unwrap();
+                let rhs = chunk.next().unwrap();
+
                 res.push(ResultValue::Scalar(Scalar(lhs.0 * rhs.0)));
             }
 
@@ -477,8 +492,8 @@ impl<C: CurveGroup> Neg for &ScalarResult<C> {
     type Output = ScalarResult<C>;
 
     fn neg(self) -> Self::Output {
-        self.fabric.new_gate_op(vec![self.id], |args| {
-            let lhs: Scalar<C> = args[0].to_owned().into();
+        self.fabric.new_gate_op(vec![self.id], |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
             ResultValue::Scalar(Scalar(-lhs.0))
         })
     }
