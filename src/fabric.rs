@@ -12,9 +12,9 @@ mod result;
 
 use ark_ec::CurveGroup;
 #[cfg(feature = "benchmarks")]
-pub use executor::{Executor, ExecutorMessage};
+pub use executor::{single_threaded::SerialExecutor, ExecutorMessage};
 #[cfg(not(feature = "benchmarks"))]
-use executor::{Executor, ExecutorMessage};
+use executor::{single_threaded::SerialExecutor, ExecutorMessage};
 use rand::thread_rng;
 pub use result::{ResultHandle, ResultId, ResultValue};
 
@@ -425,7 +425,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         );
         tokio::task::spawn_blocking(move || block_on(network_sender.run()));
 
-        let executor = Executor::new(size_hint, execution_queue, fabric.clone());
+        let executor = SerialExecutor::new(size_hint, execution_queue, fabric.clone());
         tokio::task::spawn_blocking(move || executor.run());
 
         // Create the fabric and fill in the MAC key after
