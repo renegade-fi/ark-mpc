@@ -3,23 +3,23 @@
 //! executions
 
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::sync::Arc;
 
 #[cfg(feature = "stats")]
-use std::fmt::{Formatter, Result as FmtResult};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use ark_ec::CurveGroup;
 use crossbeam::queue::SegQueue;
 use tracing::log;
 
+use super::ExecutorMessage;
 use crate::buffer::GrowableBuffer;
-use crate::fabric::result::ERR_RESULT_BUFFER_POISONED;
+use crate::fabric::{
+    result::{ResultWaiter, ERR_RESULT_BUFFER_POISONED},
+    FabricInner, OpResult, Operation, OperationId, OperationType,
+};
 use crate::network::NetworkOutbound;
-
-use super::result::ResultWaiter;
-use super::{result::OpResult, FabricInner};
-use super::{Operation, OperationId, OperationType, ResultId};
+use crate::ResultId;
 
 // ---------
 // | Stats |
@@ -109,7 +109,7 @@ impl Debug for ExecutorStats {
 /// The executor is responsible for executing operation that are ready for
 /// execution, either passed explicitly by the fabric or as a result of a
 /// dependency being satisfied
-pub struct Executor<C: CurveGroup> {
+pub struct SerialExecutor<C: CurveGroup> {
     /// The job queue for the executor
     job_queue: Arc<SegQueue<ExecutorMessage<C>>>,
     /// The operation buffer, stores in-flight operations
@@ -128,29 +128,7 @@ pub struct Executor<C: CurveGroup> {
     stats: ExecutorStats,
 }
 
-/// The type that the `Executor` receives on its channel, this may either be:
-/// - A result of an operation, for which th executor will check the dependency
-///   map and
-///  execute any operations that are now ready
-/// - An operation directly, which the executor will execute immediately if all
-///   of its
-///  arguments are ready
-/// - A new waiter for a result, which the executor will add to its waiter map
-#[derive(Debug)]
-pub enum ExecutorMessage<C: CurveGroup> {
-    /// A result of an operation
-    Result(OpResult<C>),
-    /// A batch of results
-    ResultBatch(Vec<OpResult<C>>),
-    /// An operation that is ready for execution
-    Op(Operation<C>),
-    /// A new waiter has registered itself for a result
-    NewWaiter(ResultWaiter<C>),
-    /// Indicates that the executor should shut down
-    Shutdown,
-}
-
-impl<C: CurveGroup> Executor<C> {
+impl<C: CurveGroup> SerialExecutor<C> {
     /// Constructor
     pub fn new(
         circuit_size_hint: usize,
@@ -251,6 +229,7 @@ impl<C: CurveGroup> Executor<C> {
     }
 
     /// Handle a new operation
+    #[inline(never)]
     fn handle_new_operation(&mut self, mut op: Operation<C>) {
         #[cfg(feature = "stats")]
         {

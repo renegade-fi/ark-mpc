@@ -21,7 +21,7 @@ pub mod buffer;
 pub(crate) mod buffer;
 pub mod commitment;
 pub mod error;
-mod fabric;
+pub(crate) mod fabric;
 pub mod gadgets;
 #[cfg(feature = "benchmarks")]
 pub use fabric::*;
