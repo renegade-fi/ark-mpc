@@ -11,10 +11,10 @@ mod network_sender;
 mod result;
 
 use ark_ec::CurveGroup;
-#[cfg(feature = "benchmarks")]
-pub use executor::{single_threaded::SerialExecutor, ExecutorMessage};
 #[cfg(not(feature = "benchmarks"))]
 use executor::{single_threaded::SerialExecutor, ExecutorMessage};
+#[cfg(feature = "benchmarks")]
+pub use executor::{single_threaded::SerialExecutor, ExecutorMessage, GrowableBuffer};
 use rand::thread_rng;
 pub use result::{ResultHandle, ResultId, ResultValue};
 

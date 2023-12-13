@@ -1,3 +1,5 @@
+//! A single-threaded executor backing the fabric
+//!
 //! The executor receives IDs of operations that are ready for execution,
 //! executes them, and places the result back into the fabric for further
 //! executions
@@ -12,8 +14,7 @@ use ark_ec::CurveGroup;
 use crossbeam::queue::SegQueue;
 use tracing::log;
 
-use super::ExecutorMessage;
-use crate::buffer::GrowableBuffer;
+use super::{ExecutorMessage, GrowableBuffer};
 use crate::fabric::{
     result::{ResultWaiter, ERR_RESULT_BUFFER_POISONED},
     FabricInner, OpResult, Operation, OperationId, OperationType,
