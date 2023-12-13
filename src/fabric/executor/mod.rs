@@ -6,7 +6,13 @@ use crate::fabric::Operation;
 
 use super::result::{OpResult, ResultWaiter};
 
+mod buffer;
+#[cfg(feature = "multithreaded_executor")]
+pub mod multi_threaded;
 pub mod single_threaded;
+
+#[cfg(feature = "benchmarks")]
+pub use buffer::*;
 
 /// The type that the `Executor` receives on its channel, this may either be:
 /// - A result of an operation, for which th executor will check the dependency
