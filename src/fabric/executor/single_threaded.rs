@@ -4,20 +4,21 @@
 //! executes them, and places the result back into the fabric for further
 //! executions
 
+#[cfg(feature = "multithreaded_executor")]
+use core::panic;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 #[cfg(feature = "stats")]
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use ark_ec::CurveGroup;
-use crossbeam::queue::SegQueue;
+use kanal::Sender as KanalSender;
 use tracing::log;
 
-use super::{ExecutorMessage, GrowableBuffer};
 use crate::fabric::{
+    executor::{buffer::GrowableBuffer, ExecutorJobQueue, ExecutorMessage},
     result::{ResultWaiter, ERR_RESULT_BUFFER_POISONED},
-    FabricInner, OpResult, Operation, OperationId, OperationType,
+    OpResult, Operation, OperationId, OperationType,
 };
 use crate::network::NetworkOutbound;
 use crate::ResultId;
@@ -112,7 +113,7 @@ impl Debug for ExecutorStats {
 /// dependency being satisfied
 pub struct SerialExecutor<C: CurveGroup> {
     /// The job queue for the executor
-    job_queue: Arc<SegQueue<ExecutorMessage<C>>>,
+    job_queue: ExecutorJobQueue<C>,
     /// The operation buffer, stores in-flight operations
     operations: GrowableBuffer<Operation<C>>,
     /// The dependency map; maps in-flight results to operations that are
@@ -122,8 +123,8 @@ pub struct SerialExecutor<C: CurveGroup> {
     results: GrowableBuffer<OpResult<C>>,
     /// An index of waiters for incomplete results
     waiters: HashMap<ResultId, Vec<ResultWaiter<C>>>,
-    /// The underlying fabric that the executor is a part of
-    fabric: FabricInner<C>,
+    /// The network outbound queue
+    network_outbound: KanalSender<NetworkOutbound<C>>,
     /// The collected statistics of the executor
     #[cfg(feature = "stats")]
     stats: ExecutorStats,
@@ -133,8 +134,8 @@ impl<C: CurveGroup> SerialExecutor<C> {
     /// Constructor
     pub fn new(
         circuit_size_hint: usize,
-        job_queue: Arc<SegQueue<ExecutorMessage<C>>>,
-        fabric: FabricInner<C>,
+        job_queue: ExecutorJobQueue<C>,
+        network_outbound: KanalSender<NetworkOutbound<C>>,
     ) -> Self {
         #[cfg(feature = "stats")]
         {
@@ -144,7 +145,7 @@ impl<C: CurveGroup> SerialExecutor<C> {
                 dependencies: GrowableBuffer::new(circuit_size_hint),
                 results: GrowableBuffer::new(circuit_size_hint),
                 waiters: HashMap::new(),
-                fabric,
+                network_outbound,
                 stats: ExecutorStats::default(),
             }
         }
@@ -157,7 +158,7 @@ impl<C: CurveGroup> SerialExecutor<C> {
                 dependencies: GrowableBuffer::new(circuit_size_hint),
                 results: GrowableBuffer::new(circuit_size_hint),
                 waiters: HashMap::new(),
-                fabric,
+                network_outbound,
             }
         }
     }
@@ -172,6 +173,10 @@ impl<C: CurveGroup> SerialExecutor<C> {
                         for result in res.into_iter() {
                             self.handle_new_result(result);
                         }
+                    },
+                    #[cfg(feature = "multithreaded_executor")]
+                    ExecutorMessage::ResultsReady(_) => {
+                        panic!("Results must be passed by value to single-threaded executor")
                     },
                     ExecutorMessage::Op(operation) => self.handle_new_operation(operation),
                     ExecutorMessage::NewWaiter(waiter) => self.handle_new_waiter(waiter),
@@ -321,7 +326,7 @@ impl<C: CurveGroup> SerialExecutor<C> {
                 let payload = (function)(input);
                 let outbound = NetworkOutbound { result_id, payload: payload.clone() };
 
-                self.fabric.outbound_queue.send(outbound).expect("error sending network payload");
+                self.network_outbound.send(outbound).expect("error sending network payload");
 
                 // On a `send`, the local party receives a copy of the value placed as the
                 // result of the network operation, so we must re-enqueue the

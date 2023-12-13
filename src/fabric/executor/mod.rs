@@ -1,18 +1,26 @@
 //! Executor implementations
 
-use ark_ec::CurveGroup;
+use std::sync::Arc;
 
-use crate::fabric::Operation;
+use ark_ec::CurveGroup;
+use crossbeam::queue::SegQueue;
 
 use super::result::{OpResult, ResultWaiter};
+use crate::fabric::Operation;
+#[cfg(feature = "multithreaded_executor")]
+use crate::fabric::ResultId;
 
-mod buffer;
+pub(crate) mod buffer;
 #[cfg(feature = "multithreaded_executor")]
 pub mod multi_threaded;
 pub mod single_threaded;
 
 #[cfg(feature = "benchmarks")]
 pub use buffer::*;
+
+/// The job queue that the executor may receive messages on
+#[allow(type_alias_bounds)]
+pub type ExecutorJobQueue<C: CurveGroup> = Arc<SegQueue<ExecutorMessage<C>>>;
 
 /// The type that the `Executor` receives on its channel, this may either be:
 /// - A result of an operation, for which th executor will check the dependency
@@ -28,7 +36,12 @@ pub enum ExecutorMessage<C: CurveGroup> {
     Result(OpResult<C>),
     /// A batch of results
     ResultBatch(Vec<OpResult<C>>),
-    /// An operation that is ready for execution
+    /// A batch of results are ready in the result buffer, this message does not
+    /// contain the results themselves
+    #[cfg(feature = "multithreaded_executor")]
+    ResultsReady(Vec<ResultId>),
+    /// An operation that is ready for
+    /// execution
     Op(Operation<C>),
     /// A new waiter has registered itself for a result
     NewWaiter(ResultWaiter<C>),

@@ -15,10 +15,6 @@ use rand::thread_rng;
 
 pub mod algebra;
 pub mod beaver;
-#[cfg(feature = "benchmarks")]
-pub mod buffer;
-#[cfg(not(feature = "benchmarks"))]
-pub(crate) mod buffer;
 pub mod commitment;
 pub mod error;
 pub(crate) mod fabric;

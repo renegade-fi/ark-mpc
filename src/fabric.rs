@@ -45,7 +45,10 @@ use crate::{
     PARTY0,
 };
 
+#[cfg(feature = "multithreaded_executor")]
+use self::executor::multi_threaded::ParallelExecutor;
 use self::{
+    executor::ExecutorJobQueue,
     network_sender::NetworkSender,
     result::{OpResult, ResultWaiter},
 };
@@ -198,7 +201,7 @@ pub struct FabricInner<C: CurveGroup> {
     /// The next identifier to assign to an operation
     next_op_id: Arc<AtomicUsize>,
     /// A sender to the executor
-    execution_queue: Arc<SegQueue<ExecutorMessage<C>>>,
+    execution_queue: ExecutorJobQueue<C>,
     /// The underlying queue to the network
     outbound_queue: KanalSender<NetworkOutbound<C>>,
     /// The underlying shared randomness source
@@ -215,7 +218,7 @@ impl<C: CurveGroup> FabricInner<C> {
     /// Constructor
     pub fn new<S: 'static + SharedValueSource<C>>(
         party_id: u64,
-        execution_queue: Arc<SegQueue<ExecutorMessage<C>>>,
+        execution_queue: ExecutorJobQueue<C>,
         outbound_queue: KanalSender<NetworkOutbound<C>>,
         beaver_source: S,
     ) -> Self {
@@ -402,16 +405,36 @@ impl<C: CurveGroup> MpcFabric<C> {
         network: N,
         beaver_source: S,
     ) -> Self {
-        // Build communication primitives
-        let execution_queue = Arc::new(SegQueue::new());
+        // Build an executor queue and a fabric around it
+        let executor_queue = Arc::new(SegQueue::new());
+        let self_ = Self::new_with_executor(network, beaver_source, executor_queue.clone());
 
+        // Spawn the executor
+        let outbound_queue = self_.inner.outbound_queue.clone();
+        #[cfg(not(feature = "multithreaded_executor"))]
+        let executor = SerialExecutor::new(size_hint, executor_queue, outbound_queue);
+        #[cfg(feature = "multithreaded_executor")]
+        let executor = ParallelExecutor::new(size_hint, executor_queue, outbound_queue);
+        tokio::task::spawn_blocking(move || executor.run());
+
+        self_
+    }
+
+    /// Constructor that takes an additional size hint as well as a queue for
+    /// the executor
+    pub fn new_with_executor<N: 'static + MpcNetwork<C>, S: 'static + SharedValueSource<C>>(
+        network: N,
+        beaver_source: S,
+        executor_queue: ExecutorJobQueue<C>,
+    ) -> Self {
+        // Build communication primitives
         let (outbound_sender, outbound_receiver) = kanal::unbounded_async();
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1 /* capacity */);
 
         // Build a fabric
         let fabric = FabricInner::new(
             network.party_id(),
-            execution_queue.clone(),
+            executor_queue.clone(),
             outbound_sender.to_sync(),
             beaver_source,
         );
@@ -419,14 +442,11 @@ impl<C: CurveGroup> MpcFabric<C> {
         // Start a network sender and operator executor
         let network_sender = NetworkSender::new(
             outbound_receiver,
-            execution_queue.clone(),
+            executor_queue.clone(),
             network,
             shutdown_receiver,
         );
         tokio::task::spawn_blocking(move || block_on(network_sender.run()));
-
-        let executor = SerialExecutor::new(size_hint, execution_queue, fabric.clone());
-        tokio::task::spawn_blocking(move || executor.run());
 
         // Create the fabric and fill in the MAC key after
         let mut self_ =
