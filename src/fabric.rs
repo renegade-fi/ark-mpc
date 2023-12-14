@@ -11,6 +11,7 @@ mod network_sender;
 mod result;
 
 use ark_ec::CurveGroup;
+pub use executor::ExecutorSizeHints;
 #[cfg(not(feature = "benchmarks"))]
 use executor::{single_threaded::SerialExecutor, ExecutorMessage};
 #[cfg(feature = "benchmarks")]
@@ -63,9 +64,6 @@ const RESULT_IDENTITY: ResultId = 2;
 /// The number of constant results allocated in the fabric, i.e. those defined
 /// above
 const N_CONSTANT_RESULTS: usize = 3;
-
-/// The default size hint to give the fabric for buffer pre-allocation
-const DEFAULT_SIZE_HINT: usize = 50_000;
 
 /// A type alias for the identifier used for a gate
 pub type OperationId = usize;
@@ -394,14 +392,14 @@ impl<C: CurveGroup> MpcFabric<C> {
         network: N,
         beaver_source: S,
     ) -> Self {
-        Self::new_with_size_hint(DEFAULT_SIZE_HINT, network, beaver_source)
+        Self::new_with_size_hint(ExecutorSizeHints::default(), network, beaver_source)
     }
 
     /// Constructor that takes an additional size hint, indicating how much
     /// buffer space the fabric should allocate for results. The size is
     /// given in number of gates
     pub fn new_with_size_hint<N: 'static + MpcNetwork<C>, S: 'static + SharedValueSource<C>>(
-        size_hint: usize,
+        size_hints: ExecutorSizeHints,
         network: N,
         beaver_source: S,
     ) -> Self {
@@ -412,9 +410,9 @@ impl<C: CurveGroup> MpcFabric<C> {
         // Spawn the executor
         let outbound_queue = self_.inner.outbound_queue.clone();
         #[cfg(not(feature = "multithreaded_executor"))]
-        let executor = SerialExecutor::new(size_hint, executor_queue, outbound_queue);
+        let executor = SerialExecutor::new(size_hints, executor_queue, outbound_queue);
         #[cfg(feature = "multithreaded_executor")]
-        let executor = ParallelExecutor::new(size_hint, executor_queue, outbound_queue);
+        let executor = ParallelExecutor::new(size_hints, executor_queue, outbound_queue);
         tokio::task::spawn_blocking(move || executor.run());
 
         self_

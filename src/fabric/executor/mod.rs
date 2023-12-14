@@ -18,6 +18,11 @@ pub mod single_threaded;
 #[cfg(feature = "benchmarks")]
 pub use buffer::*;
 
+/// The default number of operations to pre-allocate
+const DEFAULT_N_OPS: usize = 1000;
+/// The default number of results to pre-allocate
+const DEFAULT_N_RESULTS: usize = 10_000;
+
 /// The job queue that the executor may receive messages on
 #[allow(type_alias_bounds)]
 pub type ExecutorJobQueue<C: CurveGroup> = Arc<SegQueue<ExecutorMessage<C>>>;
@@ -47,4 +52,19 @@ pub enum ExecutorMessage<C: CurveGroup> {
     NewWaiter(ResultWaiter<C>),
     /// Indicates that the executor should shut down
     Shutdown,
+}
+
+/// Size hints given to an executor to pre-allocate buffer space
+#[derive(Debug, Clone, Copy)]
+pub struct ExecutorSizeHints {
+    /// The number of operations that will be executed
+    pub n_ops: usize,
+    /// The number of results that will be produced
+    pub n_results: usize,
+}
+
+impl Default for ExecutorSizeHints {
+    fn default() -> Self {
+        Self { n_ops: DEFAULT_N_OPS, n_results: DEFAULT_N_RESULTS }
+    }
 }

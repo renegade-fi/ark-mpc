@@ -23,6 +23,8 @@ use crate::fabric::{
 use crate::network::NetworkOutbound;
 use crate::ResultId;
 
+use super::ExecutorSizeHints;
+
 // ---------
 // | Stats |
 // ---------
@@ -35,6 +37,8 @@ struct ExecutorStats {
     n_ops: usize,
     /// The total number of network ops executed by the executor
     n_network_ops: usize,
+    /// The total number of results received by the executor
+    n_results: usize,
     /// The total sampled queue length of the executor's work queue
     summed_queue_length: u64,
     /// The number of samples taken of the executor's work queue length
@@ -68,6 +72,11 @@ impl ExecutorStats {
         (self.summed_queue_length as f64) / (self.queue_length_sample_count as f64)
     }
 
+    /// Add a new result to the executor's count
+    pub fn new_result(&mut self) {
+        self.n_results += 1;
+    }
+
     /// Add an operation to the executor's depth map
     pub fn new_operation<C: CurveGroup>(&mut self, op: &Operation<C>, from_network_op: bool) {
         let max_dep = op
@@ -98,6 +107,7 @@ impl Debug for ExecutorStats {
         f.debug_struct("ExecutorStats")
             .field("n_ops", &self.n_ops)
             .field("n_network_ops", &self.n_network_ops)
+            .field("n_results", &self.n_results)
             .field("avg_queue_length", &avg_queue_length)
             .field("max_depth", &max_depth)
             .finish()
@@ -133,7 +143,7 @@ pub struct SerialExecutor<C: CurveGroup> {
 impl<C: CurveGroup> SerialExecutor<C> {
     /// Constructor
     pub fn new(
-        circuit_size_hint: usize,
+        size_hints: ExecutorSizeHints,
         job_queue: ExecutorJobQueue<C>,
         network_outbound: KanalSender<NetworkOutbound<C>>,
     ) -> Self {
@@ -141,9 +151,9 @@ impl<C: CurveGroup> SerialExecutor<C> {
         {
             Self {
                 job_queue,
-                operations: GrowableBuffer::new(circuit_size_hint),
-                dependencies: GrowableBuffer::new(circuit_size_hint),
-                results: GrowableBuffer::new(circuit_size_hint),
+                operations: GrowableBuffer::new(size_hints.n_ops),
+                dependencies: GrowableBuffer::new(size_hints.n_ops),
+                results: GrowableBuffer::new(size_hints.n_results),
                 waiters: HashMap::new(),
                 network_outbound,
                 stats: ExecutorStats::default(),
@@ -154,9 +164,9 @@ impl<C: CurveGroup> SerialExecutor<C> {
         {
             Self {
                 job_queue,
-                operations: GrowableBuffer::new(circuit_size_hint),
-                dependencies: GrowableBuffer::new(circuit_size_hint),
-                results: GrowableBuffer::new(circuit_size_hint),
+                operations: GrowableBuffer::new(size_hints.n_ops),
+                dependencies: GrowableBuffer::new(size_hints.n_ops),
+                results: GrowableBuffer::new(size_hints.n_results),
                 waiters: HashMap::new(),
                 network_outbound,
             }
@@ -210,6 +220,9 @@ impl<C: CurveGroup> SerialExecutor<C> {
 
     /// Insert a result into the buffer
     fn insert_result(&mut self, result: OpResult<C>) {
+        #[cfg(feature = "stats")]
+        self.stats.new_result();
+
         let id = result.id;
         let prev = self.results.insert(id, result);
         assert!(prev.is_none(), "duplicate result id: {:?}", prev.unwrap().id);
