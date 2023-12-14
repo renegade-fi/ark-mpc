@@ -3,6 +3,12 @@
 //! The executor receives IDs of operations that are ready for execution,
 //! executes them, and places the result back into the fabric for further
 //! executions
+//!
+//! The concurrency model is as follows:
+//! - A coordinator thread manages the inbound executor queue, handling new
+//!   results, operations, waiters, etc
+//! - The coordinator is backed by a thread pool of worker threads, onto which
+//!   it spawns operations that are ready to execute
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -22,7 +28,8 @@ use crate::{
     ResultId,
 };
 
-use super::result_buffer::{ParallelResultBuffer, ResultMask};
+use super::result_buffer::ParallelResultBuffer;
+use super::result_mask::ResultMask;
 
 /// The executor is responsible for executing operation that are ready for
 /// execution, either passed explicitly by the fabric or as a result of a
@@ -175,8 +182,7 @@ impl<C: CurveGroup> ParallelExecutor<C> {
     /// Insert a result into the buffer
     fn insert_result(&mut self, result: OpResult<C>) {
         let id = result.id;
-        let prev = self.results.set(id, result.value);
-        assert!(prev.is_none(), "duplicate result id: {id}");
+        self.results.set(id, result.value);
 
         self.wake_waiters_on_result(id);
     }
@@ -265,9 +271,7 @@ impl<C: CurveGroup> ParallelExecutor<C> {
             let id = result.id;
 
             ids.push(id);
-            if result_buffer.set(id, result.value).is_some() {
-                panic!("duplicate result id: {id}");
-            };
+            result_buffer.set(id, result.value);
         }
 
         // Notify the coordinator that the results are ready
