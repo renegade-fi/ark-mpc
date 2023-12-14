@@ -2,7 +2,7 @@ use std::{path::Path, sync::Mutex};
 
 use ark_mpc::{
     algebra::Scalar, beaver::PartyIDBeaverSource, network::NoRecvNetwork, test_helpers::TestCurve,
-    MpcFabric, PARTY0,
+    ExecutorSizeHints, MpcFabric, PARTY0,
 };
 use cpuprofiler::{Profiler as CpuProfiler, PROFILER};
 use criterion::{
@@ -43,7 +43,9 @@ pub fn config() -> Criterion {
 pub fn mock_fabric(size_hint: usize) -> MpcFabric<TestCurve> {
     let network = NoRecvNetwork::default();
     let beaver_source = PartyIDBeaverSource::new(PARTY0);
-    MpcFabric::new_with_size_hint(size_hint, network, beaver_source)
+    let size = ExecutorSizeHints { num_ops: size_hint, num_results: size_hint * 10 };
+
+    MpcFabric::new_with_size_hint(size, network, beaver_source)
 }
 
 // --------------

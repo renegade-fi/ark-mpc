@@ -22,7 +22,7 @@ pub mod gadgets;
 #[cfg(feature = "benchmarks")]
 pub use fabric::*;
 #[cfg(not(feature = "benchmarks"))]
-pub use fabric::{FabricInner, MpcFabric, ResultHandle, ResultId, ResultValue};
+pub use fabric::{ExecutorSizeHints, FabricInner, MpcFabric, ResultHandle, ResultId, ResultValue};
 pub mod network;
 
 // -------------
@@ -53,6 +53,7 @@ pub mod test_helpers {
 
     use crate::{
         beaver::{PartyIDBeaverSource, SharedValueSource},
+        fabric::ExecutorSizeHints,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
         MpcFabric, PARTY0, PARTY1,
     };
@@ -89,9 +90,35 @@ pub mod test_helpers {
         .await
     }
 
+    /// Execute a mock MPC with a given size hint
+    pub async fn execute_mock_mpc_with_size_hint<T, S, F>(
+        f: F,
+        size_hint: ExecutorSizeHints,
+    ) -> (T, T)
+    where
+        T: Send + 'static,
+        S: Future<Output = T> + Send + 'static,
+        F: FnMut(MpcFabric<TestCurve>) -> S,
+    {
+        // Build a duplex stream to broker communication between the two parties
+        let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
+        let party0_fabric = MpcFabric::new_with_size_hint(
+            size_hint,
+            MockNetwork::new(PARTY0, party0_stream),
+            PartyIDBeaverSource::new(PARTY0),
+        );
+        let party1_fabric = MpcFabric::new_with_size_hint(
+            size_hint,
+            MockNetwork::new(PARTY1, party1_stream),
+            PartyIDBeaverSource::new(PARTY1),
+        );
+
+        execute_mock_mpc_with_fabrics(f, party0_fabric, party1_fabric).await
+    }
+
     /// Execute a mock MPC by specifying a beaver source for party 0 and 1
     pub async fn execute_mock_mpc_with_beaver_source<B, T, S, F>(
-        mut f: F,
+        f: F,
         party0_beaver: B,
         party1_beaver: B,
     ) -> (T, T)
@@ -106,6 +133,20 @@ pub mod test_helpers {
         let party0_fabric = MpcFabric::new(MockNetwork::new(PARTY0, party0_stream), party0_beaver);
         let party1_fabric = MpcFabric::new(MockNetwork::new(PARTY1, party1_stream), party1_beaver);
 
+        execute_mock_mpc_with_fabrics(f, party0_fabric, party1_fabric).await
+    }
+
+    /// Execute a mock in the given fabrics
+    async fn execute_mock_mpc_with_fabrics<T, S, F>(
+        mut f: F,
+        party0_fabric: MpcFabric<TestCurve>,
+        party1_fabric: MpcFabric<TestCurve>,
+    ) -> (T, T)
+    where
+        T: Send + 'static,
+        S: Future<Output = T> + Send + 'static,
+        F: FnMut(MpcFabric<TestCurve>) -> S,
+    {
         // Spawn two tasks to execute the MPC
         let fabric0 = party0_fabric.clone();
         let fabric1 = party1_fabric.clone();

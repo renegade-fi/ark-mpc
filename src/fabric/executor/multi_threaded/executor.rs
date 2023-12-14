@@ -20,7 +20,7 @@ use tracing::log;
 
 use crate::{
     fabric::{
-        executor::{buffer::GrowableBuffer, ExecutorJobQueue, ExecutorMessage},
+        executor::{buffer::GrowableBuffer, ExecutorJobQueue, ExecutorMessage, ExecutorSizeHints},
         result::{ResultWaiter, ERR_RESULT_BUFFER_POISONED},
         OpResult, Operation, OperationId, OperationType,
     },
@@ -60,17 +60,17 @@ pub struct ParallelExecutor<C: CurveGroup> {
 impl<C: CurveGroup> ParallelExecutor<C> {
     /// Constructor
     pub fn new(
-        circuit_size_hint: usize,
+        size_hints: ExecutorSizeHints,
         job_queue: Arc<SegQueue<ExecutorMessage<C>>>,
         network_outbound: KanalSender<NetworkOutbound<C>>,
     ) -> Self {
         let pool = ThreadPoolBuilder::new().build().expect("error building thread pool");
         Self {
             job_queue,
-            operations: GrowableBuffer::new(circuit_size_hint),
-            dependencies: GrowableBuffer::new(circuit_size_hint),
-            results: ParallelResultBuffer::new(circuit_size_hint),
-            ready_mask: ResultMask::new(circuit_size_hint),
+            operations: GrowableBuffer::new(size_hints.n_ops),
+            dependencies: GrowableBuffer::new(size_hints.n_ops),
+            results: ParallelResultBuffer::new(size_hints.n_results),
+            ready_mask: ResultMask::new(size_hints.n_results),
             waiters: HashMap::new(),
             pool,
             network_outbound,

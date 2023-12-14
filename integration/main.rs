@@ -131,8 +131,7 @@ fn main() {
         }
 
         let beaver_source = PartyIDBeaverSource::new(args.party);
-        let fabric =
-            MpcFabric::new_with_size_hint(10_000_000 /* size_hint */, net, beaver_source);
+        let fabric = MpcFabric::new(net, beaver_source);
 
         // ----------------
         // | Test Harness |
