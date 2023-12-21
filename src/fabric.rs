@@ -973,11 +973,12 @@ impl<C: CurveGroup> MpcFabric<C> {
         let b_val = self.allocate_scalar(b);
         let c_val = self.allocate_scalar(c);
 
-        (
-            AuthenticatedScalarResult::new_shared(a_val),
-            AuthenticatedScalarResult::new_shared(b_val),
-            AuthenticatedScalarResult::new_shared(c_val),
-        )
+        let mut abc = AuthenticatedScalarResult::new_shared_batch(&[a_val, b_val, c_val]);
+        let c_val = abc.pop().unwrap();
+        let b_val = abc.pop().unwrap();
+        let a_val = abc.pop().unwrap();
+
+        (a_val, b_val, c_val)
     }
 
     /// Sample the next batch of beaver triples as `AuthenticatedScalar`s
@@ -1014,7 +1015,7 @@ impl<C: CurveGroup> MpcFabric<C> {
             .next_shared_value_batch(n);
 
         // Wrap the values in a result handle
-        values_raw.into_iter().map(|value| self.allocate_scalar(value)).collect_vec()
+        self.allocate_scalars(values_raw)
     }
 
     /// Sample a batch of random shared values from the beaver source and

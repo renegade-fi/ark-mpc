@@ -43,7 +43,7 @@ pub fn config() -> Criterion {
 pub fn mock_fabric(size_hint: usize) -> MpcFabric<TestCurve> {
     let network = NoRecvNetwork::default();
     let beaver_source = PartyIDBeaverSource::new(PARTY0);
-    let size = ExecutorSizeHints { num_ops: size_hint, num_results: size_hint * 10 };
+    let size = ExecutorSizeHints { n_ops: size_hint, n_results: size_hint * 10 };
 
     MpcFabric::new_with_size_hint(size, network, beaver_source)
 }
