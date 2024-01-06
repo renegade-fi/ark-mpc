@@ -383,6 +383,26 @@ impl<C: CurveGroup> ScalarResult<C> {
             res
         })
     }
+
+    /// Subtract a batch of `Scalar`s from a batch of `ScalarResult`s
+    pub fn batch_sub_constant(a: &[ScalarResult<C>], b: &[Scalar<C>]) -> Vec<ScalarResult<C>> {
+        assert_eq!(a.len(), b.len(), "Batch add constant requires equal length inputs");
+
+        let n = a.len();
+        let fabric = &a[0].fabric;
+        let b = b.to_vec();
+
+        let ids = a.iter().map(|v| v.id).collect_vec();
+        fabric.new_batch_gate_op(ids, n /* output_arity */, move |args| {
+            let a_vals = args.into_iter().map(Scalar::from).collect_vec();
+            a_vals
+                .into_iter()
+                .zip(b.iter())
+                .map(|(a, b)| a - b)
+                .map(ResultValue::Scalar)
+                .collect_vec()
+        })
+    }
 }
 
 // === SubAssign === //
@@ -663,6 +683,21 @@ impl<C: CurveGroup> Product for Scalar<C> {
     }
 }
 
+impl<C: CurveGroup> Product for ScalarResult<C> {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        let values: Vec<Self> = iter.collect_vec();
+        assert!(!values.is_empty(), "Cannot compute product of empty iterator");
+
+        let ids = values.iter().map(|v| v.id()).collect_vec();
+        let fabric = values[0].fabric();
+
+        fabric.new_gate_op(ids, move |args| {
+            let res = args.map(Scalar::from).product();
+            ResultValue::Scalar(res)
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
@@ -739,6 +774,31 @@ mod test {
 
         assert_eq!(res_final, expected_res);
         fabric.shutdown();
+    }
+
+    /// Tests batch subtraction with constant values
+    #[tokio::test]
+    async fn test_batch_sub_constant() {
+        const N: usize = 1000;
+        let mut rng = thread_rng();
+
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a - b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(move |fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_alloc = a.iter().map(|x| fabric.allocate_scalar(*x)).collect_vec();
+
+                let res = ScalarResult::batch_sub_constant(&a_alloc, &b);
+                future::join_all(res.into_iter()).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res);
     }
 
     /// Tests negation of raw scalars in a circuit

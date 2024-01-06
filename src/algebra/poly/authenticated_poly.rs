@@ -22,7 +22,8 @@ use itertools::Itertools;
 use crate::{
     algebra::{
         macros::{impl_borrow_variants, impl_commutative},
-        AuthenticatedScalarOpenResult, AuthenticatedScalarResult, Scalar, ScalarResult,
+        poly_inverse_mod_xt, rev_coeffs, AuthenticatedScalarOpenResult, AuthenticatedScalarResult,
+        Scalar, ScalarResult,
     },
     error::MpcError,
     MpcFabric, ResultValue,
@@ -443,6 +444,38 @@ impl_borrow_variants!(AuthenticatedDensePoly<C>, Mul, mul, *, AuthenticatedScala
 impl_commutative!(AuthenticatedDensePoly<C>, Mul, mul, *, AuthenticatedScalarResult<C>, C: CurveGroup);
 
 // --- Division --- //
+/// Division by a public polynomial
+impl<C: CurveGroup> Div<&DensePolynomial<C::ScalarField>> for &AuthenticatedDensePoly<C> {
+    type Output = AuthenticatedDensePoly<C>;
+
+    fn div(self, rhs: &DensePolynomial<C::ScalarField>) -> Self::Output {
+        // For shared polynomials each party can simply divide their local shares by the
+        // public divisor
+        assert!(!rhs.coeffs.is_empty(), "cannot divide by zero polynomial");
+
+        let n = self.degree();
+        let m = rhs.degree();
+        if n < m {
+            return AuthenticatedDensePoly::zero(self.fabric());
+        }
+
+        let modulus = n - m + 1;
+
+        // Apply the rev transformation
+        let rev_f = self.rev();
+        let rev_g = rev_coeffs(rhs);
+
+        // Invert `rev_g` in the quotient ring
+        let rev_g_inv = poly_inverse_mod_xt(&rev_g, modulus);
+
+        // Compute rev_f * rev_g_inv and "mod out" rev_r; what is left is `rev_q`
+        let rev_q = (&rev_f * &rev_g_inv).mod_xn(modulus);
+
+        // Undo the `rev` transformation
+        rev_q.rev()
+    }
+}
+
 /// Given a public divisor b(x) and shared dividend a(x) = a_1(x) + a_2(x) for
 /// party shares a_1, a_2 We can divide each share locally to obtain a secret
 /// sharing of \floor{a(x) / b(x)}
@@ -849,6 +882,30 @@ mod test {
                 let scaling_factor = fabric.share_scalar(scaling_factor, PARTY0);
 
                 (shared_poly * scaling_factor).open_authenticated().await
+            }
+        })
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), expected_res);
+    }
+
+    /// Tests dividing by a constant polynomial
+    #[tokio::test]
+    async fn test_div_polynomial_constant() {
+        let poly1 = random_poly(DEGREE_BOUND);
+        let poly2 = random_poly(DEGREE_BOUND);
+
+        let expected_res = &poly1 / &poly2;
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let poly1 = poly1.clone();
+            let poly2 = poly2.clone();
+            async move {
+                let dividend = share_poly(poly1, PARTY0, &fabric);
+
+                let res = &dividend / &poly2;
+                res.open_authenticated().await
             }
         })
         .await;

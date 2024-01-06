@@ -7,8 +7,71 @@
 mod authenticated_poly;
 mod poly;
 
+use ark_ff::{FftField, Field};
+use ark_poly::{
+    univariate::{DenseOrSparsePolynomial, DensePolynomial},
+    DenseUVPolynomial,
+};
+use ark_std::Zero;
 pub use authenticated_poly::*;
 pub use poly::*;
+
+/// Return a representation of x^t as a `DensePolynomial`
+fn x_to_t<F: Field>(t: usize) -> DensePolynomial<F> {
+    let mut coeffs = vec![F::zero(); t];
+    coeffs.push(F::one());
+    DensePolynomial::from_coefficients_vec(coeffs)
+}
+
+/// Reverse the coefficients of an Arkworks polynomial
+pub fn rev_coeffs<F: Field>(poly: &DensePolynomial<F>) -> DensePolynomial<F> {
+    let mut coeffs = poly.coeffs().to_vec();
+    coeffs.reverse();
+
+    DensePolynomial::from_coefficients_vec(coeffs)
+}
+
+/// A helper to compute the Bezout coefficients of the two given polynomials
+///
+/// I.e. for a(x), b(x) as input, we compute f(x), g(x) such that:
+///     f(x) * a(x) + g(x) * b(x) = gcd(a, b)
+/// This is done using the extended Euclidean method
+fn compute_bezout_polynomials<F: FftField>(
+    a: &DensePolynomial<F>,
+    b: &DensePolynomial<F>,
+) -> (DensePolynomial<F>, DensePolynomial<F>) {
+    if b.is_zero() {
+        return (
+            DensePolynomial::from_coefficients_vec(vec![F::one()]), // f(x) = 1
+            DensePolynomial::zero(),                                // f(x) = 0
+        );
+    }
+
+    let a_transformed = DenseOrSparsePolynomial::from(a);
+    let b_transformed = DenseOrSparsePolynomial::from(b);
+    let (quotient, remainder) = a_transformed.divide_with_q_and_r(&b_transformed).unwrap();
+
+    let (f, g) = compute_bezout_polynomials(b, &remainder);
+    let next_g = &f - &(&quotient * &g);
+
+    (g, next_g)
+}
+/// Compute the multiplicative inverse of a polynomial mod x^t
+pub fn poly_inverse_mod_xt<F: FftField>(poly: &DensePolynomial<F>, t: usize) -> DensePolynomial<F> {
+    // Compute the Bezout coefficients of the two polynomials
+    let x_to_t = x_to_t(t);
+    let (inverse_poly, _) = compute_bezout_polynomials(poly, &x_to_t);
+
+    // In a polynomial ring, gcd is defined only up to scalar multiplication, so we
+    // multiply the result by the inverse of the resultant first
+    // coefficient to uniquely define the inverse as f^{-1}(x) such that
+    // f * f^{-1}(x) = 1 \in F[x] / (x^t)
+    let self_constant_coeff = poly.coeffs[0];
+    let inverse_constant_coeff = inverse_poly.coeffs[0];
+    let constant_coeff_inv = (self_constant_coeff * inverse_constant_coeff).inverse().unwrap();
+
+    &inverse_poly * constant_coeff_inv
+}
 
 #[cfg(test)]
 pub mod poly_test_helpers {

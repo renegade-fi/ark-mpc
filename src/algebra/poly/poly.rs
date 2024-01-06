@@ -9,10 +9,10 @@ use std::{
 };
 
 use ark_ec::CurveGroup;
-use ark_ff::{Field, One, Zero};
+use ark_ff::Zero;
 use ark_poly::{
-    univariate::{DenseOrSparsePolynomial, DensePolynomial},
-    DenseUVPolynomial, EvaluationDomain, Polynomial, Radix2EvaluationDomain,
+    univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain, Polynomial,
+    Radix2EvaluationDomain,
 };
 use futures::FutureExt;
 use futures::{ready, Future};
@@ -26,18 +26,7 @@ use crate::{
     MpcFabric, ResultValue,
 };
 
-use super::AuthenticatedDensePoly;
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Return a representation of x^t as a `DensePolynomial`
-fn x_to_t<C: CurveGroup>(t: usize) -> DensePolynomial<C::ScalarField> {
-    let mut coeffs = vec![C::ScalarField::zero(); t];
-    coeffs.push(C::ScalarField::one());
-    DensePolynomial::from_coefficients_vec(coeffs)
-}
+use super::{poly_inverse_mod_xt, AuthenticatedDensePoly};
 
 // ------------------
 // | Implementation |
@@ -129,29 +118,15 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
             ids,
             n_result_coeffs, // output_arity
             move |args| {
-                let x_to_t = x_to_t::<C>(t);
-
                 let self_coeffs =
                     args.into_iter().map(|res| Scalar::<C>::from(res).inner()).collect_vec();
                 let self_poly = DensePolynomial::from_coefficients_vec(self_coeffs);
 
-                // Compute the bezout coefficients of the two polynomials
-                let (inverse_poly, _) = Self::compute_bezout_polynomials(&self_poly, &x_to_t);
-
-                // In a polynomial ring, gcd is defined only up to scalar multiplication, so we
-                // multiply the result by the inverse of the resultant first
-                // coefficient to uniquely define the inverse as f^{-1}(x) such that
-                // f * f^{-1}(x) = 1 \in F[x] / (x^t)
-                let self_constant_coeff = self_poly.coeffs[0];
-                let inverse_constant_coeff = inverse_poly.coeffs[0];
-                let constant_coeff_inv =
-                    (self_constant_coeff * inverse_constant_coeff).inverse().unwrap();
-
+                let inverse_poly = poly_inverse_mod_xt(&self_poly, t);
                 inverse_poly
                     .coeffs
                     .into_iter()
                     .take(n_result_coeffs)
-                    .map(|c| c * constant_coeff_inv)
                     .map(Scalar::new)
                     .map(ResultValue::Scalar)
                     .collect_vec()
@@ -159,32 +134,6 @@ impl<C: CurveGroup> DensePolynomialResult<C> {
         );
 
         Self::from_coeffs(res_coeffs)
-    }
-
-    /// A helper to compute the Bezout coefficients of the two given polynomials
-    ///
-    /// I.e. for a(x), b(x) as input, we compute f(x), g(x) such that:
-    ///     f(x) * a(x) + g(x) * b(x) = gcd(a, b)
-    /// This is done using the extended Euclidean method
-    fn compute_bezout_polynomials(
-        a: &DensePolynomial<C::ScalarField>,
-        b: &DensePolynomial<C::ScalarField>,
-    ) -> (DensePolynomial<C::ScalarField>, DensePolynomial<C::ScalarField>) {
-        if b.is_zero() {
-            return (
-                DensePolynomial::from_coefficients_vec(vec![C::ScalarField::one()]), // f(x) = 1
-                DensePolynomial::zero(),                                             // f(x) = 0
-            );
-        }
-
-        let a_transformed = DenseOrSparsePolynomial::from(a);
-        let b_transformed = DenseOrSparsePolynomial::from(b);
-        let (quotient, remainder) = a_transformed.divide_with_q_and_r(&b_transformed).unwrap();
-
-        let (f, g) = Self::compute_bezout_polynomials(b, &remainder);
-        let next_g = &f - &(&quotient * &g);
-
-        (g, next_g)
     }
 }
 
