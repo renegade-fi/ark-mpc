@@ -4,6 +4,7 @@
 #![allow(incomplete_features)]
 #![allow(ambiguous_glob_reexports)]
 #![feature(inherent_associated_types)]
+#![feature(stmt_expr_attributes)]
 
 //! Defines an MPC implementation over the a generic Arkworks curve that allows
 //! for out-of-order execution of the underlying MPC circuit

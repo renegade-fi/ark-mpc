@@ -43,6 +43,12 @@ struct ExecutorStats {
     summed_queue_length: u64,
     /// The number of samples taken of the executor's work queue length
     queue_length_sample_count: usize,
+    /// The amount of time spent executing operations
+    execution_time_ns: u128,
+    /// The amount of time spent looking up arguments
+    lookup_time_ns: u128,
+    /// The amount of time spent inserting results
+    insert_time: u128,
     /// Maps operations to their depth in the circuit, where depth is defined as
     /// the number of network operations that must be executed before the
     /// operation can be executed
@@ -110,8 +116,28 @@ impl Debug for ExecutorStats {
             .field("n_results", &self.n_results)
             .field("avg_queue_length", &avg_queue_length)
             .field("max_depth", &max_depth)
+            .field("execution_time_ns", &self.execution_time_ns)
+            .field("lookup_time_ns", &self.lookup_time_ns)
+            .field("insert_time", &self.insert_time)
             .finish()
     }
+}
+
+/// Time the block if the `stats` feature is enabled, otherwise do nothing
+macro_rules! stats_timer {
+    ($stats:expr, $block:block) => {{
+        #[cfg(feature = "stats")]
+        {
+            let start = std::time::Instant::now();
+            let res = $block;
+            *$stats += start.elapsed().as_nanos();
+            res
+        }
+        #[cfg(not(feature = "stats"))]
+        {
+            $block
+        }
+    }};
 }
 
 // ------------
@@ -224,14 +250,13 @@ impl<C: CurveGroup> SerialExecutor<C> {
         self.stats.new_result();
 
         let id = result.id;
-        let prev = self.results.insert(id, result);
-        assert!(prev.is_none(), "duplicate result id: {:?}", prev.unwrap().id);
+        stats_timer!(&mut self.stats.insert_time, { self.results.insert(id, result) });
 
         self.wake_waiters_on_result(id);
     }
 
     /// Get the operations that are ready for execution after a result comes in
-    fn append_ready_ops(&mut self, id: OperationId, ready_ops: &mut Vec<OperationId>) {
+    fn append_ready_ops(&mut self, id: OperationId, ready_ops: &mut Vec<Operation<C>>) {
         if let Some(deps) = self.dependencies.get(id) {
             for op_id in deps.iter() {
                 let operation = self.operations.get_mut(*op_id).unwrap();
@@ -242,7 +267,7 @@ impl<C: CurveGroup> SerialExecutor<C> {
                 }
 
                 // Mark the operation as ready for execution
-                ready_ops.push(*op_id);
+                ready_ops.push(operation.clone());
             }
         }
     }
@@ -267,10 +292,7 @@ impl<C: CurveGroup> SerialExecutor<C> {
 
         // If the operation is ready for execution, do so
         if inflight_args == 0 {
-            let id = op.id;
-            self.operations.insert(id, op);
-
-            self.execute_operations(vec![id]);
+            self.execute_operations(vec![op]);
             return;
         }
 
@@ -285,7 +307,7 @@ impl<C: CurveGroup> SerialExecutor<C> {
             entry.as_mut().unwrap().push(op.id);
         }
 
-        self.operations.insert(op.id, op);
+        stats_timer!(&mut self.stats.insert_time, { self.operations.insert(op.id, op) });
     }
 
     /// Record the depth of an operation in the circuit
@@ -297,9 +319,8 @@ impl<C: CurveGroup> SerialExecutor<C> {
 
     /// Executes the operations in the buffer, recursively executing any
     /// dependencies that become ready
-    fn execute_operations(&mut self, mut ops: Vec<OperationId>) {
-        while let Some(op_id) = ops.pop() {
-            let op = self.operations.take(op_id).unwrap();
+    fn execute_operations(&mut self, mut ops: Vec<Operation<C>>) {
+        while let Some(op) = ops.pop() {
             let res = self.compute_result(op);
 
             for result in res.into_iter() {
@@ -310,21 +331,23 @@ impl<C: CurveGroup> SerialExecutor<C> {
     }
 
     /// Compute the result of an operation
-    fn compute_result(&self, op: Operation<C>) -> Vec<OpResult<C>> {
+    fn compute_result(&mut self, op: Operation<C>) -> Vec<OpResult<C>> {
         let result_ids = op.result_ids();
 
         // Collect the inputs to the operation
-        let args = op.args.into_iter().map(|arg| self.results.get(arg).unwrap().value.clone());
-        let input = Box::new(args);
+        let input = stats_timer!(&mut self.stats.lookup_time_ns, {
+            let args = op.args.into_iter().map(|arg| self.results.get(arg).unwrap().value.clone());
+            Box::new(args)
+        });
 
         match op.op_type {
             OperationType::Gate { function } => {
-                let value = (function)(input);
+                let value = stats_timer!(&mut self.stats.execution_time_ns, { (function)(input) });
                 vec![OpResult { id: op.result_id, value }]
             },
 
             OperationType::GateBatch { function } => {
-                let output = (function)(input);
+                let output = stats_timer!(&mut self.stats.execution_time_ns, { (function)(input) });
                 result_ids
                     .into_iter()
                     .zip(output)

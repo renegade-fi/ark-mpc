@@ -51,12 +51,13 @@ impl<T: Clone> GrowableBuffer<T> {
     }
 
     /// Insert value at the given index
-    pub fn insert(&mut self, idx: usize, val: T) -> Option<T> {
+    #[allow(unsafe_code)]
+    pub fn insert(&mut self, idx: usize, val: T) {
         if idx >= self.buf.len() {
             self.grow(idx)
         }
 
-        self.buf.get_mut(idx).unwrap().replace(val)
+        unsafe { *self.buf.get_unchecked_mut(idx) = Some(val) };
     }
 
     /// Take ownership of a value at a given index

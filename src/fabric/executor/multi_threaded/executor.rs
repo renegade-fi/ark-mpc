@@ -137,9 +137,7 @@ impl<C: CurveGroup> ParallelExecutor<C> {
         // If the operation is ready for execution, do so
         if inflight_args == 0 {
             let id = op.id;
-            if self.operations.insert(id, op).is_some() {
-                panic!("duplicate operation id: {id}");
-            }
+            self.operations.insert(id, op);
 
             self.execute_operations(vec![id]);
             return;
@@ -157,9 +155,7 @@ impl<C: CurveGroup> ParallelExecutor<C> {
         }
 
         let id = op.id;
-        if self.operations.insert(id, op).is_some() {
-            panic!("duplicate operation id: {id}");
-        }
+        self.operations.insert(id, op);
     }
 
     /// Handle a new waiter for a result
