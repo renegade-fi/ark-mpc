@@ -1,6 +1,7 @@
 use ark_mpc::{algebra::Scalar, test_helpers::TestCurve, GrowableBuffer};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::{seq::SliceRandom, thread_rng};
+use std::hint::black_box;
 
 // --------------
 // | Benchmarks |
@@ -30,7 +31,7 @@ pub fn buffer_read__sequential(c: &mut Criterion) {
 pub fn buffer_write__sequential(c: &mut Criterion) {
     let mut group = c.benchmark_group("buffer_write__sequential");
 
-    for buffer_size in [1_000, 10_000] {
+    for buffer_size in [1_000, 10_000, 100_000, 1_000_000, 10_000_000] {
         let mut buffer: GrowableBuffer<Scalar<TestCurve>> = GrowableBuffer::new(buffer_size);
 
         group.throughput(Throughput::Elements(buffer_size as u64));
@@ -69,6 +70,6 @@ pub fn buffer_write__random(c: &mut Criterion) {
 criterion_group! {
     name = buffer_ops;
     config = Criterion::default();
-    targets = buffer_read__sequential, buffer_write__random
+    targets = buffer_read__sequential, buffer_write__sequential, buffer_write__random
 }
 criterion_main!(buffer_ops);

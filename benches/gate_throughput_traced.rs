@@ -74,7 +74,6 @@ struct Args {
 async fn main() {
     // Parse args
     let args = Args::parse();
-    start_cpu_profiler(args.cpu_profiled);
     start_heap_profiler(args.heap_profiled);
     let start_time = Instant::now();
 
@@ -82,6 +81,7 @@ async fn main() {
     let fabric = mock_fabric(NUM_GATES * 2);
     let allocation_time = start_time.elapsed();
 
+    start_cpu_profiler(args.cpu_profiled);
     let mut rng = thread_rng();
     let base = Scalar::random(&mut rng);
     let base_res = fabric.allocate_scalar(base);
@@ -94,12 +94,12 @@ async fn main() {
 
     let _res = res.await;
     let res_time = start_time.elapsed() - allocation_time;
+    stop_cpu_profiler(args.cpu_profiled);
 
     println!("memory allocation took {allocation_time:?}");
     println!("circuit construction took {circuit_creation_time:?}");
     println!("circuit evaluation took {res_time:?}");
 
     fabric.shutdown();
-    stop_cpu_profiler(args.cpu_profiled);
     stop_heap_profiler(args.heap_profiled);
 }

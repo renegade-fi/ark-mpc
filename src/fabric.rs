@@ -413,7 +413,8 @@ impl<C: CurveGroup> MpcFabric<C> {
         let executor = SerialExecutor::new(size_hints, executor_queue, outbound_queue);
         #[cfg(feature = "multithreaded_executor")]
         let executor = ParallelExecutor::new(size_hints, executor_queue, outbound_queue);
-        tokio::task::spawn_blocking(move || executor.run());
+        // tokio::task::spawn_blocking(move || executor.run());
+        std::thread::spawn(move || executor.run());
 
         self_
     }

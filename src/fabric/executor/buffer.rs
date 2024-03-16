@@ -9,6 +9,7 @@ pub struct GrowableBuffer<T: Clone> {
     buf: Vec<Option<T>>,
 }
 
+#[allow(unsafe_code)]
 impl<T: Clone> GrowableBuffer<T> {
     /// Constructor, takes a size-hint to pre-allocate buffer slots
     pub fn new(size_hint: usize) -> Self {
@@ -28,7 +29,7 @@ impl<T: Clone> GrowableBuffer<T> {
             return None;
         }
 
-        self.buf[idx].as_ref()
+        unsafe { self.buf.get_unchecked(idx).as_ref() }
     }
 
     /// Get an entry as a mutable reference
@@ -37,7 +38,7 @@ impl<T: Clone> GrowableBuffer<T> {
             self.grow(idx)
         }
 
-        self.buf[idx].as_mut()
+        unsafe { self.buf.get_unchecked_mut(idx).as_mut() }
     }
 
     /// Get a mutable reference to the entry at a given index
@@ -47,11 +48,10 @@ impl<T: Clone> GrowableBuffer<T> {
             self.grow(idx)
         }
 
-        &mut self.buf[idx]
+        unsafe { self.buf.get_unchecked_mut(idx) }
     }
 
     /// Insert value at the given index
-    #[allow(unsafe_code)]
     pub fn insert(&mut self, idx: usize, val: T) {
         if idx >= self.buf.len() {
             self.grow(idx)
@@ -62,8 +62,7 @@ impl<T: Clone> GrowableBuffer<T> {
 
     /// Take ownership of a value at a given index
     pub fn take(&mut self, idx: usize) -> Option<T> {
-        let val = self.buf.get_mut(idx)?;
-        val.take()
+        unsafe { self.buf.get_unchecked_mut(idx).take() }
     }
 }
 
