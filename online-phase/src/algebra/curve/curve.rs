@@ -33,7 +33,7 @@ use crate::{
 use super::{authenticated_curve::AuthenticatedPointResult, mpc_curve::MpcPointResult};
 
 /// The number of points and scalars to pull from an iterated MSM when
-/// performing a multiscalar multiplication
+/// performing a multi-scalar multiplication
 const MSM_CHUNK_SIZE: usize = 1 << 16;
 /// The threshold at which we call out to the Arkworks MSM implementation
 ///
