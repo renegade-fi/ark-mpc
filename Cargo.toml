@@ -1,5 +1,5 @@
 [workspace]
-members = ["online-phase"]
+members = ["mp-spdz-rs", "offline-phase", "online-phase"]
 
 [profile.bench]
 opt-level = 3
