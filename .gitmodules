@@ -1,3 +1,3 @@
-[submodule "MP-SPDZ"]
-	path = MP-SPDZ
+[submodule "mp-spdz-rs/src/include/MP-SPDZ"]
+	path = mp-spdz-rs/src/include/MP-SPDZ
 	url = https://github.com/renegade-fi/MP-SPDZ.git
