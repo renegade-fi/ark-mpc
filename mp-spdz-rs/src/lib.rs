@@ -6,24 +6,20 @@
 
 #[cxx::bridge]
 pub mod ffi {
-    struct Test {
-        a: i32,
-        b: i32,
-    }
-
     unsafe extern "C++" {
-        include!("FHE/Ring_Element.h");
+        include!("FHE/Ring.h");
 
-        fn test_method();
+        type Ring;
+        fn new_ring(m: i32) -> UniquePtr<Ring>;
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::ffi::test_method;
+    use super::ffi::*;
 
     #[test]
     fn test_dummy() {
-        test_method();
+        let ring = new_ring(10);
     }
 }

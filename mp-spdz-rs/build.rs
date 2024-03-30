@@ -3,19 +3,31 @@ use itertools::Itertools;
 // Build entrypoint
 fn main() {
     // Resolve the libsodium and gmp include paths
-    let libsodium_include = find_package("libsodium");
-    let gmp_include = find_package("gmp");
+    let libsodium_include = find_include_path("libsodium");
+    let gmp_include = find_include_path("gmp");
+    let ntl_include = find_include_path("ntl");
 
     // Build the c++ bridge
     cxx_build::bridge("src/lib.rs")
-        .file("src/include/MP-SPDZ/FHE/Ring_Element.cpp")
+        .file("src/include/MP-SPDZ/FHE/Ring.cpp")
+        .file("src/include/MP-SPDZ/FHE/NTL-Subs.cpp")
+        .file("src/include/MP-SPDZ/Math/bigint.cpp")
         .include("src/include/MP-SPDZ")
         .include("src/include/MP-SPDZ/deps")
         .include(libsodium_include)
         .include(gmp_include)
+        .include(ntl_include)
+        .define("USE_NTL", None)
         .std("c++17")
         .compile("mp-spdz-cxx");
 
+    // Linker args
+    println!("cargo:rustc-link-arg=-L{}", find_lib_path("ntl"));
+    println!("cargo:rustc-link-arg=-lntl");
+    println!("cargo:rustc-link-arg=-L{}", find_lib_path("gmp"));
+    println!("cargo:rustc-link-arg=-lgmp");
+
+    // Build cache flags
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=../MP-SPDZ");
 }
@@ -30,6 +42,18 @@ fn get_host_vendor() -> String {
 fn get_host_triple() -> Vec<String> {
     let host_triple = std::env::var("HOST").unwrap();
     host_triple.split('-').map(|s| s.to_string()).collect_vec()
+}
+
+/// Find the include location for a package
+fn find_include_path(name: &str) -> String {
+    let base_path = find_package(name);
+    format!("{base_path}/include")
+}
+
+/// Find the lib location for a package
+fn find_lib_path(name: &str) -> String {
+    let base_path = find_package(name);
+    format!("{base_path}/lib")
 }
 
 /// Resolve a package's include location
@@ -65,7 +89,7 @@ fn find_package_macos(name: &str) -> String {
 
     // Parse the output from stdout
     let path = parse_utf8(&output.stdout).trim().to_string();
-    format!("{path}/include")
+    path
 }
 
 /// Find a package on Linux
