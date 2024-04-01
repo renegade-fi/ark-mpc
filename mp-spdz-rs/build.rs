@@ -2,30 +2,62 @@ use itertools::Itertools;
 
 // Build entrypoint
 fn main() {
-    // Resolve the libsodium and gmp include paths
-    let libsodium_include = find_include_path("libsodium");
-    let gmp_include = find_include_path("gmp");
-    let ntl_include = find_include_path("ntl");
+    // Resolve the include paths referenced in the MP-SPDZ library
+    let includes = [
+        find_include_path("libsodium"),
+        find_include_path("gmp"),
+        find_include_path("ntl"),
+        find_include_path("boost"),
+        find_include_path("openssl"),
+    ];
 
     // Build the c++ bridge
     cxx_build::bridge("src/lib.rs")
-        .file("src/include/MP-SPDZ/FHE/Ring.cpp")
-        .file("src/include/MP-SPDZ/FHE/NTL-Subs.cpp")
-        .file("src/include/MP-SPDZ/Math/bigint.cpp")
+        .files(get_source_files("src/include/MP-SPDZ/FHE"))
+        .files(get_source_files("src/include/MP-SPDZ/FHEOffline"))
+        .files(get_source_files("src/include/MP-SPDZ/Math"))
+        .files(get_source_files("src/include/MP-SPDZ/Tools"))
+        .files(&[
+            "src/include/MP-SPDZ/Processor/BaseMachine.cpp",
+            "src/include/MP-SPDZ/Processor/OnlineOptions.cpp",
+            "src/include/MP-SPDZ/Processor/DataPositions.cpp",
+            "src/include/MP-SPDZ/Processor/ThreadQueues.cpp",
+            "src/include/MP-SPDZ/Processor/ThreadQueue.cpp",
+        ])
+        .file("src/include/MP-SPDZ/Protocols/CowGearOptions.cpp")
         .include("src/include/MP-SPDZ")
         .include("src/include/MP-SPDZ/deps")
-        .include(libsodium_include)
-        .include(gmp_include)
-        .include(ntl_include)
+        .includes(&includes)
         .define("USE_NTL", None)
         .std("c++17")
         .compile("mp-spdz-cxx");
 
-    // Linker args
-    println!("cargo:rustc-link-arg=-L{}", find_lib_path("ntl"));
-    println!("cargo:rustc-link-arg=-lntl");
-    println!("cargo:rustc-link-arg=-L{}", find_lib_path("gmp"));
-    println!("cargo:rustc-link-arg=-lgmp");
+    // Link in shared libraries installed through package manager
+    add_link_path("openssl");
+    link_lib("ssl");
+    link_lib("crypto");
+
+    add_link_path("ntl");
+    link_lib("ntl");
+
+    add_link_path("gmp");
+    link_lib("gmp");
+    link_lib("gmpxx");
+
+    add_link_path("boost");
+    link_lib("boost_system");
+    link_lib("boost_filesystem");
+    link_lib("boost_iostreams");
+    if get_host_vendor() == "apple" {
+        println!("cargo:rustc-link-arg=-lboost_thread-mt");
+    } else {
+        println!("cargo:rustc-link-arg=-lboost_thread");
+    }
+
+    // Link in realtime extensions if running on linux
+    if get_host_vendor() != "apple" {
+        link_lib("rt");
+    }
 
     // Build cache flags
     println!("cargo:rerun-if-changed=src/lib.rs");
@@ -42,6 +74,17 @@ fn get_host_vendor() -> String {
 fn get_host_triple() -> Vec<String> {
     let host_triple = std::env::var("HOST").unwrap();
     host_triple.split('-').map(|s| s.to_string()).collect_vec()
+}
+
+/// Add a link path to the linker
+fn add_link_path(lib: &str) {
+    let lib_path = find_lib_path(lib);
+    println!("cargo:rustc-link-arg=-L{}", lib_path);
+}
+
+/// Link a library into the object
+fn link_lib(lib: &str) {
+    println!("cargo:rustc-link-arg=-l{}", lib);
 }
 
 /// Find the include location for a package
@@ -104,6 +147,16 @@ fn find_package_linux(name: &str) -> String {
             )
         },
     }
+}
+
+/// Get the list of cpp files in a directory
+fn get_source_files(dir: &str) -> Vec<String> {
+    let paths = std::fs::read_dir(dir).unwrap();
+    paths
+        .map(|p| p.unwrap().path())
+        .map(|p| p.to_str().unwrap().to_string())
+        .filter(|p| p.ends_with(".cpp"))
+        .collect()
 }
 
 /// Parse a utf8 string from a byte array
