@@ -12,7 +12,7 @@ fn main() {
     ];
 
     // Build the c++ bridge
-    cxx_build::bridge("src/lib.rs")
+    cxx_build::bridge("src/ffi.rs")
         .files(get_source_files("src/include/MP-SPDZ/FHE"))
         .files(get_source_files("src/include/MP-SPDZ/FHEOffline"))
         .files(get_source_files("src/include/MP-SPDZ/Math"))
@@ -40,6 +40,9 @@ fn main() {
     add_link_path("ntl");
     link_lib("ntl");
 
+    add_link_path("libsodium");
+    link_lib("sodium");
+
     add_link_path("gmp");
     link_lib("gmp");
     link_lib("gmpxx");
@@ -60,7 +63,6 @@ fn main() {
     }
 
     // Build cache flags
-    println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=../MP-SPDZ");
 }
 
