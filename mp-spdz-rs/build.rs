@@ -64,6 +64,7 @@ fn main() {
 
     // Build cache flags
     println!("cargo:rerun-if-changed=src/include/MP-SPDZ");
+    println!("cargo:rerun-if-changed=src/ffi.rs");
 }
 
 /// Get the vendor of the current host
