@@ -38,6 +38,19 @@ mod ffi_inner {
         fn set_element_int(plaintext: Pin<&mut Plaintext_mod_prime>, idx: usize, value: u32);
         fn get_element_int(plaintext: &Plaintext_mod_prime, idx: usize) -> u32;
 
+        fn add_plaintexts(
+            x: &Plaintext_mod_prime,
+            y: &Plaintext_mod_prime,
+        ) -> UniquePtr<Plaintext_mod_prime>;
+        fn sub_plaintexts(
+            x: &Plaintext_mod_prime,
+            y: &Plaintext_mod_prime,
+        ) -> UniquePtr<Plaintext_mod_prime>;
+        fn mul_plaintexts(
+            x: &Plaintext_mod_prime,
+            y: &Plaintext_mod_prime,
+        ) -> UniquePtr<Plaintext_mod_prime>;
+
         // `Ciphertext`
         type Ciphertext;
         fn add_plaintext(c0: &Ciphertext, p1: &Plaintext_mod_prime) -> UniquePtr<Ciphertext>;
@@ -81,7 +94,7 @@ mod test {
         keypair: &FHE_KeyPair,
         params: &FHE_Params,
     ) -> UniquePtr<Ciphertext> {
-        let mut plaintext = plaintext_int(value, params);
+        let plaintext = plaintext_int(value, params);
         encrypt(keypair, &plaintext)
     }
 
