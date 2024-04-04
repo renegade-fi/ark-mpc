@@ -87,7 +87,7 @@ impl<C: CurveGroup> Mul<&Plaintext<C>> for &Plaintext<C> {
 
 #[cfg(test)]
 mod tests {
-    use rand::{thread_rng, RngCore};
+    use rand::thread_rng;
 
     use super::*;
     use crate::TestCurve;
@@ -101,8 +101,8 @@ mod tests {
     fn test_add() {
         let mut rng = thread_rng();
         let params = get_params();
-        let val1: Scalar<TestCurve> = rng.next_u64().into();
-        let val2: Scalar<TestCurve> = rng.next_u32().into();
+        let val1: Scalar<TestCurve> = Scalar::random(&mut rng);
+        let val2: Scalar<TestCurve> = Scalar::random(&mut rng);
 
         let mut plaintext1 = Plaintext::new(&params);
         let mut plaintext2 = Plaintext::new(&params);
@@ -118,8 +118,8 @@ mod tests {
     fn test_sub() {
         let mut rng = thread_rng();
         let params = get_params();
-        let val1: Scalar<TestCurve> = rng.next_u64().into();
-        let val2: Scalar<TestCurve> = rng.next_u32().into();
+        let val1: Scalar<TestCurve> = Scalar::random(&mut rng);
+        let val2: Scalar<TestCurve> = Scalar::random(&mut rng);
 
         let mut plaintext1 = Plaintext::new(&params);
         let mut plaintext2 = Plaintext::new(&params);
@@ -135,8 +135,8 @@ mod tests {
     fn test_mul() {
         let mut rng = thread_rng();
         let params = get_params();
-        let val1: Scalar<TestCurve> = rng.next_u64().into();
-        let val2: Scalar<TestCurve> = rng.next_u64().into();
+        let val1: Scalar<TestCurve> = Scalar::random(&mut rng);
+        let val2: Scalar<TestCurve> = Scalar::random(&mut rng);
 
         let mut plaintext1 = Plaintext::new(&params);
         let mut plaintext2 = Plaintext::new(&params);

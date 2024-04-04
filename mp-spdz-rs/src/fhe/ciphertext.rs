@@ -72,7 +72,7 @@ impl<C: CurveGroup> Mul<&Plaintext<C>> for &Ciphertext<C> {
 #[cfg(test)]
 mod test {
     use ark_mpc::algebra::Scalar;
-    use rand::{thread_rng, RngCore};
+    use rand::thread_rng;
 
     use crate::fhe::{keys::BGVKeypair, params::BGVParams, plaintext::Plaintext};
     use crate::TestCurve;
@@ -115,8 +115,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Add a ciphertext with a plaintext
-        let val1 = rng.next_u64().into();
-        let val2 = rng.next_u64().into();
+        let val1 = Scalar::random(&mut rng);
+        let val2 = Scalar::random(&mut rng);
 
         let plaintext = plaintext_int(val2, &params);
         let ciphertext = encrypt_int(val1, &keypair, &params);
@@ -138,8 +138,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Multiply a ciphertext with a plaintext
-        let val1 = rng.next_u64().into();
-        let val2 = rng.next_u64().into();
+        let val1 = Scalar::random(&mut rng);
+        let val2 = Scalar::random(&mut rng);
 
         let plaintext = plaintext_int(val2, &params);
         let ciphertext = encrypt_int(val1, &keypair, &params);
@@ -161,8 +161,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Add two ciphertexts
-        let val1 = rng.next_u64().into();
-        let val2 = rng.next_u64().into();
+        let val1 = Scalar::random(&mut rng);
+        let val2 = Scalar::random(&mut rng);
 
         let ciphertext1 = encrypt_int(val1, &keypair, &params);
         let ciphertext2 = encrypt_int(val2, &keypair, &params);
@@ -184,8 +184,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Multiply two ciphertexts
-        let val1 = rng.next_u64().into();
-        let val2 = rng.next_u64().into();
+        let val1 = Scalar::random(&mut rng);
+        let val2 = Scalar::random(&mut rng);
 
         let ciphertext1 = encrypt_int(val1, &keypair, &params);
         let ciphertext2 = encrypt_int(val2, &keypair, &params);
