@@ -4,16 +4,30 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test-helpers = []
+test-helpers = ["dep:rand"]
+
+[[bench]]
+name = "plaintext_ops"
+harness = false
+required-features = ["test-helpers"]
+
+[[bench]]
+name = "ciphertext_ops"
+harness = false
+required-features = ["test-helpers"]
 
 [dependencies]
 # === Arithmetic + Crypto === #
+ark-bn254 = "0.4"
 ark-ec = { version = "0.4", features = ["parallel"] }
 ark-ff = { version = "0.4", features = ["parallel"] }
 ark-mpc = { path = "../online-phase" }
 
 # === Bindings === #
 cxx = "1.0"
+
+# === Misc === #
+rand = { version = "0.8.4", optional = true }
 
 [build-dependencies]
 cxx-build = "1.0"
@@ -22,4 +36,5 @@ pkg-config = "0.3"
 
 [dev-dependencies]
 ark-bn254 = "0.4"
+criterion = { version = "0.5", features = ["async", "async_tokio"] }
 rand = "0.8.4"

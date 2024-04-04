@@ -42,4 +42,9 @@ impl<C: CurveGroup> BGVParams<C> {
     pub fn new_no_mults() -> Self {
         Self::new(0)
     }
+
+    /// Get the number of plaintext slots the given parameters support
+    pub fn plaintext_slots(&self) -> u32 {
+        self.as_ref().n_plaintext_slots() as u32
+    }
 }
