@@ -1,5 +1,6 @@
 //! The FFI bindings for the MP-SPDZ library
 
+#[allow(clippy::missing_safety_doc)]
 #[cxx::bridge]
 mod ffi_inner {
     unsafe extern "C++" {
@@ -11,6 +12,8 @@ mod ffi_inner {
         // `bigint`
         type bigint;
         fn print(self: &bigint);
+        unsafe fn bigint_from_be_bytes(data: *mut u8, size: usize) -> UniquePtr<bigint>;
+        fn bigint_to_be_bytes(x: &bigint) -> Vec<u8>;
 
         // `FHE_Params`
         type FHE_Params;
@@ -32,8 +35,10 @@ mod ffi_inner {
         // `Plaintext`
         type Plaintext_mod_prime;
         fn new_plaintext(params: &FHE_Params) -> UniquePtr<Plaintext_mod_prime>;
-        fn set_element_int(plaintext: Pin<&mut Plaintext_mod_prime>, idx: usize, value: u32);
         fn get_element_int(plaintext: &Plaintext_mod_prime, idx: usize) -> u32;
+        fn set_element_int(plaintext: Pin<&mut Plaintext_mod_prime>, idx: usize, value: u32);
+        fn get_element_bigint(plaintext: &Plaintext_mod_prime, idx: usize) -> UniquePtr<bigint>;
+        fn set_element_bigint(plaintext: Pin<&mut Plaintext_mod_prime>, idx: usize, value: &bigint);
 
         fn add_plaintexts(
             x: &Plaintext_mod_prime,
@@ -100,6 +105,20 @@ mod test {
     fn decrypt_int(keypair: &FHE_KeyPair, ciphertext: &Ciphertext) -> u32 {
         let plaintext = decrypt(get_sk(keypair).pin_mut(), ciphertext);
         get_element_int(&plaintext, 0)
+    }
+
+    /// Tests converting bytes to and from a bigint
+    #[test]
+    fn test_bigint_to_from_bytes() {
+        const N_BYTES: usize = 32;
+        let mut rng = thread_rng();
+        let data = rng.gen::<[u8; N_BYTES]>();
+
+        // Convert the data to a bigint
+        let bigint = unsafe { bigint_from_be_bytes(data.as_ptr() as *mut u8, N_BYTES) };
+        let res = bigint_to_be_bytes(&bigint);
+
+        assert_eq!(data.to_vec(), res);
     }
 
     /// Tests addition of a plaintext to a ciphertext

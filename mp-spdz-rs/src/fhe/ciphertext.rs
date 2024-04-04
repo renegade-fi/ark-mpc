@@ -71,7 +71,8 @@ impl<C: CurveGroup> Mul<&Plaintext<C>> for &Ciphertext<C> {
 
 #[cfg(test)]
 mod test {
-    use rand::{thread_rng, Rng, RngCore};
+    use ark_mpc::algebra::Scalar;
+    use rand::{thread_rng, RngCore};
 
     use crate::fhe::{keys::BGVKeypair, params::BGVParams, plaintext::Plaintext};
     use crate::TestCurve;
@@ -87,7 +88,10 @@ mod test {
     }
 
     /// Get a plaintext with the given value in the first slot
-    fn plaintext_int(val: u32, params: &BGVParams<TestCurve>) -> Plaintext<TestCurve> {
+    fn plaintext_int(
+        val: Scalar<TestCurve>,
+        params: &BGVParams<TestCurve>,
+    ) -> Plaintext<TestCurve> {
         let mut plaintext = Plaintext::new(params);
         plaintext.set_element(0, val);
 
@@ -96,7 +100,7 @@ mod test {
 
     /// Get the ciphertext with the given value in the first slot
     fn encrypt_int(
-        value: u32,
+        value: Scalar<TestCurve>,
         keypair: &BGVKeypair<TestCurve>,
         params: &BGVParams<TestCurve>,
     ) -> Ciphertext<TestCurve> {
@@ -111,8 +115,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Add a ciphertext with a plaintext
-        let val1 = rng.next_u32() / 2;
-        let val2 = rng.next_u32() / 2;
+        let val1 = rng.next_u64().into();
+        let val2 = rng.next_u64().into();
 
         let plaintext = plaintext_int(val2, &params);
         let ciphertext = encrypt_int(val1, &keypair, &params);
@@ -134,9 +138,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Multiply a ciphertext with a plaintext
-        let range = 0..(1u32 << 16);
-        let val1 = rng.gen_range(range.clone());
-        let val2 = rng.gen_range(range);
+        let val1 = rng.next_u64().into();
+        let val2 = rng.next_u64().into();
 
         let plaintext = plaintext_int(val2, &params);
         let ciphertext = encrypt_int(val1, &keypair, &params);
@@ -158,8 +161,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Add two ciphertexts
-        let val1 = rng.next_u32() / 2;
-        let val2 = rng.next_u32() / 2;
+        let val1 = rng.next_u64().into();
+        let val2 = rng.next_u64().into();
 
         let ciphertext1 = encrypt_int(val1, &keypair, &params);
         let ciphertext2 = encrypt_int(val2, &keypair, &params);
@@ -181,9 +184,8 @@ mod test {
         let (params, mut keypair) = setup_fhe();
 
         // Multiply two ciphertexts
-        let range = 0..(1u32 << 16);
-        let val1 = rng.gen_range(range.clone());
-        let val2 = rng.gen_range(range);
+        let val1 = rng.next_u64().into();
+        let val2 = rng.next_u64().into();
 
         let ciphertext1 = encrypt_int(val1, &keypair, &params);
         let ciphertext2 = encrypt_int(val2, &keypair, &params);
