@@ -18,6 +18,7 @@ mod ffi_inner {
         // `FHE_Params`
         type FHE_Params;
         fn new_fhe_params(n_mults: i32, drown_sec: i32) -> UniquePtr<FHE_Params>;
+        fn n_plaintext_slots(self: &FHE_Params) -> u32;
         fn basic_generation_mod_prime(self: Pin<&mut FHE_Params>, plaintext_length: i32);
         fn param_generation_with_modulus(self: Pin<&mut FHE_Params>, plaintext_modulus: &bigint);
         fn get_plaintext_mod(params: &FHE_Params) -> UniquePtr<bigint>;
@@ -36,6 +37,7 @@ mod ffi_inner {
         // `Plaintext`
         type Plaintext_mod_prime;
         fn new_plaintext(params: &FHE_Params) -> UniquePtr<Plaintext_mod_prime>;
+        fn num_slots(self: &Plaintext_mod_prime) -> u32;
         fn get_element_int(plaintext: &Plaintext_mod_prime, idx: usize) -> u32;
         fn set_element_int(plaintext: Pin<&mut Plaintext_mod_prime>, idx: usize, value: u32);
         fn get_element_bigint(plaintext: &Plaintext_mod_prime, idx: usize) -> UniquePtr<bigint>;

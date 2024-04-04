@@ -39,6 +39,11 @@ impl<C: CurveGroup> Plaintext<C> {
         Self { inner, _phantom: PhantomData }
     }
 
+    /// Get the number of slots in the plaintext
+    pub fn num_slots(&self) -> u32 {
+        self.inner.num_slots()
+    }
+
     /// Set the value of an element in the plaintext
     pub fn set_element(&mut self, idx: usize, value: Scalar<C>) {
         let val_bigint = scalar_to_ffi_bigint(value);
