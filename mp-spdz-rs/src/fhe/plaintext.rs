@@ -6,14 +6,15 @@ use std::{
 };
 
 use ark_ec::CurveGroup;
+use ark_mpc::algebra::Scalar;
 use cxx::UniquePtr;
 
 use crate::ffi::{
-    add_plaintexts, get_element_int, mul_plaintexts, new_plaintext, set_element_int,
+    add_plaintexts, get_element_bigint, mul_plaintexts, new_plaintext, set_element_bigint,
     sub_plaintexts, Plaintext_mod_prime,
 };
 
-use super::params::BGVParams;
+use super::{ffi_bigint_to_scalar, params::BGVParams, scalar_to_ffi_bigint};
 
 /// A plaintext in the BGV implementation
 ///
@@ -39,13 +40,15 @@ impl<C: CurveGroup> Plaintext<C> {
     }
 
     /// Set the value of an element in the plaintext
-    pub fn set_element(&mut self, idx: usize, value: u32) {
-        set_element_int(self.inner.pin_mut(), idx, value)
+    pub fn set_element(&mut self, idx: usize, value: Scalar<C>) {
+        let val_bigint = scalar_to_ffi_bigint(value);
+        set_element_bigint(self.inner.pin_mut(), idx, val_bigint.as_ref().unwrap());
     }
 
     /// Get the value of an element in the plaintext
-    pub fn get_element(&self, idx: usize) -> u32 {
-        get_element_int(self.as_ref(), idx)
+    pub fn get_element(&self, idx: usize) -> Scalar<C> {
+        let val_bigint = get_element_bigint(self.as_ref(), idx);
+        ffi_bigint_to_scalar(val_bigint.as_ref().unwrap())
     }
 }
 
@@ -84,7 +87,7 @@ impl<C: CurveGroup> Mul<&Plaintext<C>> for &Plaintext<C> {
 
 #[cfg(test)]
 mod tests {
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{thread_rng, RngCore};
 
     use super::*;
     use crate::TestCurve;
@@ -98,8 +101,8 @@ mod tests {
     fn test_add() {
         let mut rng = thread_rng();
         let params = get_params();
-        let val1 = rng.next_u32() / 2;
-        let val2 = rng.next_u32() / 2;
+        let val1: Scalar<TestCurve> = rng.next_u64().into();
+        let val2: Scalar<TestCurve> = rng.next_u32().into();
 
         let mut plaintext1 = Plaintext::new(&params);
         let mut plaintext2 = Plaintext::new(&params);
@@ -115,8 +118,8 @@ mod tests {
     fn test_sub() {
         let mut rng = thread_rng();
         let params = get_params();
-        let val1 = rng.next_u32();
-        let val2 = rng.gen_range(0..val1);
+        let val1: Scalar<TestCurve> = rng.next_u64().into();
+        let val2: Scalar<TestCurve> = rng.next_u32().into();
 
         let mut plaintext1 = Plaintext::new(&params);
         let mut plaintext2 = Plaintext::new(&params);
@@ -132,9 +135,8 @@ mod tests {
     fn test_mul() {
         let mut rng = thread_rng();
         let params = get_params();
-        let range = 0..(1u32 << 16);
-        let val1 = rng.gen_range(range.clone());
-        let val2 = rng.gen_range(range);
+        let val1: Scalar<TestCurve> = rng.next_u64().into();
+        let val2: Scalar<TestCurve> = rng.next_u64().into();
 
         let mut plaintext1 = Plaintext::new(&params);
         let mut plaintext2 = Plaintext::new(&params);
