@@ -19,6 +19,7 @@ mod ffi_inner {
         type FHE_Params;
         fn new_fhe_params(n_mults: i32, drown_sec: i32) -> UniquePtr<FHE_Params>;
         fn basic_generation_mod_prime(self: Pin<&mut FHE_Params>, plaintext_length: i32);
+        fn param_generation_with_modulus(self: Pin<&mut FHE_Params>, plaintext_modulus: &bigint);
         fn get_plaintext_mod(params: &FHE_Params) -> UniquePtr<bigint>;
 
         // `FHE Keys`

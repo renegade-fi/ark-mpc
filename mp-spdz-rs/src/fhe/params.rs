@@ -1,12 +1,12 @@
 //! FHE setup parameters
 
 use ark_ec::CurveGroup;
-use ark_mpc::algebra::Scalar;
+use ark_ff::{BigInteger, PrimeField};
 use std::marker::PhantomData;
 
 use cxx::UniquePtr;
 
-use crate::ffi::{new_fhe_params, FHE_Params};
+use crate::ffi::{bigint_from_be_bytes, new_fhe_params, FHE_Params};
 
 /// The default drowning security parameter
 const DEFAULT_DROWN_SEC: i32 = 128;
@@ -31,9 +31,10 @@ impl<C: CurveGroup> BGVParams<C> {
         let mut inner = new_fhe_params(n_mults as i32, DEFAULT_DROWN_SEC);
 
         // Generate the parameters
-        let bits = Scalar::<C>::bit_length() as i32;
-        inner.pin_mut().basic_generation_mod_prime(bits);
+        let mut mod_bytes = C::ScalarField::MODULUS.to_bytes_be();
+        let mod_bigint = unsafe { bigint_from_be_bytes(mod_bytes.as_mut_ptr(), mod_bytes.len()) };
 
+        inner.pin_mut().param_generation_with_modulus(mod_bigint.as_ref().unwrap());
         Self { inner, _phantom: PhantomData }
     }
 
