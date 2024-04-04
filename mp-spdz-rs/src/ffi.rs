@@ -25,12 +25,9 @@ mod ffi_inner {
         fn new_keypair(params: &FHE_Params) -> UniquePtr<FHE_KeyPair>;
         fn get_pk(keypair: &FHE_KeyPair) -> UniquePtr<FHE_PK>;
         fn get_sk(keypair: &FHE_KeyPair) -> UniquePtr<FHE_SK>;
-        fn encrypt(keypair: &FHE_KeyPair, plaintext: &Plaintext_mod_prime)
-            -> UniquePtr<Ciphertext>;
-        fn decrypt(
-            keypair: Pin<&mut FHE_KeyPair>,
-            ciphertext: &Ciphertext,
-        ) -> UniquePtr<Plaintext_mod_prime>;
+        fn encrypt(pk: &FHE_PK, plaintext: &Plaintext_mod_prime) -> UniquePtr<Ciphertext>;
+        fn decrypt(sk: Pin<&mut FHE_SK>, ciphertext: &Ciphertext)
+            -> UniquePtr<Plaintext_mod_prime>;
 
         // `Plaintext`
         type Plaintext_mod_prime;
@@ -95,14 +92,21 @@ mod test {
         params: &FHE_Params,
     ) -> UniquePtr<Ciphertext> {
         let plaintext = plaintext_int(value, params);
-        encrypt(keypair, &plaintext)
+        encrypt(&get_pk(keypair), &plaintext)
+    }
+
+    /// Decrypt a ciphertext and return the plaintext element in the zero'th
+    /// slot
+    fn decrypt_int(keypair: &FHE_KeyPair, ciphertext: &Ciphertext) -> u32 {
+        let plaintext = decrypt(get_sk(keypair).pin_mut(), ciphertext);
+        get_element_int(&plaintext, 0)
     }
 
     /// Tests addition of a plaintext to a ciphertext
     #[test]
     fn test_plaintext_addition() {
         let mut rng = thread_rng();
-        let (params, mut keypair) = setup_fhe(0, 254);
+        let (params, keypair) = setup_fhe(0, 254);
 
         // Add a plaintext to a ciphertext
         let val1 = rng.next_u32() / 2;
@@ -114,18 +118,17 @@ mod test {
         let sum = add_plaintext(ciphertext.as_ref().unwrap(), plaintext.as_ref().unwrap());
 
         // Decrypt the sum
-        let plaintext_res = decrypt(keypair.pin_mut(), &sum);
-        let pt_u32 = get_element_int(&plaintext_res, 0);
+        let plaintext_res = decrypt_int(keypair.as_ref().unwrap(), &sum);
         let expected = val1 + val2;
 
-        assert_eq!(pt_u32, expected);
+        assert_eq!(plaintext_res, expected);
     }
 
     /// Tests multiplication of a plaintext to a ciphertext
     #[test]
     fn test_plaintext_multiplication() {
         let mut rng = thread_rng();
-        let (params, mut keypair) = setup_fhe(1, 254);
+        let (params, keypair) = setup_fhe(1, 254);
 
         // Multiply a plaintext to a ciphertext
         let range = 0..(2u32.pow(16));
@@ -138,18 +141,17 @@ mod test {
         let product = mul_plaintext(ciphertext.as_ref().unwrap(), plaintext.as_ref().unwrap());
 
         // Decrypt the product
-        let plaintext_res = decrypt(keypair.pin_mut(), &product);
-        let pt_u32 = get_element_int(&plaintext_res, 0);
+        let plaintext_res = decrypt_int(keypair.as_ref().unwrap(), &product);
         let expected = val1 * val2;
 
-        assert_eq!(pt_u32, expected);
+        assert_eq!(plaintext_res, expected);
     }
 
     /// Tests addition of two encrypted values
     #[test]
     fn test_encrypted_addition() {
         let mut rng = thread_rng();
-        let (params, mut keypair) = setup_fhe(0, 254);
+        let (params, keypair) = setup_fhe(0, 254);
 
         // Add two ciphertexts, divide by two to avoid overflow
         let val1 = rng.next_u32() / 2;
@@ -161,18 +163,17 @@ mod test {
         let sum = add_ciphertexts(cipher1.as_ref().unwrap(), cipher2.as_ref().unwrap());
 
         // Decrypt the sum
-        let plaintext_res = decrypt(keypair.pin_mut(), &sum);
-        let pt_u32 = get_element_int(&plaintext_res, 0);
+        let plaintext_res = decrypt_int(keypair.as_ref().unwrap(), &sum);
         let expected = val1 + val2;
 
-        assert_eq!(pt_u32, expected);
+        assert_eq!(plaintext_res, expected);
     }
 
     /// Tests multiplication of two encrypted values
     #[test]
     fn test_encrypted_multiplication() {
         let mut rng = thread_rng();
-        let (params, mut keypair) = setup_fhe(1, 254);
+        let (params, keypair) = setup_fhe(1, 254);
 
         // Multiply two ciphertexts; capped bit length to avoid overflow
         let range = 0..(2u32.pow(16));
@@ -190,10 +191,9 @@ mod test {
         );
 
         // Decrypt the product
-        let plaintext_res = decrypt(keypair.pin_mut(), &product);
-        let pt_u32 = get_element_int(&plaintext_res, 0);
+        let plaintext_res = decrypt_int(keypair.as_ref().unwrap(), &product);
         let expected = val1 * val2;
 
-        assert_eq!(pt_u32, expected);
+        assert_eq!(plaintext_res, expected);
     }
 }
