@@ -7,6 +7,7 @@
 pub mod ffi;
 pub mod fhe;
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod test_helpers {
     /// The curve group to use for testing
