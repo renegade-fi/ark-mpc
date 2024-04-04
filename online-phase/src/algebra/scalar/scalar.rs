@@ -68,6 +68,11 @@ impl<C: CurveGroup> Scalar<C> {
         self.0
     }
 
+    /// Get the bit length of the scalar
+    pub fn bit_length() -> usize {
+        C::ScalarField::MODULUS_BIT_SIZE as usize
+    }
+
     /// Sample a random field element
     pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
         Self(C::ScalarField::rand(rng))
