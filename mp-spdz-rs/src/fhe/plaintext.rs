@@ -26,6 +26,18 @@ pub struct Plaintext<C: CurveGroup> {
     _phantom: PhantomData<C>,
 }
 
+impl<C: CurveGroup> Clone for Plaintext<C> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone().into()
+    }
+}
+
+impl<C: CurveGroup> From<UniquePtr<Plaintext_mod_prime>> for Plaintext<C> {
+    fn from(inner: UniquePtr<Plaintext_mod_prime>) -> Self {
+        Self { inner, _phantom: PhantomData }
+    }
+}
+
 impl<C: CurveGroup> AsRef<Plaintext_mod_prime> for Plaintext<C> {
     fn as_ref(&self) -> &Plaintext_mod_prime {
         self.inner.as_ref().unwrap()
@@ -54,12 +66,6 @@ impl<C: CurveGroup> Plaintext<C> {
     pub fn get_element(&self, idx: usize) -> Scalar<C> {
         let val_bigint = get_element_bigint(self.as_ref(), idx);
         ffi_bigint_to_scalar(val_bigint.as_ref().unwrap())
-    }
-}
-
-impl<C: CurveGroup> From<UniquePtr<Plaintext_mod_prime>> for Plaintext<C> {
-    fn from(inner: UniquePtr<Plaintext_mod_prime>) -> Self {
-        Self { inner, _phantom: PhantomData }
     }
 }
 

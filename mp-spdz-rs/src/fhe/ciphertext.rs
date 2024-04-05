@@ -33,6 +33,12 @@ impl<C: CurveGroup> Ciphertext<C> {
     }
 }
 
+impl<C: CurveGroup> Clone for Ciphertext<C> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone().into()
+    }
+}
+
 impl<C: CurveGroup> From<UniquePtr<FfiCiphertext>> for Ciphertext<C> {
     fn from(inner: UniquePtr<FfiCiphertext>) -> Self {
         Self { inner, _phantom: PhantomData }

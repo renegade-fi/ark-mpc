@@ -18,6 +18,17 @@ pub struct BGVParams<C: CurveGroup> {
     /// Phantom
     _phantom: PhantomData<C>,
 }
+impl<C: CurveGroup> Clone for BGVParams<C> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone().into()
+    }
+}
+
+impl<C: CurveGroup> From<UniquePtr<FHE_Params>> for BGVParams<C> {
+    fn from(inner: UniquePtr<FHE_Params>) -> Self {
+        Self { inner, _phantom: PhantomData }
+    }
+}
 
 impl<C: CurveGroup> AsRef<FHE_Params> for BGVParams<C> {
     fn as_ref(&self) -> &FHE_Params {
