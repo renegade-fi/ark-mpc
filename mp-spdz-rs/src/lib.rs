@@ -3,6 +3,12 @@
 //!
 //! This library is intended to be a thin wrapper around the MP-SPDZ library,
 //! and to internalize build and link procedure with the foreign ABI
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+#![allow(incomplete_features)]
+#![allow(ambiguous_glob_reexports)]
+#![feature(inherent_associated_types)]
+#![feature(stmt_expr_attributes)]
 
 pub mod ffi;
 pub mod fhe;
@@ -10,6 +16,8 @@ pub mod fhe;
 #[allow(clippy::items_after_test_module)]
 #[cfg(any(test, feature = "test-helpers"))]
 mod test_helpers {
+    //! Helper methods for unit tests
+
     /// The curve group to use for testing
     pub type TestCurve = ark_bn254::G1Projective;
 }
@@ -18,6 +26,7 @@ pub use test_helpers::*;
 
 #[cfg(feature = "test-helpers")]
 pub mod benchmark_helpers {
+    //! Helper methods for benchmarks
     use ark_ec::CurveGroup;
     use ark_mpc::algebra::Scalar;
     use rand::thread_rng;

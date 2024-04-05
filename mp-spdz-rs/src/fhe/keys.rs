@@ -20,6 +20,18 @@ pub struct BGVPublicKey<C: CurveGroup> {
     _phantom: PhantomData<C>,
 }
 
+impl<C: CurveGroup> Clone for BGVPublicKey<C> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone().into()
+    }
+}
+
+impl<C: CurveGroup> From<UniquePtr<FHE_PK>> for BGVPublicKey<C> {
+    fn from(inner: UniquePtr<FHE_PK>) -> Self {
+        Self { inner, _phantom: PhantomData }
+    }
+}
+
 impl<C: CurveGroup> AsRef<FHE_PK> for BGVPublicKey<C> {
     fn as_ref(&self) -> &FHE_PK {
         self.inner.as_ref().unwrap()
@@ -44,6 +56,18 @@ pub struct BGVSecretKey<C: CurveGroup> {
     pub(crate) inner: UniquePtr<FHE_SK>,
     /// Phantom
     _phantom: PhantomData<C>,
+}
+
+impl<C: CurveGroup> Clone for BGVSecretKey<C> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone().into()
+    }
+}
+
+impl<C: CurveGroup> From<UniquePtr<FHE_SK>> for BGVSecretKey<C> {
+    fn from(inner: UniquePtr<FHE_SK>) -> Self {
+        Self { inner, _phantom: PhantomData }
+    }
 }
 
 impl<C: CurveGroup> AsRef<FHE_SK> for BGVSecretKey<C> {
@@ -72,19 +96,26 @@ pub struct BGVKeypair<C: CurveGroup> {
     pub secret_key: BGVSecretKey<C>,
 }
 
-impl<C: CurveGroup> BGVKeypair<C> {
-    /// Create a new keypair
-    pub fn new(keypair: UniquePtr<FHE_KeyPair>) -> Self {
-        let pk = BGVPublicKey::new(ffi_get_pk(keypair.as_ref().unwrap()));
-        let sk = BGVSecretKey::new(ffi_get_sk(keypair.as_ref().unwrap()));
-
-        Self { public_key: pk, secret_key: sk }
+impl<C: CurveGroup> Clone for BGVKeypair<C> {
+    fn clone(&self) -> Self {
+        Self { public_key: self.public_key.clone(), secret_key: self.secret_key.clone() }
     }
+}
 
+impl<C: CurveGroup> From<UniquePtr<FHE_KeyPair>> for BGVKeypair<C> {
+    fn from(keypair: UniquePtr<FHE_KeyPair>) -> Self {
+        let public_key = BGVPublicKey::new(ffi_get_pk(keypair.as_ref().unwrap()));
+        let secret_key = BGVSecretKey::new(ffi_get_sk(keypair.as_ref().unwrap()));
+
+        Self { public_key, secret_key }
+    }
+}
+
+impl<C: CurveGroup> BGVKeypair<C> {
     /// Generate a keypair
     pub fn gen(params: &BGVParams<C>) -> Self {
         let keypair = ffi_gen_keypair(params.as_ref());
-        Self::new(keypair)
+        keypair.into()
     }
 
     /// Encrypt a plaintext
