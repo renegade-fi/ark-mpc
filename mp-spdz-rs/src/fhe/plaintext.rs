@@ -72,6 +72,14 @@ impl<C: CurveGroup> Plaintext<C> {
         self.inner.num_slots()
     }
 
+    /// Set each slot with the given value
+    pub fn set_all(&mut self, value: Scalar<C>) {
+        let val_bigint = scalar_to_ffi_bigint(value);
+        for i in 0..self.num_slots() {
+            set_element_bigint(self.inner.pin_mut(), i as usize, val_bigint.as_ref().unwrap());
+        }
+    }
+
     /// Set the value of an element in the plaintext
     pub fn set_element(&mut self, idx: usize, value: Scalar<C>) {
         let val_bigint = scalar_to_ffi_bigint(value);

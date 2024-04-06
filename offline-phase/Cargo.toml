@@ -4,3 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# === Crypto + Arithmetic === #
+ark-ec = "0.4"
+ark-ff = "0.4"
+ark-mpc = { path = "../online-phase" }
+
+mp-spdz-rs = { path = "../mp-spdz-rs" }
+
+# === Runtime + Network === #
+futures = "0.3"
+
+# === Misc Dependencies === #
+rand = "0.8"
+
+[dev-dependencies]
+ark-bn254 = "0.4"
+ark-mpc = { path = "../online-phase", features = ["test_helpers"] }
+tokio = { version = "1", features = ["full"] }

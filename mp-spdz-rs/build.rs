@@ -82,12 +82,12 @@ fn get_host_triple() -> Vec<String> {
 /// Add a link path to the linker
 fn add_link_path(lib: &str) {
     let lib_path = find_lib_path(lib);
-    println!("cargo:rustc-link-arg=-L{}", lib_path);
+    println!("cargo:rustc-link-search={lib_path}");
 }
 
 /// Link a library into the object
 fn link_lib(lib: &str) {
-    println!("cargo:rustc-link-arg=-l{}", lib);
+    println!("cargo:rustc-link-lib=static={lib}");
 }
 
 /// Find the include location for a package
