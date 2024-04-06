@@ -128,7 +128,7 @@ fn bench_ciphertext_multiplication(c: &mut Criterion) {
                 let ciphertext2 = keypair.encrypt(&random_plaintext(&params));
 
                 let start = std::time::Instant::now();
-                let _ = &ciphertext1.mul_ciphertext(&ciphertext2, &keypair.public_key);
+                let _ = &ciphertext1.mul_ciphertext(&ciphertext2, &keypair.public_key());
                 total_time += start.elapsed();
             }
 

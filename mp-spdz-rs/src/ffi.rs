@@ -23,6 +23,9 @@ mod ffi_inner {
         type FHE_Params;
         fn new_fhe_params(n_mults: i32, drown_sec: i32) -> UniquePtr<FHE_Params>;
         fn clone(self: &FHE_Params) -> UniquePtr<FHE_Params>;
+        fn to_rust_bytes(self: &FHE_Params) -> Vec<u8>;
+        fn fhe_params_from_rust_bytes(data: &[u8]) -> UniquePtr<FHE_Params>;
+
         fn n_plaintext_slots(self: &FHE_Params) -> u32;
         fn basic_generation_mod_prime(self: Pin<&mut FHE_Params>, plaintext_length: i32);
         fn param_generation_with_modulus(self: Pin<&mut FHE_Params>, plaintext_modulus: &bigint);
@@ -33,9 +36,18 @@ mod ffi_inner {
         type FHE_PK;
         type FHE_SK;
         fn new_keypair(params: &FHE_Params) -> UniquePtr<FHE_KeyPair>;
+
         fn clone(self: &FHE_KeyPair) -> UniquePtr<FHE_KeyPair>;
         fn clone(self: &FHE_PK) -> UniquePtr<FHE_PK>;
         fn clone(self: &FHE_SK) -> UniquePtr<FHE_SK>;
+
+        fn to_rust_bytes(self: &FHE_PK) -> Vec<u8>;
+        fn to_rust_bytes(self: &FHE_SK) -> Vec<u8>;
+        fn to_rust_bytes(self: &FHE_KeyPair) -> Vec<u8>;
+
+        fn pk_from_rust_bytes(data: &[u8], params: &FHE_Params) -> UniquePtr<FHE_PK>;
+        fn sk_from_rust_bytes(data: &[u8], params: &FHE_Params) -> UniquePtr<FHE_SK>;
+        fn keypair_from_rust_bytes(data: &[u8], params: &FHE_Params) -> UniquePtr<FHE_KeyPair>;
 
         fn get_pk(keypair: &FHE_KeyPair) -> UniquePtr<FHE_PK>;
         fn get_sk(keypair: &FHE_KeyPair) -> UniquePtr<FHE_SK>;
@@ -47,6 +59,12 @@ mod ffi_inner {
         type Plaintext_mod_prime;
         fn new_plaintext(params: &FHE_Params) -> UniquePtr<Plaintext_mod_prime>;
         fn clone(self: &Plaintext_mod_prime) -> UniquePtr<Plaintext_mod_prime>;
+        fn to_rust_bytes(self: &Plaintext_mod_prime) -> Vec<u8>;
+        fn plaintext_from_rust_bytes(
+            data: &[u8],
+            params: &FHE_Params,
+        ) -> UniquePtr<Plaintext_mod_prime>;
+
         fn num_slots(self: &Plaintext_mod_prime) -> u32;
         fn get_element_int(plaintext: &Plaintext_mod_prime, idx: usize) -> u32;
         fn set_element_int(plaintext: Pin<&mut Plaintext_mod_prime>, idx: usize, value: u32);
@@ -69,6 +87,9 @@ mod ffi_inner {
         // `Ciphertext`
         type Ciphertext;
         fn clone(self: &Ciphertext) -> UniquePtr<Ciphertext>;
+        fn to_rust_bytes(self: &Ciphertext) -> Vec<u8>;
+        fn ciphertext_from_rust_bytes(data: &[u8], params: &FHE_Params) -> UniquePtr<Ciphertext>;
+
         fn add_plaintext(c0: &Ciphertext, p1: &Plaintext_mod_prime) -> UniquePtr<Ciphertext>;
         fn mul_plaintext(c0: &Ciphertext, p1: &Plaintext_mod_prime) -> UniquePtr<Ciphertext>;
         fn add_ciphertexts(c0: &Ciphertext, c1: &Ciphertext) -> UniquePtr<Ciphertext>;
