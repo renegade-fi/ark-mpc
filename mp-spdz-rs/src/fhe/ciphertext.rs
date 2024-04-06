@@ -8,13 +8,16 @@ use std::{
 use ark_ec::CurveGroup;
 use cxx::UniquePtr;
 
-use crate::ffi::{
-    add_ciphertexts as ffi_add_cipher, add_plaintext as ffi_add_plaintext,
-    mul_ciphertexts as ffi_mul_ciphertext, mul_plaintext as ffi_mul_plaintext,
-    Ciphertext as FfiCiphertext,
+use crate::{
+    ffi::{
+        add_ciphertexts as ffi_add_cipher, add_plaintext as ffi_add_plaintext,
+        ciphertext_from_rust_bytes, mul_ciphertexts as ffi_mul_ciphertext,
+        mul_plaintext as ffi_mul_plaintext, Ciphertext as FfiCiphertext,
+    },
+    FromBytesWithParams, ToBytes,
 };
 
-use super::{keys::BGVPublicKey, plaintext::Plaintext};
+use super::{keys::BGVPublicKey, params::BGVParams, plaintext::Plaintext};
 
 /// A ciphertext in the BGV implementation
 ///
@@ -51,6 +54,18 @@ impl<C: CurveGroup> AsRef<FfiCiphertext> for Ciphertext<C> {
     }
 }
 
+impl<C: CurveGroup> ToBytes for Ciphertext<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref().to_rust_bytes()
+    }
+}
+
+impl<C: CurveGroup> FromBytesWithParams<C> for Ciphertext<C> {
+    fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
+        ciphertext_from_rust_bytes(data, params.as_ref()).into()
+    }
+}
+
 impl<C: CurveGroup> Add<&Plaintext<C>> for &Ciphertext<C> {
     type Output = Ciphertext<C>;
 
@@ -81,7 +96,7 @@ mod test {
     use rand::thread_rng;
 
     use crate::fhe::{keys::BGVKeypair, params::BGVParams, plaintext::Plaintext};
-    use crate::TestCurve;
+    use crate::{compare_bytes, FromBytesWithParams, TestCurve, ToBytes};
 
     use super::Ciphertext;
 
@@ -112,6 +127,20 @@ mod test {
     ) -> Ciphertext<TestCurve> {
         let plaintext = plaintext_int(value, params);
         keypair.encrypt(&plaintext)
+    }
+
+    /// Tests serialization and deserialization of a ciphertext
+    #[test]
+    fn test_serde() {
+        let mut rng = thread_rng();
+        let (params, keypair) = setup_fhe();
+        let plaintext = plaintext_int(Scalar::random(&mut rng), &params);
+        let ciphertext = keypair.encrypt(&plaintext);
+
+        let serialized = ciphertext.to_bytes();
+        let deserialized: Ciphertext<TestCurve> = Ciphertext::from_bytes(&serialized, &params);
+
+        assert!(compare_bytes(&deserialized, &ciphertext));
     }
 
     /// Tests addition of a ciphertext with a plaintext
@@ -196,7 +225,7 @@ mod test {
         let ciphertext1 = encrypt_int(val1, &keypair, &params);
         let ciphertext2 = encrypt_int(val2, &keypair, &params);
 
-        let product = ciphertext1.mul_ciphertext(&ciphertext2, &keypair.public_key);
+        let product = ciphertext1.mul_ciphertext(&ciphertext2, &keypair.public_key());
 
         // Decrypt the product
         let plaintext_res = keypair.decrypt(&product);

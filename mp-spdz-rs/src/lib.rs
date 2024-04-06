@@ -13,14 +13,34 @@
 pub mod ffi;
 pub mod fhe;
 
+/// A trait for serializing to bytes
+pub trait ToBytes {
+    /// Serialize to bytes
+    fn to_bytes(&self) -> Vec<u8>;
+}
+
+/// A trait for deserializing from bytes with BGV parameters in scope
+pub trait FromBytesWithParams<C: CurveGroup> {
+    /// Deserialize from bytes
+    fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self;
+}
+
 #[allow(clippy::items_after_test_module)]
 #[cfg(any(test, feature = "test-helpers"))]
 mod test_helpers {
     //! Helper methods for unit tests
+    use super::ToBytes;
 
     /// The curve group to use for testing
     pub type TestCurve = ark_bn254::G1Projective;
+
+    /// Compare two values by byte-serializing them
+    pub fn compare_bytes<T: ToBytes>(a: &T, b: &T) -> bool {
+        a.to_bytes() == b.to_bytes()
+    }
 }
+use ark_ec::CurveGroup;
+use fhe::params::BGVParams;
 #[cfg(any(test, feature = "test-helpers"))]
 pub use test_helpers::*;
 

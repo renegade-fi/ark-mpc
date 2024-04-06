@@ -2,11 +2,12 @@
 
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField};
+use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize, Serializer};
 use std::marker::PhantomData;
 
 use cxx::UniquePtr;
 
-use crate::ffi::{bigint_from_be_bytes, new_fhe_params, FHE_Params};
+use crate::ffi::{bigint_from_be_bytes, fhe_params_from_rust_bytes, new_fhe_params, FHE_Params};
 
 /// The default drowning security parameter
 const DEFAULT_DROWN_SEC: i32 = 128;
@@ -18,6 +19,7 @@ pub struct BGVParams<C: CurveGroup> {
     /// Phantom
     _phantom: PhantomData<C>,
 }
+
 impl<C: CurveGroup> Clone for BGVParams<C> {
     fn clone(&self) -> Self {
         self.as_ref().clone().into()
@@ -57,5 +59,51 @@ impl<C: CurveGroup> BGVParams<C> {
     /// Get the number of plaintext slots the given parameters support
     pub fn plaintext_slots(&self) -> u32 {
         self.as_ref().n_plaintext_slots()
+    }
+}
+
+impl<C: CurveGroup> Serialize for BGVParams<C> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes = self.as_ref().to_rust_bytes();
+        let mut seq = serializer.serialize_seq(Some(bytes.len()))?;
+        for byte in bytes.into_iter() {
+            seq.serialize_element(&byte)?;
+        }
+
+        seq.end()
+    }
+}
+
+impl<'de, C: CurveGroup> Deserialize<'de> for BGVParams<C> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        let params = fhe_params_from_rust_bytes(&bytes);
+
+        Ok(params.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::fhe::params::BGVParams;
+    use crate::TestCurve;
+
+    /// Tests serialization and deserialization of the FHE parameters
+    #[test]
+    fn test_serde_params() {
+        let params = BGVParams::<TestCurve>::new(1 /* n_mults */);
+
+        let serialized = serde_json::to_vec(&params).unwrap();
+        let deserialized: BGVParams<TestCurve> = serde_json::from_slice(&serialized).unwrap();
+
+        // Compare by re-serializing
+        let re_serialized = serde_json::to_vec(&deserialized).unwrap();
+        assert_eq!(re_serialized, serialized);
     }
 }

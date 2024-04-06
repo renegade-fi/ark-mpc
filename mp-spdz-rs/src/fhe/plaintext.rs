@@ -9,9 +9,12 @@ use ark_ec::CurveGroup;
 use ark_mpc::algebra::Scalar;
 use cxx::UniquePtr;
 
-use crate::ffi::{
-    add_plaintexts, get_element_bigint, mul_plaintexts, new_plaintext, set_element_bigint,
-    sub_plaintexts, Plaintext_mod_prime,
+use crate::{
+    ffi::{
+        add_plaintexts, get_element_bigint, mul_plaintexts, new_plaintext,
+        plaintext_from_rust_bytes, set_element_bigint, sub_plaintexts, Plaintext_mod_prime,
+    },
+    FromBytesWithParams, ToBytes,
 };
 
 use super::{ffi_bigint_to_scalar, params::BGVParams, scalar_to_ffi_bigint};
@@ -41,6 +44,19 @@ impl<C: CurveGroup> From<UniquePtr<Plaintext_mod_prime>> for Plaintext<C> {
 impl<C: CurveGroup> AsRef<Plaintext_mod_prime> for Plaintext<C> {
     fn as_ref(&self) -> &Plaintext_mod_prime {
         self.inner.as_ref().unwrap()
+    }
+}
+
+impl<C: CurveGroup> ToBytes for Plaintext<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref().to_rust_bytes()
+    }
+}
+
+impl<C: CurveGroup> FromBytesWithParams<C> for Plaintext<C> {
+    fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
+        let inner = plaintext_from_rust_bytes(data, params.as_ref());
+        Self { inner, _phantom: PhantomData }
     }
 }
 
@@ -101,11 +117,23 @@ mod tests {
     use rand::thread_rng;
 
     use super::*;
-    use crate::TestCurve;
+    use crate::{compare_bytes, TestCurve};
 
     /// A helper to get parameters for the tests
     fn get_params() -> BGVParams<TestCurve> {
         BGVParams::new(1 /* n_mults */)
+    }
+
+    /// Tests serialization and deserialization of a plaintext
+    #[test]
+    fn test_serde() {
+        let params = get_params();
+        let plaintext = Plaintext::new(&params);
+
+        let serialized = plaintext.to_bytes();
+        let deserialized = Plaintext::from_bytes(&serialized, &params);
+
+        assert!(compare_bytes(&plaintext, &deserialized))
     }
 
     #[test]

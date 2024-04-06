@@ -5,12 +5,20 @@ use std::marker::PhantomData;
 use ark_ec::CurveGroup;
 use cxx::UniquePtr;
 
-use crate::ffi::{
-    decrypt as ffi_decrypt, encrypt as ffi_encrypt, get_pk as ffi_get_pk, get_sk as ffi_get_sk,
-    new_keypair as ffi_gen_keypair, FHE_KeyPair, FHE_PK, FHE_SK,
+use crate::{
+    ffi::{
+        decrypt as ffi_decrypt, encrypt as ffi_encrypt, get_pk as ffi_get_pk, get_sk as ffi_get_sk,
+        keypair_from_rust_bytes, new_keypair as ffi_gen_keypair, pk_from_rust_bytes,
+        sk_from_rust_bytes, FHE_KeyPair, FHE_PK, FHE_SK,
+    },
+    FromBytesWithParams, ToBytes,
 };
 
 use super::{ciphertext::Ciphertext, params::BGVParams, plaintext::Plaintext};
+
+// --------------
+// | Public Key |
+// --------------
 
 /// A public key in the BGV implementation
 pub struct BGVPublicKey<C: CurveGroup> {
@@ -50,6 +58,23 @@ impl<C: CurveGroup> BGVPublicKey<C> {
     }
 }
 
+impl<C: CurveGroup> ToBytes for BGVPublicKey<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref().to_rust_bytes()
+    }
+}
+
+impl<C: CurveGroup> FromBytesWithParams<C> for BGVPublicKey<C> {
+    fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
+        let pk = pk_from_rust_bytes(data, params.as_ref());
+        Self::new(pk)
+    }
+}
+
+// --------------
+// | Secret Key |
+// --------------
+
 /// A secret key in the BGV implementation
 pub struct BGVSecretKey<C: CurveGroup> {
     /// The wrapped MP-SPDZ `SecretKey`
@@ -88,26 +113,46 @@ impl<C: CurveGroup> BGVSecretKey<C> {
     }
 }
 
+impl<C: CurveGroup> ToBytes for BGVSecretKey<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref().to_rust_bytes()
+    }
+}
+
+impl<C: CurveGroup> FromBytesWithParams<C> for BGVSecretKey<C> {
+    fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
+        let sk = sk_from_rust_bytes(data, params.as_ref());
+        Self::new(sk)
+    }
+}
+
+// -----------
+// | Keypair |
+// -----------
+
 /// A keypair in the BGV implementation
 pub struct BGVKeypair<C: CurveGroup> {
-    /// The public key
-    pub public_key: BGVPublicKey<C>,
-    /// The secret key
-    pub secret_key: BGVSecretKey<C>,
+    /// The MP-SPDZ `FHE_KeyPair` containing the public and secret keys
+    pub(crate) inner: UniquePtr<FHE_KeyPair>,
+    /// Phantom
+    _phantom: PhantomData<C>,
 }
 
 impl<C: CurveGroup> Clone for BGVKeypair<C> {
     fn clone(&self) -> Self {
-        Self { public_key: self.public_key.clone(), secret_key: self.secret_key.clone() }
+        Self { inner: self.inner.clone(), _phantom: PhantomData }
     }
 }
 
 impl<C: CurveGroup> From<UniquePtr<FHE_KeyPair>> for BGVKeypair<C> {
     fn from(keypair: UniquePtr<FHE_KeyPair>) -> Self {
-        let public_key = BGVPublicKey::new(ffi_get_pk(keypair.as_ref().unwrap()));
-        let secret_key = BGVSecretKey::new(ffi_get_sk(keypair.as_ref().unwrap()));
+        Self { inner: keypair, _phantom: PhantomData }
+    }
+}
 
-        Self { public_key, secret_key }
+impl<C: CurveGroup> AsRef<FHE_KeyPair> for BGVKeypair<C> {
+    fn as_ref(&self) -> &FHE_KeyPair {
+        self.inner.as_ref().unwrap()
     }
 }
 
@@ -118,13 +163,85 @@ impl<C: CurveGroup> BGVKeypair<C> {
         keypair.into()
     }
 
+    /// Get the public key of the pair
+    pub fn public_key(&self) -> BGVPublicKey<C> {
+        let pk = ffi_get_pk(self.as_ref());
+        pk.into()
+    }
+
+    /// Get the secret key of the pair
+    pub fn secret_key(&self) -> BGVSecretKey<C> {
+        let sk = ffi_get_sk(self.as_ref());
+        sk.into()
+    }
+
     /// Encrypt a plaintext
     pub fn encrypt(&self, plaintext: &Plaintext<C>) -> Ciphertext<C> {
-        self.public_key.encrypt(plaintext)
+        self.public_key().encrypt(plaintext)
     }
 
     /// Decrypt a ciphertext
     pub fn decrypt(&mut self, ciphertext: &Ciphertext<C>) -> Plaintext<C> {
-        self.secret_key.decrypt(ciphertext)
+        self.secret_key().decrypt(ciphertext)
+    }
+}
+
+impl<C: CurveGroup> ToBytes for BGVKeypair<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref().to_rust_bytes()
+    }
+}
+
+impl<C: CurveGroup> FromBytesWithParams<C> for BGVKeypair<C> {
+    fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
+        let keypair = keypair_from_rust_bytes(data, params.as_ref());
+        keypair.into()
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use crate::fhe::keys::{BGVKeypair, BGVPublicKey, BGVSecretKey};
+    use crate::fhe::params::BGVParams;
+    use crate::{compare_bytes, FromBytesWithParams, TestCurve, ToBytes};
+
+    /// Tests serialization and deserialization of the public key
+    #[test]
+    fn test_serde_public_key() {
+        let params = BGVParams::<TestCurve>::new_no_mults();
+        let keypair = BGVKeypair::gen(&params);
+
+        let serialized = keypair.public_key().to_bytes();
+        let deserialized: BGVPublicKey<TestCurve> = BGVPublicKey::from_bytes(&serialized, &params);
+
+        // Compare by re-serializing
+        assert!(compare_bytes(&deserialized, &keypair.public_key()));
+    }
+
+    /// Tests serialization and deserialization of the secret key
+    #[test]
+    fn test_serde_secret_key() {
+        let params = BGVParams::<TestCurve>::new_no_mults();
+        let keypair = BGVKeypair::gen(&params);
+
+        let serialized = keypair.secret_key().to_bytes();
+        let deserialized: BGVSecretKey<TestCurve> = BGVSecretKey::from_bytes(&serialized, &params);
+
+        // Compare by re-serializing
+        assert!(compare_bytes(&deserialized, &keypair.secret_key()));
+    }
+
+    /// Tests serialization and deserialization of the keypair
+    #[test]
+    fn test_serde_keypair() {
+        let params = BGVParams::<TestCurve>::new_no_mults();
+        let keypair = BGVKeypair::gen(&params);
+
+        let serialized = keypair.to_bytes();
+        let deserialized: BGVKeypair<TestCurve> = BGVKeypair::from_bytes(&serialized, &params);
+
+        // Compare by re-serializing
+        assert!(compare_bytes(&deserialized, &keypair));
     }
 }
