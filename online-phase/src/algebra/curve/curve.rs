@@ -23,10 +23,7 @@ use itertools::Itertools;
 use serde::{de::Error as DeError, Deserialize, Serialize};
 
 use crate::{
-    algebra::{
-        macros::*, n_bytes_field, scalar::*, ToBytes, AUTHENTICATED_POINT_RESULT_LEN,
-        AUTHENTICATED_SCALAR_RESULT_LEN,
-    },
+    algebra::{macros::*, scalar::*, ToBytes, AUTHENTICATED_POINT_RESULT_LEN},
     fabric::{ResultHandle, ResultValue},
 };
 
