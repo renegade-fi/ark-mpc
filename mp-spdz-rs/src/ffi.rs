@@ -97,6 +97,11 @@ mod ffi_inner {
     }
 }
 pub use ffi_inner::*;
+unsafe impl Send for FHE_Params {}
+unsafe impl Send for FHE_KeyPair {}
+unsafe impl Send for FHE_PK {}
+unsafe impl Send for Ciphertext {}
+unsafe impl Send for Plaintext_mod_prime {}
 
 #[cfg(test)]
 mod test {
