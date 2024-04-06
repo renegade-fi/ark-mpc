@@ -1,3 +1,5 @@
+#![allow(clippy::unit_arg)]
+
 use ark_mpc::{algebra::Scalar, test_helpers::TestCurve, GrowableBuffer};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::{seq::SliceRandom, thread_rng};

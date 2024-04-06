@@ -20,16 +20,41 @@ pub mod lowgear;
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
+    use ark_ec::CurveGroup;
     use ark_mpc::{
+        algebra::Scalar,
         network::{MockNetwork, UnboundedDuplexStream},
         PARTY0, PARTY1,
     };
     use futures::Future;
+    use mp_spdz_rs::fhe::{
+        ciphertext::Ciphertext, keys::BGVPublicKey, params::BGVParams, plaintext::Plaintext,
+    };
 
     use crate::lowgear::LowGear;
 
     /// The curve used for testing in this crate
     pub type TestCurve = ark_bn254::G1Projective;
+
+    /// Get a plaintext with a single value in the zeroth slot
+    pub fn plaintext_val<C: CurveGroup>(val: Scalar<C>, params: &BGVParams<C>) -> Plaintext<C> {
+        let mut pt = Plaintext::new(params);
+        pt.set_element(0, val);
+
+        pt
+    }
+
+    /// Encrypt a single value using the BGV cryptosystem
+    ///
+    /// Places the element in the zeroth slot of the plaintext
+    pub fn encrypt_val<C: CurveGroup>(
+        val: Scalar<C>,
+        key: &BGVPublicKey<C>,
+        params: &BGVParams<C>,
+    ) -> Ciphertext<C> {
+        let pt = plaintext_val(val, params);
+        key.encrypt(&pt)
+    }
 
     /// Run a two-party method with a `LowGear` instance setup and in scope
     pub async fn mock_lowgear<F, S, T>(mut f: F) -> (T, T)

@@ -29,3 +29,52 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use ark_mpc::{algebra::Scalar, network::MpcNetwork, PARTY0};
+    use mp_spdz_rs::fhe::ciphertext::Ciphertext;
+    use rand::thread_rng;
+
+    use crate::test_helpers::{encrypt_val, mock_lowgear, plaintext_val, TestCurve};
+
+    /// Tests the setup phase, i.e. that encrypted values are correctly shared
+    #[tokio::test]
+    async fn test_key_exchange() {
+        let mut rng = thread_rng();
+        let val1 = Scalar::<TestCurve>::random(&mut rng);
+        let val2 = Scalar::<TestCurve>::random(&mut rng);
+
+        mock_lowgear(|mut lowgear| async move {
+            let (my_val, other_val) =
+                if lowgear.network.party_id() == PARTY0 { (val1, val2) } else { (val2, val1) };
+
+            lowgear.run_key_exchange().await.unwrap();
+            assert!(lowgear.other_pk.is_some());
+            assert!(lowgear.other_mac_enc.is_some());
+
+            // Encrypt and send `my_val` to the other party
+            let encrypted_val =
+                encrypt_val(my_val, lowgear.other_pk.as_ref().unwrap(), &lowgear.params);
+
+            lowgear.send_message(encrypted_val).await.unwrap();
+            let received_val: Ciphertext<TestCurve> = lowgear.receive_message().await.unwrap();
+
+            let decrypted_val = lowgear.local_keypair.decrypt(&received_val);
+            assert_eq!(decrypted_val.get_element(0), other_val);
+
+            // Multiply `my_val` with the counterparty's MAC share
+            // homomorphically
+            let pt = plaintext_val(my_val, &lowgear.params);
+            let ct = lowgear.other_mac_enc.as_ref().unwrap() * &pt;
+
+            // Send the result to the other party
+            lowgear.send_message(ct).await.unwrap();
+            let received_val: Ciphertext<TestCurve> = lowgear.receive_message().await.unwrap();
+
+            let decrypted_val = lowgear.local_keypair.decrypt(&received_val);
+            assert_eq!(decrypted_val.get_element(0), lowgear.mac_share * other_val);
+        })
+        .await;
+    }
+}
