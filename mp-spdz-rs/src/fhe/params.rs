@@ -10,7 +10,7 @@ use cxx::UniquePtr;
 use crate::ffi::{bigint_from_be_bytes, fhe_params_from_rust_bytes, new_fhe_params, FHE_Params};
 
 /// The default drowning security parameter
-const DEFAULT_DROWN_SEC: i32 = 128;
+pub(crate) const DEFAULT_DROWN_SEC: i32 = 128;
 
 /// A wrapper around the MP-SPDZ `FHE_Params` struct
 pub struct BGVParams<C: CurveGroup> {

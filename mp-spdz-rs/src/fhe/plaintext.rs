@@ -3,19 +3,14 @@
 use std::{
     marker::PhantomData,
     ops::{Add, Mul, Sub},
+    pin::Pin,
 };
 
 use ark_ec::CurveGroup;
 use ark_mpc::algebra::Scalar;
 use cxx::UniquePtr;
 
-use crate::{
-    ffi::{
-        add_plaintexts, get_element_bigint, mul_plaintexts, new_plaintext,
-        plaintext_from_rust_bytes, set_element_bigint, sub_plaintexts, Plaintext_mod_prime,
-    },
-    FromBytesWithParams, ToBytes,
-};
+use crate::{ffi, FromBytesWithParams, ToBytes};
 
 use super::{ffi_bigint_to_scalar, params::BGVParams, scalar_to_ffi_bigint};
 
@@ -24,7 +19,7 @@ use super::{ffi_bigint_to_scalar, params::BGVParams, scalar_to_ffi_bigint};
 /// The plaintext is defined over the Scalar field of the curve group
 pub struct Plaintext<C: CurveGroup> {
     /// The wrapped MP-SPDZ `Plaintext_mod_prime`
-    inner: UniquePtr<Plaintext_mod_prime>,
+    inner: UniquePtr<ffi::Plaintext_mod_prime>,
     /// Phantom
     _phantom: PhantomData<C>,
 }
@@ -35,14 +30,14 @@ impl<C: CurveGroup> Clone for Plaintext<C> {
     }
 }
 
-impl<C: CurveGroup> From<UniquePtr<Plaintext_mod_prime>> for Plaintext<C> {
-    fn from(inner: UniquePtr<Plaintext_mod_prime>) -> Self {
+impl<C: CurveGroup> From<UniquePtr<ffi::Plaintext_mod_prime>> for Plaintext<C> {
+    fn from(inner: UniquePtr<ffi::Plaintext_mod_prime>) -> Self {
         Self { inner, _phantom: PhantomData }
     }
 }
 
-impl<C: CurveGroup> AsRef<Plaintext_mod_prime> for Plaintext<C> {
-    fn as_ref(&self) -> &Plaintext_mod_prime {
+impl<C: CurveGroup> AsRef<ffi::Plaintext_mod_prime> for Plaintext<C> {
+    fn as_ref(&self) -> &ffi::Plaintext_mod_prime {
         self.inner.as_ref().unwrap()
     }
 }
@@ -55,7 +50,7 @@ impl<C: CurveGroup> ToBytes for Plaintext<C> {
 
 impl<C: CurveGroup> FromBytesWithParams<C> for Plaintext<C> {
     fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
-        let inner = plaintext_from_rust_bytes(data, params.as_ref());
+        let inner = ffi::plaintext_from_rust_bytes(data, params.as_ref());
         Self { inner, _phantom: PhantomData }
     }
 }
@@ -63,7 +58,7 @@ impl<C: CurveGroup> FromBytesWithParams<C> for Plaintext<C> {
 impl<C: CurveGroup> Plaintext<C> {
     /// Create a new plaintext
     pub fn new(params: &BGVParams<C>) -> Self {
-        let inner = new_plaintext(params.as_ref());
+        let inner = ffi::new_plaintext(params.as_ref());
         Self { inner, _phantom: PhantomData }
     }
 
@@ -73,22 +68,22 @@ impl<C: CurveGroup> Plaintext<C> {
     }
 
     /// Set each slot with the given value
-    pub fn set_all(&mut self, value: Scalar<C>) {
-        let val_bigint = scalar_to_ffi_bigint(value);
+    pub fn set_all<T: Into<Scalar<C>>>(&mut self, value: T) {
+        let val_bigint = scalar_to_ffi_bigint(value.into());
         for i in 0..self.num_slots() {
-            set_element_bigint(self.inner.pin_mut(), i as usize, val_bigint.as_ref().unwrap());
+            ffi::set_element_bigint(self.inner.pin_mut(), i as usize, val_bigint.as_ref().unwrap());
         }
     }
 
     /// Set the value of an element in the plaintext
-    pub fn set_element(&mut self, idx: usize, value: Scalar<C>) {
-        let val_bigint = scalar_to_ffi_bigint(value);
-        set_element_bigint(self.inner.pin_mut(), idx, val_bigint.as_ref().unwrap());
+    pub fn set_element<T: Into<Scalar<C>>>(&mut self, idx: usize, value: T) {
+        let val_bigint = scalar_to_ffi_bigint(value.into());
+        ffi::set_element_bigint(self.inner.pin_mut(), idx, val_bigint.as_ref().unwrap());
     }
 
     /// Get the value of an element in the plaintext
     pub fn get_element(&self, idx: usize) -> Scalar<C> {
-        let val_bigint = get_element_bigint(self.as_ref(), idx);
+        let val_bigint = ffi::get_element_bigint(self.as_ref(), idx);
         ffi_bigint_to_scalar(val_bigint.as_ref().unwrap())
     }
 }
@@ -101,14 +96,14 @@ impl<C: CurveGroup> Add for &Plaintext<C> {
     type Output = Plaintext<C>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        add_plaintexts(self.as_ref(), rhs.as_ref()).into()
+        ffi::add_plaintexts(self.as_ref(), rhs.as_ref()).into()
     }
 }
 impl<C: CurveGroup> Sub for &Plaintext<C> {
     type Output = Plaintext<C>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        sub_plaintexts(self.as_ref(), rhs.as_ref()).into()
+        ffi::sub_plaintexts(self.as_ref(), rhs.as_ref()).into()
     }
 }
 
@@ -116,7 +111,70 @@ impl<C: CurveGroup> Mul<&Plaintext<C>> for &Plaintext<C> {
     type Output = Plaintext<C>;
 
     fn mul(self, rhs: &Plaintext<C>) -> Self::Output {
-        mul_plaintexts(self.as_ref(), rhs.as_ref()).into()
+        ffi::mul_plaintexts(self.as_ref(), rhs.as_ref()).into()
+    }
+}
+
+// --------------------
+// | Plaintext Vector |
+// --------------------
+
+/// A container for a vector of plaintexts
+pub struct PlaintextVector<C: CurveGroup> {
+    /// The wrapped MP-SPDZ `PlaintextVector`
+    inner: UniquePtr<ffi::PlaintextVector>,
+    /// Phantom data to tie the curve group type to this struct
+    _phantom: PhantomData<C>,
+}
+
+impl<C: CurveGroup> From<&Plaintext<C>> for PlaintextVector<C> {
+    fn from(pt: &Plaintext<C>) -> Self {
+        ffi::new_plaintext_vector_single(pt.as_ref()).into()
+    }
+}
+
+impl<C: CurveGroup> From<UniquePtr<ffi::PlaintextVector>> for PlaintextVector<C> {
+    fn from(inner: UniquePtr<ffi::PlaintextVector>) -> Self {
+        Self { inner, _phantom: PhantomData }
+    }
+}
+
+impl<C: CurveGroup> PlaintextVector<C> {
+    /// Create a new `PlaintextVector` with a specified size
+    pub fn new(size: usize, params: &BGVParams<C>) -> Self {
+        let inner = crate::ffi::new_plaintext_vector(size, params.as_ref());
+        Self { inner, _phantom: PhantomData }
+    }
+
+    /// Get a pinned mutable reference to the inner `PlaintextVector`
+    pub fn pin_mut(&mut self) -> Pin<&mut ffi::PlaintextVector> {
+        self.inner.pin_mut()
+    }
+
+    /// Get the size of the `PlaintextVector`
+    pub fn size(&self) -> usize {
+        ffi::plaintext_vector_size(self.inner.as_ref().unwrap())
+    }
+
+    /// Add a `Plaintext` to the end of the `PlaintextVector`
+    pub fn push(&mut self, plaintext: &Plaintext<C>) {
+        ffi::push_plaintext_vector(self.inner.pin_mut(), plaintext.as_ref());
+    }
+
+    /// Remove the last `Plaintext` from the `PlaintextVector`
+    pub fn pop(&mut self) {
+        ffi::pop_plaintext_vector(self.inner.pin_mut());
+    }
+
+    /// Randomize the `PlaintextVector`
+    pub fn randomize(&mut self) {
+        ffi::randomize_plaintext_vector(self.inner.pin_mut());
+    }
+
+    /// Get a `Plaintext` at a specific index from the `PlaintextVector`
+    pub fn get(&self, index: usize) -> Plaintext<C> {
+        let plaintext = ffi::get_plaintext_vector_element(self.inner.as_ref().unwrap(), index);
+        Plaintext::from(plaintext)
     }
 }
 

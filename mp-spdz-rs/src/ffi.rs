@@ -10,6 +10,7 @@ mod ffi_inner {
         include!("FHE/FHE_Params.h");
         include!("FHE/FHE_Keys.h");
         include!("FHE/Plaintext.h");
+        include!("FHEOffline/RustFFI.h");
         include!("Math/bigint.h");
 
         // `bigint`
@@ -84,6 +85,24 @@ mod ffi_inner {
             y: &Plaintext_mod_prime,
         ) -> UniquePtr<Plaintext_mod_prime>;
 
+        // `PlaintextVector`
+        type PlaintextVector;
+        fn new_plaintext_vector(size: usize, params: &FHE_Params) -> UniquePtr<PlaintextVector>;
+        fn new_plaintext_vector_single(
+            plaintext: &Plaintext_mod_prime,
+        ) -> UniquePtr<PlaintextVector>;
+        fn get_plaintext_vector_element(
+            vector: &PlaintextVector,
+            index: usize,
+        ) -> UniquePtr<Plaintext_mod_prime>;
+        fn randomize_plaintext_vector(vector: Pin<&mut PlaintextVector>);
+        fn push_plaintext_vector(
+            vector: Pin<&mut PlaintextVector>,
+            plaintext: &Plaintext_mod_prime,
+        );
+        fn pop_plaintext_vector(vector: Pin<&mut PlaintextVector>);
+        fn plaintext_vector_size(vector: &PlaintextVector) -> usize;
+
         // `Ciphertext`
         type Ciphertext;
         fn clone(self: &Ciphertext) -> UniquePtr<Ciphertext>;
@@ -94,6 +113,15 @@ mod ffi_inner {
         fn mul_plaintext(c0: &Ciphertext, p1: &Plaintext_mod_prime) -> UniquePtr<Ciphertext>;
         fn add_ciphertexts(c0: &Ciphertext, c1: &Ciphertext) -> UniquePtr<Ciphertext>;
         fn mul_ciphertexts(c0: &Ciphertext, c1: &Ciphertext, pk: &FHE_PK) -> UniquePtr<Ciphertext>;
+
+        // `CiphertextWithProof`
+        type CiphertextWithProof;
+        fn encrypt_and_prove_batch(
+            pk: &FHE_PK,
+            plaintexts: Pin<&mut PlaintextVector>,
+            sec: i32,
+            diag: bool,
+        ) -> UniquePtr<CiphertextWithProof>;
     }
 }
 pub use ffi_inner::*;
