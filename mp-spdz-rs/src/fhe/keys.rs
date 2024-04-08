@@ -7,14 +7,19 @@ use cxx::UniquePtr;
 
 use crate::{
     ffi::{
-        decrypt as ffi_decrypt, encrypt as ffi_encrypt, get_pk as ffi_get_pk, get_sk as ffi_get_sk,
-        keypair_from_rust_bytes, new_keypair as ffi_gen_keypair, pk_from_rust_bytes,
-        sk_from_rust_bytes, FHE_KeyPair, FHE_PK, FHE_SK,
+        decrypt as ffi_decrypt, encrypt as ffi_encrypt,
+        encrypt_and_prove_batch as ffi_encrypt_and_prove_batch, get_pk as ffi_get_pk,
+        get_sk as ffi_get_sk, keypair_from_rust_bytes, new_keypair as ffi_gen_keypair,
+        pk_from_rust_bytes, sk_from_rust_bytes, CiphertextWithProof, FHE_KeyPair, FHE_PK, FHE_SK,
     },
     FromBytesWithParams, ToBytes,
 };
 
-use super::{ciphertext::Ciphertext, params::BGVParams, plaintext::Plaintext};
+use super::{
+    ciphertext::Ciphertext,
+    params::{BGVParams, DEFAULT_DROWN_SEC},
+    plaintext::{Plaintext, PlaintextVector},
+};
 
 // --------------
 // | Public Key |
@@ -55,6 +60,26 @@ impl<C: CurveGroup> BGVPublicKey<C> {
     /// Encrypt a plaintext
     pub fn encrypt(&self, plaintext: &Plaintext<C>) -> Ciphertext<C> {
         ffi_encrypt(self.as_ref(), plaintext.as_ref()).into()
+    }
+
+    /// Encrypt a plaintext and generate a proof of knowledge with it
+    pub fn encrypt_and_prove(&self, plaintext: &Plaintext<C>) -> UniquePtr<CiphertextWithProof> {
+        // Construct a plaintext vector
+        let mut plaintext_vec: PlaintextVector<C> = plaintext.into();
+        self.encrypt_and_prove_batch(&mut plaintext_vec)
+    }
+
+    /// Encrypt a batch of plaintexts and generate proofs of knowledge with them
+    pub fn encrypt_and_prove_batch(
+        &self,
+        plaintexts: &mut PlaintextVector<C>,
+    ) -> UniquePtr<CiphertextWithProof> {
+        ffi_encrypt_and_prove_batch(
+            &self.as_ref(),
+            plaintexts.pin_mut(),
+            DEFAULT_DROWN_SEC,
+            false, // diag
+        )
     }
 }
 
@@ -180,6 +205,19 @@ impl<C: CurveGroup> BGVKeypair<C> {
         self.public_key().encrypt(plaintext)
     }
 
+    /// Encrypt and prove a single plaintext
+    pub fn encrypt_and_prove(&self, plaintext: &Plaintext<C>) -> UniquePtr<CiphertextWithProof> {
+        self.public_key().encrypt_and_prove(plaintext)
+    }
+
+    /// Encrypt and prove a plaintext vector
+    pub fn encrypt_and_prove_vector(
+        &self,
+        plaintexts: &mut PlaintextVector<C>,
+    ) -> UniquePtr<CiphertextWithProof> {
+        self.public_key().encrypt_and_prove_batch(plaintexts)
+    }
+
     /// Decrypt a ciphertext
     pub fn decrypt(&mut self, ciphertext: &Ciphertext<C>) -> Plaintext<C> {
         self.secret_key().decrypt(ciphertext)
@@ -202,8 +240,10 @@ impl<C: CurveGroup> FromBytesWithParams<C> for BGVKeypair<C> {
 #[cfg(test)]
 mod test {
 
+    use crate::ffi::Plaintext_mod_prime;
     use crate::fhe::keys::{BGVKeypair, BGVPublicKey, BGVSecretKey};
     use crate::fhe::params::BGVParams;
+    use crate::fhe::plaintext::Plaintext;
     use crate::{compare_bytes, FromBytesWithParams, TestCurve, ToBytes};
 
     /// Tests serialization and deserialization of the public key
@@ -243,5 +283,18 @@ mod test {
 
         // Compare by re-serializing
         assert!(compare_bytes(&deserialized, &keypair));
+    }
+
+    /// Tests encrypting and proving a single plaintext
+    #[test]
+    fn test_encrypt_and_prove_single() {
+        let params = BGVParams::<TestCurve>::new_no_mults();
+        let keypair = BGVKeypair::gen(&params);
+
+        let mut plaintext = Plaintext::new(&params);
+        plaintext.set_element(0, 1u8);
+
+        // For now just test that it doesn't panic
+        let _ciphertext = keypair.encrypt_and_prove(&plaintext);
     }
 }
