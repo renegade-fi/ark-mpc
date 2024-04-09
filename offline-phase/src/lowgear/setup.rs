@@ -4,7 +4,7 @@
 
 use ark_ec::CurveGroup;
 use ark_mpc::network::MpcNetwork;
-use mp_spdz_rs::fhe::plaintext::Plaintext;
+use mp_spdz_rs::fhe::{ciphertext::CiphertextPoK, keys::BGVPublicKey, plaintext::Plaintext};
 
 use crate::{error::LowGearError, lowgear::LowGear};
 
@@ -13,19 +13,22 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     pub async fn run_key_exchange(&mut self) -> Result<(), LowGearError> {
         // First, share the public key
         self.send_message(self.local_keypair.public_key()).await?;
-        let counterparty_pk = self.receive_message().await?;
+        let counterparty_pk: BGVPublicKey<C> = self.receive_message().await?;
 
         // Encrypt my mac share under my public key
         let mut pt = Plaintext::new(&self.params);
         pt.set_all(self.mac_share);
-        let ct = self.local_keypair.encrypt(&pt);
+        let ct = self.local_keypair.encrypt_and_prove(&pt);
 
         // Send and receive
         self.send_message(ct).await?;
-        let counterparty_mac_enc = self.receive_message().await?;
+        let mut counterparty_mac_pok: CiphertextPoK<C> = self.receive_message().await?;
+        let counterparty_mac_enc = counterparty_pk.verify_proof(&mut counterparty_mac_pok);
 
         self.other_pk = Some(counterparty_pk);
-        self.other_mac_enc = Some(counterparty_mac_enc);
+        // The counterparty's MAC share is the first element of the ciphertext vector,
+        // which contains padding up to the proof's batching factor
+        self.other_mac_enc = Some(counterparty_mac_enc.get(0));
         Ok(())
     }
 }
@@ -39,7 +42,7 @@ mod test {
     use crate::test_helpers::{encrypt_val, mock_lowgear, plaintext_val, TestCurve};
 
     /// Tests the setup phase, i.e. that encrypted values are correctly shared
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_key_exchange() {
         let mut rng = thread_rng();
         let val1 = Scalar::<TestCurve>::random(&mut rng);
