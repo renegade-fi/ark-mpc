@@ -160,6 +160,24 @@ pub struct CiphertextPoK<C: CurveGroup> {
     _phantom: PhantomData<C>,
 }
 
+impl<C: CurveGroup> Clone for CiphertextPoK<C> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone().into()
+    }
+}
+
+impl<C: CurveGroup> ToBytes for CiphertextPoK<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_ref().to_rust_bytes()
+    }
+}
+
+impl<C: CurveGroup> FromBytesWithParams<C> for CiphertextPoK<C> {
+    fn from_bytes(data: &[u8], _: &BGVParams<C>) -> Self {
+        ffi::ciphertext_with_proof_from_rust_bytes(data).into()
+    }
+}
+
 impl<C: CurveGroup> From<UniquePtr<ffi::CiphertextWithProof>> for CiphertextPoK<C> {
     fn from(inner: UniquePtr<ffi::CiphertextWithProof>) -> Self {
         Self { inner, _phantom: PhantomData }

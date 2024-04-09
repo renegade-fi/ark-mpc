@@ -128,6 +128,9 @@ mod ffi_inner {
 
         // `CiphertextWithProof`
         type CiphertextWithProof;
+        fn clone(self: &CiphertextWithProof) -> UniquePtr<CiphertextWithProof>;
+        fn to_rust_bytes(self: &CiphertextWithProof) -> Vec<u8>;
+        fn ciphertext_with_proof_from_rust_bytes(data: &[u8]) -> UniquePtr<CiphertextWithProof>;
         fn encrypt_and_prove_batch(
             pk: &FHE_PK,
             plaintexts: Pin<&mut PlaintextVector>,
