@@ -3,17 +3,14 @@
 use std::{
     marker::PhantomData,
     ops::{Add, Mul},
+    pin::Pin,
 };
 
 use ark_ec::CurveGroup;
 use cxx::UniquePtr;
 
 use crate::{
-    ffi::{
-        add_ciphertexts as ffi_add_cipher, add_plaintext as ffi_add_plaintext,
-        ciphertext_from_rust_bytes, mul_ciphertexts as ffi_mul_ciphertext,
-        mul_plaintext as ffi_mul_plaintext, Ciphertext as FfiCiphertext,
-    },
+    ffi::{self},
     FromBytesWithParams, ToBytes,
 };
 
@@ -24,7 +21,7 @@ use super::{keys::BGVPublicKey, params::BGVParams, plaintext::Plaintext};
 /// The ciphertext is defined over the Scalar field of the curve group
 pub struct Ciphertext<C: CurveGroup> {
     /// The wrapped MP-SPDZ `Ciphertext`
-    pub(crate) inner: UniquePtr<FfiCiphertext>,
+    pub(crate) inner: UniquePtr<ffi::Ciphertext>,
     /// Phantom
     _phantom: PhantomData<C>,
 }
@@ -32,7 +29,7 @@ pub struct Ciphertext<C: CurveGroup> {
 impl<C: CurveGroup> Ciphertext<C> {
     /// Multiply two ciphertexts
     pub fn mul_ciphertext(&self, other: &Self, pk: &BGVPublicKey<C>) -> Self {
-        ffi_mul_ciphertext(self.as_ref(), other.as_ref(), pk.as_ref()).into()
+        ffi::mul_ciphertexts(self.as_ref(), other.as_ref(), pk.as_ref()).into()
     }
 }
 
@@ -42,14 +39,14 @@ impl<C: CurveGroup> Clone for Ciphertext<C> {
     }
 }
 
-impl<C: CurveGroup> From<UniquePtr<FfiCiphertext>> for Ciphertext<C> {
-    fn from(inner: UniquePtr<FfiCiphertext>) -> Self {
+impl<C: CurveGroup> From<UniquePtr<ffi::Ciphertext>> for Ciphertext<C> {
+    fn from(inner: UniquePtr<ffi::Ciphertext>) -> Self {
         Self { inner, _phantom: PhantomData }
     }
 }
 
-impl<C: CurveGroup> AsRef<FfiCiphertext> for Ciphertext<C> {
-    fn as_ref(&self) -> &FfiCiphertext {
+impl<C: CurveGroup> AsRef<ffi::Ciphertext> for Ciphertext<C> {
+    fn as_ref(&self) -> &ffi::Ciphertext {
         self.inner.as_ref().unwrap()
     }
 }
@@ -62,7 +59,7 @@ impl<C: CurveGroup> ToBytes for Ciphertext<C> {
 
 impl<C: CurveGroup> FromBytesWithParams<C> for Ciphertext<C> {
     fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
-        ciphertext_from_rust_bytes(data, params.as_ref()).into()
+        ffi::ciphertext_from_rust_bytes(data, params.as_ref()).into()
     }
 }
 
@@ -70,7 +67,7 @@ impl<C: CurveGroup> Add<&Plaintext<C>> for &Ciphertext<C> {
     type Output = Ciphertext<C>;
 
     fn add(self, rhs: &Plaintext<C>) -> Self::Output {
-        ffi_add_plaintext(self.as_ref(), rhs.as_ref()).into()
+        ffi::add_plaintext(self.as_ref(), rhs.as_ref()).into()
     }
 }
 
@@ -78,7 +75,7 @@ impl<C: CurveGroup> Add for &Ciphertext<C> {
     type Output = Ciphertext<C>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        ffi_add_cipher(self.as_ref(), rhs.as_ref()).into()
+        ffi::add_ciphertexts(self.as_ref(), rhs.as_ref()).into()
     }
 }
 
@@ -86,7 +83,99 @@ impl<C: CurveGroup> Mul<&Plaintext<C>> for &Ciphertext<C> {
     type Output = Ciphertext<C>;
 
     fn mul(self, rhs: &Plaintext<C>) -> Self::Output {
-        ffi_mul_plaintext(self.as_ref(), rhs.as_ref()).into()
+        ffi::mul_plaintext(self.as_ref(), rhs.as_ref()).into()
+    }
+}
+
+// ---------------------
+// | Ciphertext Vector |
+// ---------------------
+
+/// A container for a vector of ciphertexts
+pub struct CiphertextVector<C: CurveGroup> {
+    /// The wrapped MP-SPDZ `CiphertextVector`
+    inner: UniquePtr<ffi::CiphertextVector>,
+    /// Phantom data to tie the curve group type to this struct
+    _phantom: PhantomData<C>,
+}
+
+impl<C: CurveGroup> From<&Ciphertext<C>> for CiphertextVector<C> {
+    fn from(ct: &Ciphertext<C>) -> Self {
+        ffi::new_ciphertext_vector_single(ct.as_ref()).into()
+    }
+}
+
+impl<C: CurveGroup> From<UniquePtr<ffi::CiphertextVector>> for CiphertextVector<C> {
+    fn from(inner: UniquePtr<ffi::CiphertextVector>) -> Self {
+        Self { inner, _phantom: PhantomData }
+    }
+}
+
+impl<C: CurveGroup> CiphertextVector<C> {
+    /// Create a new `CiphertextVector` with a specified size
+    pub fn new(size: usize, params: &BGVParams<C>) -> Self {
+        let inner = ffi::new_ciphertext_vector(size, params.as_ref());
+        Self { inner, _phantom: PhantomData }
+    }
+
+    /// Get a pinned mutable reference to the inner `CiphertextVector`
+    pub fn pin_mut(&mut self) -> Pin<&mut ffi::CiphertextVector> {
+        self.inner.pin_mut()
+    }
+
+    /// Get the size of the `CiphertextVector`
+    pub fn size(&self) -> usize {
+        ffi::ciphertext_vector_size(self.inner.as_ref().unwrap())
+    }
+
+    /// Add a `Ciphertext` to the end of the `CiphertextVector`
+    pub fn push(&mut self, ciphertext: &Ciphertext<C>) {
+        ffi::push_ciphertext_vector(self.inner.pin_mut(), ciphertext.as_ref());
+    }
+
+    /// Remove the last `Ciphertext` from the `CiphertextVector`
+    pub fn pop(&mut self) {
+        ffi::pop_ciphertext_vector(self.inner.pin_mut());
+    }
+
+    /// Get a `Ciphertext` at a specific index from the `CiphertextVector`
+    pub fn get(&self, index: usize) -> Ciphertext<C> {
+        let ciphertext = ffi::get_ciphertext_vector_element(self.inner.as_ref().unwrap(), index);
+        Ciphertext::from(ciphertext)
+    }
+}
+
+// -----------------
+// | CiphertextPoK |
+// -----------------
+
+/// A ciphertext bundle with proof of plaintext knowledge
+///
+/// Fields are not interpretable, but are used for proof verification, after
+/// which a ciphertext is extracted
+pub struct CiphertextPoK<C: CurveGroup> {
+    /// The wrapped MP-SPDZ `CiphertextPoK`
+    pub(crate) inner: UniquePtr<ffi::CiphertextWithProof>,
+    /// Phantom
+    _phantom: PhantomData<C>,
+}
+
+impl<C: CurveGroup> From<UniquePtr<ffi::CiphertextWithProof>> for CiphertextPoK<C> {
+    fn from(inner: UniquePtr<ffi::CiphertextWithProof>) -> Self {
+        Self { inner, _phantom: PhantomData }
+    }
+}
+
+impl<C: CurveGroup> AsRef<ffi::CiphertextWithProof> for CiphertextPoK<C> {
+    fn as_ref(&self) -> &ffi::CiphertextWithProof {
+        self.inner.as_ref().unwrap()
+    }
+}
+
+impl<C: CurveGroup> CiphertextPoK<C> {
+    /// Get a pinned mutable reference to the inner `CiphertextPoK`
+    pub fn pin_mut(&mut self) -> Pin<&mut ffi::CiphertextWithProof> {
+        self.inner.pin_mut()
     }
 }
 

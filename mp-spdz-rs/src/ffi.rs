@@ -114,6 +114,18 @@ mod ffi_inner {
         fn add_ciphertexts(c0: &Ciphertext, c1: &Ciphertext) -> UniquePtr<Ciphertext>;
         fn mul_ciphertexts(c0: &Ciphertext, c1: &Ciphertext, pk: &FHE_PK) -> UniquePtr<Ciphertext>;
 
+        // `CiphertextVector`
+        type CiphertextVector;
+        fn new_ciphertext_vector(size: usize, params: &FHE_Params) -> UniquePtr<CiphertextVector>;
+        fn new_ciphertext_vector_single(ciphertext: &Ciphertext) -> UniquePtr<CiphertextVector>;
+        fn get_ciphertext_vector_element(
+            vector: &CiphertextVector,
+            index: usize,
+        ) -> UniquePtr<Ciphertext>;
+        fn push_ciphertext_vector(vector: Pin<&mut CiphertextVector>, ciphertext: &Ciphertext);
+        fn pop_ciphertext_vector(vector: Pin<&mut CiphertextVector>);
+        fn ciphertext_vector_size(vector: &CiphertextVector) -> usize;
+
         // `CiphertextWithProof`
         type CiphertextWithProof;
         fn encrypt_and_prove_batch(
@@ -122,6 +134,12 @@ mod ffi_inner {
             sec: i32,
             diag: bool,
         ) -> UniquePtr<CiphertextWithProof>;
+        fn verify_proof_of_knowledge(
+            ciphertext_with_proof: Pin<&mut CiphertextWithProof>,
+            pk: &FHE_PK,
+            sec: i32,
+            diag: bool,
+        ) -> UniquePtr<CiphertextVector>;
     }
 }
 pub use ffi_inner::*;
