@@ -28,8 +28,12 @@ pub(crate) mod test_helpers {
     };
     use futures::Future;
     use mp_spdz_rs::fhe::{
-        ciphertext::Ciphertext, keys::BGVPublicKey, params::BGVParams, plaintext::Plaintext,
+        ciphertext::Ciphertext,
+        keys::{BGVKeypair, BGVPublicKey},
+        params::BGVParams,
+        plaintext::Plaintext,
     };
+    use rand::thread_rng;
 
     use crate::lowgear::LowGear;
 
@@ -70,6 +74,59 @@ pub(crate) mod test_helpers {
         let lowgear1 = LowGear::new(net1);
         let lowgear2 = LowGear::new(net2);
 
+        run_mock_lowgear(f, lowgear1, lowgear2).await
+    }
+
+    /// Run a two-party method with a `LowGear` instance, having run keygen and
+    /// setup
+    pub async fn mock_lowgear_with_keys<F, S, T>(mut f: F) -> (T, T)
+    where
+        T: Send + 'static,
+        S: Future<Output = T> + Send + 'static,
+        F: FnMut(LowGear<TestCurve, MockNetwork<TestCurve>>) -> S,
+    {
+        let mut rng = thread_rng();
+        let (stream1, stream2) = UnboundedDuplexStream::new_duplex_pair();
+        let net1 = MockNetwork::new(PARTY0, stream1);
+        let net2 = MockNetwork::new(PARTY1, stream2);
+
+        let mut lowgear1 = LowGear::new(net1);
+        let mut lowgear2 = LowGear::new(net2);
+
+        // Setup the lowgear instances
+        let params = BGVParams::new_no_mults();
+        let keypair1 = BGVKeypair::gen(&params);
+        let keypair2 = BGVKeypair::gen(&params);
+
+        let mac_share1 = Scalar::random(&mut rng);
+        let mac_share2 = Scalar::random(&mut rng);
+
+        // Set the local keypairs and mac shares
+        lowgear1.local_keypair = keypair1.clone();
+        lowgear1.mac_share = mac_share1.clone();
+        lowgear2.local_keypair = keypair2.clone();
+        lowgear2.mac_share = mac_share2.clone();
+
+        // Set the exchanged values
+        lowgear1.other_pk = Some(keypair2.public_key());
+        lowgear1.other_mac_enc = Some(encrypt_val(mac_share2, &keypair2.public_key(), &params));
+        lowgear2.other_pk = Some(keypair1.public_key());
+        lowgear2.other_mac_enc = Some(encrypt_val(mac_share1, &keypair1.public_key(), &params));
+
+        run_mock_lowgear(f, lowgear1, lowgear2).await
+    }
+
+    /// Run a two-party protocol using the given `LowGear` instances
+    pub async fn run_mock_lowgear<F, S, T>(
+        mut f: F,
+        lowgear1: LowGear<TestCurve, MockNetwork<TestCurve>>,
+        lowgear2: LowGear<TestCurve, MockNetwork<TestCurve>>,
+    ) -> (T, T)
+    where
+        T: Send + 'static,
+        S: Future<Output = T> + Send + 'static,
+        F: FnMut(LowGear<TestCurve, MockNetwork<TestCurve>>) -> S,
+    {
         let task1 = tokio::spawn(f(lowgear1));
         let task2 = tokio::spawn(f(lowgear2));
         let party0_out = task1.await.unwrap();

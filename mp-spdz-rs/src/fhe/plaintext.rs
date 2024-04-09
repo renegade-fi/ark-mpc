@@ -12,7 +12,11 @@ use cxx::UniquePtr;
 
 use crate::{ffi, FromBytesWithParams, ToBytes};
 
-use super::{ffi_bigint_to_scalar, params::BGVParams, scalar_to_ffi_bigint};
+use super::{
+    ffi_bigint_to_scalar,
+    params::{BGVParams, DEFAULT_DROWN_SEC},
+    scalar_to_ffi_bigint,
+};
 
 /// A plaintext in the BGV implementation
 ///
@@ -142,8 +146,34 @@ impl<C: CurveGroup> From<UniquePtr<ffi::PlaintextVector>> for PlaintextVector<C>
 impl<C: CurveGroup> PlaintextVector<C> {
     /// Create a new `PlaintextVector` with a specified size
     pub fn new(size: usize, params: &BGVParams<C>) -> Self {
-        let inner = crate::ffi::new_plaintext_vector(size, params.as_ref());
+        let inner = ffi::new_plaintext_vector(size, params.as_ref());
         Self { inner, _phantom: PhantomData }
+    }
+
+    /// Create a new empty `PlaintextVector`
+    pub fn empty() -> Self {
+        Self { inner: ffi::new_empty_plaintext_vector(), _phantom: PhantomData }
+    }
+
+    /// Generate a random `PlaintextVector` with a specified size
+    pub fn random(size: usize, params: &BGVParams<C>) -> Self {
+        let inner = ffi::random_plaintext_vector(size, params.as_ref());
+        Self { inner, _phantom: PhantomData }
+    }
+
+    /// Get the total number of slots in the `PlaintextVector`
+    pub fn total_slots(&self) -> usize {
+        if self.is_empty() {
+            0
+        } else {
+            self.get(0).num_slots() as usize * self.len()
+        }
+    }
+
+    /// Generate a random `PlaintextVector` of size equal to the batching width
+    /// of the plaintext PoK proof system
+    pub fn random_pok_batch(params: &BGVParams<C>) -> Self {
+        Self::random(DEFAULT_DROWN_SEC as usize, params)
     }
 
     /// Get a pinned mutable reference to the inner `PlaintextVector`
@@ -152,8 +182,13 @@ impl<C: CurveGroup> PlaintextVector<C> {
     }
 
     /// Get the size of the `PlaintextVector`
-    pub fn size(&self) -> usize {
+    pub fn len(&self) -> usize {
         ffi::plaintext_vector_size(self.inner.as_ref().unwrap())
+    }
+
+    /// Whether the vector is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Add a `Plaintext` to the end of the `PlaintextVector`
@@ -175,6 +210,49 @@ impl<C: CurveGroup> PlaintextVector<C> {
     pub fn get(&self, index: usize) -> Plaintext<C> {
         let plaintext = ffi::get_plaintext_vector_element(self.inner.as_ref().unwrap(), index);
         Plaintext::from(plaintext)
+    }
+}
+
+// -------------------------------
+// | Plaintext Vector Arithmetic |
+// -------------------------------
+
+impl<C: CurveGroup> Add for &PlaintextVector<C> {
+    type Output = PlaintextVector<C>;
+
+    fn add(self, other: Self) -> Self::Output {
+        let mut result = PlaintextVector::empty();
+        for i in 0..self.len() {
+            let element = &self.get(i) + &other.get(i);
+            result.push(&element);
+        }
+        result
+    }
+}
+
+impl<C: CurveGroup> Sub for &PlaintextVector<C> {
+    type Output = PlaintextVector<C>;
+
+    fn sub(self, other: Self) -> Self::Output {
+        let mut result = PlaintextVector::empty();
+        for i in 0..self.len() {
+            let element = &self.get(i) - &other.get(i);
+            result.push(&element);
+        }
+        result
+    }
+}
+
+impl<C: CurveGroup> Mul for &PlaintextVector<C> {
+    type Output = PlaintextVector<C>;
+
+    fn mul(self, other: Self) -> Self::Output {
+        let mut result = PlaintextVector::empty();
+        for i in 0..self.len() {
+            let element = &self.get(i) * &other.get(i);
+            result.push(&element);
+        }
+        result
     }
 }
 
