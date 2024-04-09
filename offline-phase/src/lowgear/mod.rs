@@ -2,6 +2,7 @@
 //! keys, authenticating inputs, etc
 
 pub mod setup;
+pub mod triplets;
 
 use ark_ec::CurveGroup;
 use ark_mpc::{

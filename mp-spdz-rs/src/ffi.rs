@@ -87,10 +87,12 @@ mod ffi_inner {
 
         // `PlaintextVector`
         type PlaintextVector;
+        fn new_empty_plaintext_vector() -> UniquePtr<PlaintextVector>;
         fn new_plaintext_vector(size: usize, params: &FHE_Params) -> UniquePtr<PlaintextVector>;
         fn new_plaintext_vector_single(
             plaintext: &Plaintext_mod_prime,
         ) -> UniquePtr<PlaintextVector>;
+        fn random_plaintext_vector(size: usize, params: &FHE_Params) -> UniquePtr<PlaintextVector>;
         fn get_plaintext_vector_element(
             vector: &PlaintextVector,
             index: usize,
@@ -150,8 +152,10 @@ unsafe impl Send for FHE_Params {}
 unsafe impl Send for FHE_KeyPair {}
 unsafe impl Send for FHE_PK {}
 unsafe impl Send for Ciphertext {}
+unsafe impl Send for CiphertextVector {}
 unsafe impl Send for CiphertextWithProof {}
 unsafe impl Send for Plaintext_mod_prime {}
+unsafe impl Send for PlaintextVector {}
 
 #[cfg(test)]
 mod test {

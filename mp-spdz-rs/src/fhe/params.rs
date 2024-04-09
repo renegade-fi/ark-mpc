@@ -60,6 +60,11 @@ impl<C: CurveGroup> BGVParams<C> {
     pub fn plaintext_slots(&self) -> u32 {
         self.as_ref().n_plaintext_slots()
     }
+
+    /// Get the number of ciphertexts that may be proven together
+    pub fn ciphertext_pok_batch_size(&self) -> usize {
+        (self.plaintext_slots() as usize) * (DEFAULT_DROWN_SEC as usize)
+    }
 }
 
 impl<C: CurveGroup> Serialize for BGVParams<C> {
