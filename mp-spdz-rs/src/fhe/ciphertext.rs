@@ -27,6 +27,11 @@ pub struct Ciphertext<C: CurveGroup> {
 }
 
 impl<C: CurveGroup> Ciphertext<C> {
+    /// Rerandomize the ciphertext
+    pub fn rerandomize(&mut self, pk: &BGVPublicKey<C>) {
+        self.inner.pin_mut().rerandomize(pk.as_ref());
+    }
+
     /// Multiply two ciphertexts
     pub fn mul_ciphertext(&self, other: &Self, pk: &BGVPublicKey<C>) -> Self {
         ffi::mul_ciphertexts(self.as_ref(), other.as_ref(), pk.as_ref()).into()
@@ -111,6 +116,24 @@ impl<C: CurveGroup> From<UniquePtr<ffi::CiphertextVector>> for CiphertextVector<
     }
 }
 
+impl<C: CurveGroup> AsRef<ffi::CiphertextVector> for CiphertextVector<C> {
+    fn as_ref(&self) -> &ffi::CiphertextVector {
+        self.inner.as_ref().unwrap()
+    }
+}
+
+impl<C: CurveGroup> ToBytes for CiphertextVector<C> {
+    fn to_bytes(&self) -> Vec<u8> {
+        ffi::ciphertext_vector_to_rust_bytes(self.as_ref())
+    }
+}
+
+impl<C: CurveGroup> FromBytesWithParams<C> for CiphertextVector<C> {
+    fn from_bytes(data: &[u8], params: &BGVParams<C>) -> Self {
+        ffi::ciphertext_vector_from_rust_bytes(data, params.as_ref()).into()
+    }
+}
+
 impl<C: CurveGroup> CiphertextVector<C> {
     /// Create a new `CiphertextVector` with a specified size
     pub fn new(size: usize, params: &BGVParams<C>) -> Self {
@@ -124,8 +147,13 @@ impl<C: CurveGroup> CiphertextVector<C> {
     }
 
     /// Get the size of the `CiphertextVector`
-    pub fn size(&self) -> usize {
+    pub fn len(&self) -> usize {
         ffi::ciphertext_vector_size(self.inner.as_ref().unwrap())
+    }
+
+    /// Whether the vector is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Add a `Ciphertext` to the end of the `CiphertextVector`
@@ -142,6 +170,11 @@ impl<C: CurveGroup> CiphertextVector<C> {
     pub fn get(&self, index: usize) -> Ciphertext<C> {
         let ciphertext = ffi::get_ciphertext_vector_element(self.inner.as_ref().unwrap(), index);
         Ciphertext::from(ciphertext)
+    }
+
+    /// Set a `Ciphertext` at a specific index in the `CiphertextVector`
+    pub fn set(&mut self, index: usize, ciphertext: &Ciphertext<C>) {
+        ffi::set_ciphertext_vector_element(self.inner.pin_mut(), index, ciphertext.as_ref());
     }
 }
 

@@ -66,6 +66,11 @@ impl<C: CurveGroup> Plaintext<C> {
         Self { inner, _phantom: PhantomData }
     }
 
+    /// Randomize the plaintext
+    pub fn randomize(&mut self) {
+        ffi::randomize_plaintext(self.inner.pin_mut());
+    }
+
     /// Get the number of slots in the plaintext
     pub fn num_slots(&self) -> u32 {
         self.inner.num_slots()
@@ -210,6 +215,11 @@ impl<C: CurveGroup> PlaintextVector<C> {
     pub fn get(&self, index: usize) -> Plaintext<C> {
         let plaintext = ffi::get_plaintext_vector_element(self.inner.as_ref().unwrap(), index);
         Plaintext::from(plaintext)
+    }
+
+    /// Set a `Plaintext` at a specific index in the `PlaintextVector`
+    pub fn set(&mut self, index: usize, plaintext: &Plaintext<C>) {
+        ffi::set_plaintext_vector_element(self.inner.pin_mut(), index, plaintext.as_ref());
     }
 }
 
