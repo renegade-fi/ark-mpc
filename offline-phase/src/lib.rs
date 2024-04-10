@@ -61,7 +61,7 @@ pub(crate) mod test_helpers {
     }
 
     /// Run a two-party method with a `LowGear` instance setup and in scope
-    pub async fn mock_lowgear<F, S, T>(mut f: F) -> (T, T)
+    pub async fn mock_lowgear<F, S, T>(f: F) -> (T, T)
     where
         T: Send + 'static,
         S: Future<Output = T> + Send + 'static,
@@ -77,9 +77,8 @@ pub(crate) mod test_helpers {
         run_mock_lowgear(f, lowgear1, lowgear2).await
     }
 
-    /// Run a two-party method with a `LowGear` instance, having run keygen and
-    /// setup
-    pub async fn mock_lowgear_with_keys<F, S, T>(mut f: F) -> (T, T)
+    /// Run a two-party method with a `LowGear` instance, mocking keygen setup
+    pub async fn mock_lowgear_with_keys<F, S, T>(f: F) -> (T, T)
     where
         T: Send + 'static,
         S: Future<Output = T> + Send + 'static,
@@ -103,9 +102,9 @@ pub(crate) mod test_helpers {
 
         // Set the local keypairs and mac shares
         lowgear1.local_keypair = keypair1.clone();
-        lowgear1.mac_share = mac_share1.clone();
+        lowgear1.mac_share = mac_share1;
         lowgear2.local_keypair = keypair2.clone();
-        lowgear2.mac_share = mac_share2.clone();
+        lowgear2.mac_share = mac_share2;
 
         // Set the exchanged values
         lowgear1.other_pk = Some(keypair2.public_key());

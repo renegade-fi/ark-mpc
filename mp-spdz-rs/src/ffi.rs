@@ -59,6 +59,7 @@ mod ffi_inner {
         // `Plaintext`
         type Plaintext_mod_prime;
         fn new_plaintext(params: &FHE_Params) -> UniquePtr<Plaintext_mod_prime>;
+        fn randomize_plaintext(plaintext: Pin<&mut Plaintext_mod_prime>);
         fn clone(self: &Plaintext_mod_prime) -> UniquePtr<Plaintext_mod_prime>;
         fn to_rust_bytes(self: &Plaintext_mod_prime) -> Vec<u8>;
         fn plaintext_from_rust_bytes(
@@ -97,6 +98,11 @@ mod ffi_inner {
             vector: &PlaintextVector,
             index: usize,
         ) -> UniquePtr<Plaintext_mod_prime>;
+        fn set_plaintext_vector_element(
+            vector: Pin<&mut PlaintextVector>,
+            index: usize,
+            plaintext: &Plaintext_mod_prime,
+        );
         fn randomize_plaintext_vector(vector: Pin<&mut PlaintextVector>);
         fn push_plaintext_vector(
             vector: Pin<&mut PlaintextVector>,
@@ -109,6 +115,7 @@ mod ffi_inner {
         type Ciphertext;
         fn clone(self: &Ciphertext) -> UniquePtr<Ciphertext>;
         fn to_rust_bytes(self: &Ciphertext) -> Vec<u8>;
+        fn rerandomize(self: Pin<&mut Ciphertext>, pk: &FHE_PK);
         fn ciphertext_from_rust_bytes(data: &[u8], params: &FHE_Params) -> UniquePtr<Ciphertext>;
 
         fn add_plaintext(c0: &Ciphertext, p1: &Plaintext_mod_prime) -> UniquePtr<Ciphertext>;
@@ -120,10 +127,21 @@ mod ffi_inner {
         type CiphertextVector;
         fn new_ciphertext_vector(size: usize, params: &FHE_Params) -> UniquePtr<CiphertextVector>;
         fn new_ciphertext_vector_single(ciphertext: &Ciphertext) -> UniquePtr<CiphertextVector>;
+        fn ciphertext_vector_to_rust_bytes(vector: &CiphertextVector) -> Vec<u8>;
+        fn ciphertext_vector_from_rust_bytes(
+            data: &[u8],
+            params: &FHE_Params,
+        ) -> UniquePtr<CiphertextVector>;
+
         fn get_ciphertext_vector_element(
             vector: &CiphertextVector,
             index: usize,
         ) -> UniquePtr<Ciphertext>;
+        fn set_ciphertext_vector_element(
+            vector: Pin<&mut CiphertextVector>,
+            index: usize,
+            ciphertext: &Ciphertext,
+        );
         fn push_ciphertext_vector(vector: Pin<&mut CiphertextVector>, ciphertext: &Ciphertext);
         fn pop_ciphertext_vector(vector: Pin<&mut CiphertextVector>);
         fn ciphertext_vector_size(vector: &CiphertextVector) -> usize;
@@ -156,6 +174,7 @@ unsafe impl Send for CiphertextVector {}
 unsafe impl Send for CiphertextWithProof {}
 unsafe impl Send for Plaintext_mod_prime {}
 unsafe impl Send for PlaintextVector {}
+unsafe impl Sync for PlaintextVector {}
 
 #[cfg(test)]
 mod test {
