@@ -2,6 +2,7 @@
 //! keys, authenticating inputs, etc
 
 pub mod setup;
+pub mod shared_random;
 pub mod triplets;
 
 use ark_ec::CurveGroup;

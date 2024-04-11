@@ -15,10 +15,11 @@ mp-spdz-rs = { path = "../mp-spdz-rs" }
 futures = "0.3"
 
 # === Misc Dependencies === #
+itertools = "0.10"
 rand = "0.8"
+sha3 = { version = "0.10" }
 
 [dev-dependencies]
 ark-bn254 = "0.4"
 ark-mpc = { path = "../online-phase", features = ["test_helpers"] }
-itertools = "0.10"
 tokio = { version = "1", features = ["full"] }
