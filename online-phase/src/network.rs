@@ -89,6 +89,51 @@ impl<C: CurveGroup> From<Vec<CurvePoint<C>>> for NetworkPayload<C> {
     }
 }
 
+impl<C: CurveGroup> From<NetworkPayload<C>> for Vec<u8> {
+    fn from(payload: NetworkPayload<C>) -> Self {
+        match payload {
+            NetworkPayload::Bytes(bytes) => bytes,
+            _ => panic!("Expected NetworkPayload::Bytes"),
+        }
+    }
+}
+
+impl<C: CurveGroup> From<NetworkPayload<C>> for Scalar<C> {
+    fn from(payload: NetworkPayload<C>) -> Self {
+        match payload {
+            NetworkPayload::Scalar(scalar) => scalar,
+            _ => panic!("Expected NetworkPayload::Scalar"),
+        }
+    }
+}
+
+impl<C: CurveGroup> From<NetworkPayload<C>> for Vec<Scalar<C>> {
+    fn from(payload: NetworkPayload<C>) -> Self {
+        match payload {
+            NetworkPayload::ScalarBatch(scalars) => scalars,
+            _ => panic!("Expected NetworkPayload::ScalarBatch"),
+        }
+    }
+}
+
+impl<C: CurveGroup> From<NetworkPayload<C>> for CurvePoint<C> {
+    fn from(payload: NetworkPayload<C>) -> Self {
+        match payload {
+            NetworkPayload::Point(point) => point,
+            _ => panic!("Expected NetworkPayload::Point"),
+        }
+    }
+}
+
+impl<C: CurveGroup> From<NetworkPayload<C>> for Vec<CurvePoint<C>> {
+    fn from(payload: NetworkPayload<C>) -> Self {
+        match payload {
+            NetworkPayload::PointBatch(points) => points,
+            _ => panic!("Expected NetworkPayload::PointBatch"),
+        }
+    }
+}
+
 /// The `MpcNetwork` trait defines shared functionality for a network
 /// implementing a connection between two parties in a 2PC
 ///

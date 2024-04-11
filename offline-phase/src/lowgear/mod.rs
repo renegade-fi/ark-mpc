@@ -34,6 +34,8 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     pub other_pk: Option<BGVPublicKey<C>>,
     /// An encryption of the counterparty's MAC key share under their public key
     pub other_mac_enc: Option<Ciphertext<C>>,
+    /// The Beaver triples generated during the offline phase
+    pub triples: Vec<(Scalar<C>, Scalar<C>, Scalar<C>)>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -47,7 +49,15 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         let local_keypair = BGVKeypair::gen(&params);
         let mac_share = Scalar::random(&mut rng);
 
-        Self { params, local_keypair, mac_share, other_pk: None, other_mac_enc: None, network }
+        Self {
+            params,
+            local_keypair,
+            mac_share,
+            other_pk: None,
+            other_mac_enc: None,
+            triples: vec![],
+            network,
+        }
     }
 
     /// Get the setup parameters from the offline phase
@@ -70,6 +80,18 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         Ok(())
     }
 
+    /// Send a message to the counterparty that can directly be converted to a
+    /// network payload
+    pub async fn send_network_payload<T: Into<NetworkPayload<C>>>(
+        &mut self,
+        payload: T,
+    ) -> Result<(), LowGearError> {
+        let msg = NetworkOutbound { result_id: 0, payload: payload.into() };
+
+        self.network.send(msg).await.map_err(|e| LowGearError::SendMessage(e.to_string()))?;
+        Ok(())
+    }
+
     /// Receive a message from the counterparty
     pub async fn receive_message<T: FromBytesWithParams<C>>(&mut self) -> Result<T, LowGearError> {
         let msg = self.network.next().await.unwrap().unwrap();
@@ -79,6 +101,14 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         };
 
         Ok(T::from_bytes(&payload, &self.params))
+    }
+
+    /// Receive a network payload from the counterparty
+    pub async fn receive_network_payload<T: From<NetworkPayload<C>>>(
+        &mut self,
+    ) -> Result<T, LowGearError> {
+        let msg = self.network.next().await.unwrap().unwrap();
+        Ok(msg.payload.into())
     }
 }
 
