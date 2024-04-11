@@ -10,7 +10,7 @@
 #![feature(inherent_associated_types)]
 #![feature(stmt_expr_attributes)]
 
-pub mod ffi;
+mod ffi;
 pub mod fhe;
 
 /// A trait for serializing to bytes

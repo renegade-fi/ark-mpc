@@ -231,6 +231,7 @@ impl<C: CurveGroup> Add for &PlaintextVector<C> {
     type Output = PlaintextVector<C>;
 
     fn add(self, other: Self) -> Self::Output {
+        assert_eq!(self.len(), other.len(), "Vectors must be the same length");
         let mut result = PlaintextVector::empty();
         for i in 0..self.len() {
             let element = &self.get(i) + &other.get(i);
@@ -244,6 +245,7 @@ impl<C: CurveGroup> Sub for &PlaintextVector<C> {
     type Output = PlaintextVector<C>;
 
     fn sub(self, other: Self) -> Self::Output {
+        assert_eq!(self.len(), other.len(), "Vectors must be the same length");
         let mut result = PlaintextVector::empty();
         for i in 0..self.len() {
             let element = &self.get(i) - &other.get(i);
@@ -257,6 +259,7 @@ impl<C: CurveGroup> Mul for &PlaintextVector<C> {
     type Output = PlaintextVector<C>;
 
     fn mul(self, other: Self) -> Self::Output {
+        assert_eq!(self.len(), other.len(), "Vectors must be the same length");
         let mut result = PlaintextVector::empty();
         for i in 0..self.len() {
             let element = &self.get(i) * &other.get(i);

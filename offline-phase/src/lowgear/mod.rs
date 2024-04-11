@@ -13,9 +13,10 @@ use ark_mpc::{
 use futures::{SinkExt, StreamExt};
 use mp_spdz_rs::{
     fhe::{
-        ciphertext::Ciphertext,
+        ciphertext::{Ciphertext, CiphertextVector},
         keys::{BGVKeypair, BGVPublicKey},
         params::BGVParams,
+        plaintext::{Plaintext, PlaintextVector},
     },
     FromBytesWithParams, ToBytes,
 };
@@ -37,6 +38,8 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     pub other_mac_enc: Option<Ciphertext<C>>,
     /// The Beaver triples generated during the offline phase
     pub triples: Vec<(Scalar<C>, Scalar<C>, Scalar<C>)>,
+    /// The mac values for the triples generated during the offline phase
+    pub triple_macs: Vec<(Scalar<C>, Scalar<C>, Scalar<C>)>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -57,6 +60,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             other_pk: None,
             other_mac_enc: None,
             triples: vec![],
+            triple_macs: vec![],
             network,
         }
     }
@@ -72,8 +76,40 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         })
     }
 
+    /// Get a plaintext with the local mac share in all slots
+    pub fn get_mac_plaintext(&self) -> Plaintext<C> {
+        let mut pt = Plaintext::new(&self.params);
+        pt.set_all(self.mac_share);
+
+        pt
+    }
+
+    /// Get a plaintext vector wherein each plaintext created with the local mac
+    /// share in all slots
+    pub fn get_mac_plaintext_vector(&self, n: usize) -> PlaintextVector<C> {
+        let mut vec = PlaintextVector::new(n, &self.params);
+        let pt = self.get_mac_plaintext();
+        for i in 0..n {
+            vec.set(i, &pt);
+        }
+
+        vec
+    }
+
+    /// Get a ciphertext vector wherein each ciphertext is an encryption of the
+    /// counterparty's mac share
+    pub fn get_other_mac_enc(&self, n: usize) -> CiphertextVector<C> {
+        let mut vec = CiphertextVector::new(n, &self.params);
+        let ct = self.other_mac_enc.as_ref().unwrap();
+        for i in 0..n {
+            vec.set(i, ct);
+        }
+
+        vec
+    }
+
     /// Send a message to the counterparty
-    pub async fn send_message<T: ToBytes>(&mut self, message: T) -> Result<(), LowGearError> {
+    pub async fn send_message<T: ToBytes>(&mut self, message: &T) -> Result<(), LowGearError> {
         let payload = NetworkPayload::<C>::Bytes(message.to_bytes());
         let msg = NetworkOutbound { result_id: 0, payload };
 
@@ -145,12 +181,12 @@ mod test {
             let party = lowgear.network.party_id();
             if party == PARTY0 {
                 let msg = TestMessage(MSG1.to_string());
-                lowgear.send_message(msg).await.unwrap();
+                lowgear.send_message(&msg).await.unwrap();
                 lowgear.receive_message::<TestMessage>().await.unwrap()
             } else {
                 let msg = TestMessage(MSG2.to_string());
                 let recv = lowgear.receive_message::<TestMessage>().await.unwrap();
-                lowgear.send_message(msg).await.unwrap();
+                lowgear.send_message(&msg).await.unwrap();
 
                 recv
             }
