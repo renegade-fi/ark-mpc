@@ -4,6 +4,8 @@ use std::{error::Error, fmt::Display};
 /// The error types for the offline phase
 #[derive(Clone, Debug)]
 pub enum LowGearError {
+    /// An invalid commitment was provided in a commit/reveal phase
+    InvalidCommitment,
     /// Error exchanging keys
     KeyExchange(String),
     /// The lowgear setup params requested before setup
@@ -17,6 +19,7 @@ pub enum LowGearError {
 impl Display for LowGearError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            LowGearError::InvalidCommitment => write!(f, "Received invalid commitment"),
             LowGearError::KeyExchange(e) => write!(f, "Key exchange error: {e}"),
             LowGearError::NotSetup => write!(f, "LowGear not setup"),
             LowGearError::SendMessage(e) => write!(f, "Error sending message: {e}"),
