@@ -20,4 +20,5 @@ rand = "0.8"
 [dev-dependencies]
 ark-bn254 = "0.4"
 ark-mpc = { path = "../online-phase", features = ["test_helpers"] }
+itertools = "0.10"
 tokio = { version = "1", features = ["full"] }

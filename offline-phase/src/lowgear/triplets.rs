@@ -34,6 +34,22 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         // Generate shares of the product and exchange
         let c_shares = self.share_product(other_a_enc, &b, c).await?;
 
+        // Increase the size of self.triples by self.params.ciphertext_pok_batch_size
+        self.triples.reserve(self.params.ciphertext_pok_batch_size());
+        for pt_idx in 0..a.len() {
+            let plaintext_a = a.get(pt_idx);
+            let plaintext_b = b.get(pt_idx);
+            let plaintext_c = c_shares.get(pt_idx);
+
+            for slot_idx in 0..plaintext_a.num_slots() as usize {
+                let a = plaintext_a.get_element(slot_idx);
+                let b = plaintext_b.get_element(slot_idx);
+                let c = plaintext_c.get_element(slot_idx);
+
+                self.triples.push((a, b, c));
+            }
+        }
+
         Ok(())
     }
 
@@ -141,13 +157,50 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::mock_lowgear_with_keys;
+    use ark_mpc::algebra::Scalar;
+    use itertools::izip;
+
+    use crate::test_helpers::{mock_lowgear_with_keys, TestCurve};
 
     /// Tests the basic triplet generation flow
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_triplet_gen() {
+        // The number of triplets to test
         mock_lowgear_with_keys(|mut lowgear| async move {
             lowgear.generate_triples().await.unwrap();
+
+            assert_eq!(lowgear.triples.len(), lowgear.params.ciphertext_pok_batch_size());
+
+            // Exchange triples
+            let (mut my_a, mut my_b, mut my_c) = (vec![], vec![], vec![]);
+            for (a, b, c) in lowgear.triples.iter() {
+                my_a.push(*a);
+                my_b.push(*b);
+                my_c.push(*c);
+            }
+
+            lowgear.send_network_payload(my_a.clone()).await.unwrap();
+            lowgear.send_network_payload(my_b.clone()).await.unwrap();
+            lowgear.send_network_payload(my_c.clone()).await.unwrap();
+            let their_a: Vec<Scalar<TestCurve>> = lowgear.receive_network_payload().await.unwrap();
+            let their_b: Vec<Scalar<TestCurve>> = lowgear.receive_network_payload().await.unwrap();
+            let their_c: Vec<Scalar<TestCurve>> = lowgear.receive_network_payload().await.unwrap();
+
+            // Add together all the shares to get the final values
+            for (a_1, a_2, b_1, b_2, c_1, c_2) in izip!(
+                my_a.iter(),
+                their_a.iter(),
+                my_b.iter(),
+                their_b.iter(),
+                my_c.iter(),
+                their_c.iter()
+            ) {
+                let a = a_1 + a_2;
+                let b = b_1 + b_2;
+                let c = c_1 + c_2;
+
+                assert_eq!(a * b, c);
+            }
         })
         .await;
     }
