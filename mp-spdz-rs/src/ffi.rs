@@ -169,9 +169,13 @@ pub use ffi_inner::*;
 unsafe impl Send for FHE_Params {}
 unsafe impl Send for FHE_KeyPair {}
 unsafe impl Send for FHE_PK {}
+unsafe impl Sync for FHE_PK {}
 unsafe impl Send for Ciphertext {}
+unsafe impl Sync for Ciphertext {}
 unsafe impl Send for CiphertextVector {}
+unsafe impl Sync for CiphertextVector {}
 unsafe impl Send for CiphertextWithProof {}
+unsafe impl Sync for CiphertextWithProof {}
 unsafe impl Send for Plaintext_mod_prime {}
 unsafe impl Send for PlaintextVector {}
 unsafe impl Sync for PlaintextVector {}

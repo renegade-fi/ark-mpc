@@ -12,7 +12,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     /// Exchange BGV public keys and mac shares with the counterparty
     pub async fn run_key_exchange(&mut self) -> Result<(), LowGearError> {
         // First, share the public key
-        self.send_message(self.local_keypair.public_key()).await?;
+        self.send_message(&self.local_keypair.public_key()).await?;
         let counterparty_pk: BGVPublicKey<C> = self.receive_message().await?;
 
         // Encrypt my mac share under my public key
@@ -21,7 +21,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         let ct = self.local_keypair.encrypt_and_prove(&pt);
 
         // Send and receive
-        self.send_message(ct).await?;
+        self.send_message(&ct).await?;
         let mut counterparty_mac_pok: CiphertextPoK<C> = self.receive_message().await?;
         let counterparty_mac_enc = counterparty_pk.verify_proof(&mut counterparty_mac_pok);
 
@@ -60,7 +60,7 @@ mod test {
             let encrypted_val =
                 encrypt_val(my_val, lowgear.other_pk.as_ref().unwrap(), &lowgear.params);
 
-            lowgear.send_message(encrypted_val).await.unwrap();
+            lowgear.send_message(&encrypted_val).await.unwrap();
             let received_val: Ciphertext<TestCurve> = lowgear.receive_message().await.unwrap();
 
             let decrypted_val = lowgear.local_keypair.decrypt(&received_val);
@@ -72,7 +72,7 @@ mod test {
             let ct = lowgear.other_mac_enc.as_ref().unwrap() * &pt;
 
             // Send the result to the other party
-            lowgear.send_message(ct).await.unwrap();
+            lowgear.send_message(&ct).await.unwrap();
             let received_val: Ciphertext<TestCurve> = lowgear.receive_message().await.unwrap();
 
             let decrypted_val = lowgear.local_keypair.decrypt(&received_val);

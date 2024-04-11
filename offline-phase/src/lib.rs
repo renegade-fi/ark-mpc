@@ -48,6 +48,14 @@ pub(crate) mod test_helpers {
         pt
     }
 
+    /// Get a plaintext with a single value in all slots
+    pub fn plaintext_all<C: CurveGroup>(val: Scalar<C>, params: &BGVParams<C>) -> Plaintext<C> {
+        let mut pt = Plaintext::new(params);
+        pt.set_all(val);
+
+        pt
+    }
+
     /// Encrypt a single value using the BGV cryptosystem
     ///
     /// Places the element in the zeroth slot of the plaintext
@@ -57,6 +65,16 @@ pub(crate) mod test_helpers {
         params: &BGVParams<C>,
     ) -> Ciphertext<C> {
         let pt = plaintext_val(val, params);
+        key.encrypt(&pt)
+    }
+
+    /// Encrypt a single value in all slots of a plaintext
+    pub fn encrypt_all<C: CurveGroup>(
+        val: Scalar<C>,
+        key: &BGVPublicKey<C>,
+        params: &BGVParams<C>,
+    ) -> Ciphertext<C> {
+        let pt = plaintext_all(val, params);
         key.encrypt(&pt)
     }
 
@@ -108,9 +126,9 @@ pub(crate) mod test_helpers {
 
         // Set the exchanged values
         lowgear1.other_pk = Some(keypair2.public_key());
-        lowgear1.other_mac_enc = Some(encrypt_val(mac_share2, &keypair2.public_key(), &params));
+        lowgear1.other_mac_enc = Some(encrypt_all(mac_share2, &keypair2.public_key(), &params));
         lowgear2.other_pk = Some(keypair1.public_key());
-        lowgear2.other_mac_enc = Some(encrypt_val(mac_share1, &keypair1.public_key(), &params));
+        lowgear2.other_mac_enc = Some(encrypt_all(mac_share1, &keypair1.public_key(), &params));
 
         run_mock_lowgear(f, lowgear1, lowgear2).await
     }
