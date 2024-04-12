@@ -8,7 +8,8 @@ pub mod triplets;
 use ark_ec::CurveGroup;
 use ark_mpc::{
     algebra::Scalar,
-    network::{MpcNetwork, NetworkOutbound, NetworkPayload},
+    beaver::PartyIDBeaverSource,
+    network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
 };
 use futures::{SinkExt, StreamExt};
 use mp_spdz_rs::{
@@ -22,7 +23,10 @@ use mp_spdz_rs::{
 };
 use rand::thread_rng;
 
-use crate::{beaver_source::LowGearParams, error::LowGearError};
+use crate::{
+    beaver_source::{LowGearParams, ValueMac},
+    error::LowGearError,
+};
 
 /// A type implementing Lowgear protocol logic
 pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
@@ -37,9 +41,7 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     /// An encryption of the counterparty's MAC key share under their public key
     pub other_mac_enc: Option<Ciphertext<C>>,
     /// The Beaver triples generated during the offline phase
-    pub triples: Vec<(Scalar<C>, Scalar<C>, Scalar<C>)>,
-    /// The mac values for the triples generated during the offline phase
-    pub triple_macs: Vec<(Scalar<C>, Scalar<C>, Scalar<C>)>,
+    pub triples: Vec<(ValueMac<C>, ValueMac<C>, ValueMac<C>)>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -59,10 +61,14 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             mac_share,
             other_pk: None,
             other_mac_enc: None,
-            triples: vec![],
-            triple_macs: vec![],
+            triples: Default::default(),
             network,
         }
+    }
+
+    /// Get the party id of the local party
+    pub fn party_id(&self) -> PartyId {
+        self.network.party_id()
     }
 
     /// Get the setup parameters from the offline phase

@@ -8,15 +8,20 @@
 //! Follows the protocol detailed in https://eprint.iacr.org/2017/1230.pdf (Figure 7)
 
 use ark_ec::CurveGroup;
-use ark_mpc::network::MpcNetwork;
+use ark_mpc::{algebra::Scalar, network::MpcNetwork};
+use itertools::{izip, Itertools};
 use mp_spdz_rs::fhe::{
     ciphertext::{CiphertextPoK, CiphertextVector},
     plaintext::{Plaintext, PlaintextVector},
 };
 
-use crate::error::LowGearError;
+use crate::{beaver_source::ValueMacBatch, error::LowGearError};
 
 use super::LowGear;
+
+// ----------------------
+// | Triplet Generation |
+// ----------------------
 
 impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     /// Generate a single batch of shared triples
@@ -24,42 +29,35 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         // First step; generate random values a and b
         let mut a = PlaintextVector::random_pok_batch(&self.params);
         let b = PlaintextVector::random_pok_batch(&self.params);
+        let b_prime = PlaintextVector::random_pok_batch(&self.params);
 
         // Compute a plaintext multiplication
         let c = &a * &b;
+        let c_prime = &a * &b_prime;
 
         // Encrypt `a` and send it to the counterparty
         let other_a_enc = self.exchange_a_values(&mut a).await?;
 
         // Generate shares of the product and exchange
         let c_shares = self.share_product(&other_a_enc, &b, c).await?;
+        let c_prime_shares = self.share_product(&other_a_enc, &b_prime, c_prime).await?;
 
-        // Authenticate the triplets
+        // Authenticate the triplets and sacrificial redundant values
         let (a_mac, b_mac, c_mac) = self.authenticate_triplets(&a, &b, &c_shares).await?;
+        let a = ValueMacBatch::from_plaintexts(&a, &a_mac);
+        let b = ValueMacBatch::from_plaintexts(&b, &b_mac);
+        let c = ValueMacBatch::from_plaintexts(&c_shares, &c_mac);
+
+        let b_prime_mac = self.authenticate_vec(&b_prime).await?;
+        let c_prime_mac = self.authenticate_vec(&c_prime_shares).await?;
+        let b_prime = ValueMacBatch::from_plaintexts(&b_prime, &b_prime_mac);
+        let c_prime = ValueMacBatch::from_plaintexts(&c_prime_shares, &c_prime_mac);
+
+        // Sacrifice
+        self.sacrifice(&a, &b, &c, &b_prime, &c_prime).await?;
 
         // Increase the size of self.triples by self.params.ciphertext_pok_batch_size
-        self.triples.reserve(self.params.ciphertext_pok_batch_size());
-        for pt_idx in 0..a.len() {
-            let plaintext_a = a.get(pt_idx);
-            let plaintext_b = b.get(pt_idx);
-            let plaintext_c = c_shares.get(pt_idx);
-            let mac_pt_a = a_mac.get(pt_idx);
-            let mac_pt_b = b_mac.get(pt_idx);
-            let mac_pt_c = c_mac.get(pt_idx);
-
-            for slot_idx in 0..plaintext_a.num_slots() as usize {
-                let a = plaintext_a.get_element(slot_idx);
-                let b = plaintext_b.get_element(slot_idx);
-                let c = plaintext_c.get_element(slot_idx);
-                let mac_a = mac_pt_a.get_element(slot_idx);
-                let mac_b = mac_pt_b.get_element(slot_idx);
-                let mac_c = mac_pt_c.get_element(slot_idx);
-
-                self.triples.push((a, b, c));
-                self.triple_macs.push((mac_a, mac_b, mac_c));
-            }
-        }
-
+        self.triples = izip!(a, b, c).collect();
         Ok(())
     }
 
@@ -81,6 +79,10 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         Ok(other_a_enc)
     }
 
+    // ------------------------------
+    // | Authentication + Sacrifice |
+    // ------------------------------
+
     /// Authenticate triplets with the counterparty
     ///
     /// Returns the mac shares for each triplet
@@ -90,22 +92,70 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         b: &PlaintextVector<C>,
         c: &PlaintextVector<C>,
     ) -> Result<(PlaintextVector<C>, PlaintextVector<C>, PlaintextVector<C>), LowGearError> {
-        let n = a.len();
-
-        // Multiply my share of `\alpha` with each share
-        let mac_vec = self.get_mac_plaintext_vector(n);
-        let a_macs = &mac_vec * a;
-        let b_macs = &mac_vec * b;
-        let c_macs = &mac_vec * c;
-
-        // Compute cross terms, share them, then sum into the result
-        let other_mac_enc = self.get_other_mac_enc(n);
-        let a_macs = self.share_product(&other_mac_enc, a, a_macs).await?;
-        let b_macs = self.share_product(&other_mac_enc, b, b_macs).await?;
-        let c_macs = self.share_product(&other_mac_enc, c, c_macs).await?;
+        let a_macs = self.authenticate_vec(a).await?;
+        let b_macs = self.authenticate_vec(b).await?;
+        let c_macs = self.authenticate_vec(c).await?;
 
         Ok((a_macs, b_macs, c_macs))
     }
+
+    /// Authenticate a plaintext vector with the counterparty
+    async fn authenticate_vec(
+        &mut self,
+        a: &PlaintextVector<C>,
+    ) -> Result<PlaintextVector<C>, LowGearError> {
+        let n = a.len();
+        let mac_vec = self.get_mac_plaintext_vector(n);
+        let other_mac_enc = self.get_other_mac_enc(n);
+
+        let a_mac_shares = &mac_vec * a;
+        self.share_product(&other_mac_enc, a, a_mac_shares).await
+    }
+
+    /// Execute the SPDZ sacrifice step to verify the triplets' algebraic
+    /// identity
+    async fn sacrifice(
+        &mut self,
+        a: &ValueMacBatch<C>,
+        b: &ValueMacBatch<C>,
+        c: &ValueMacBatch<C>,
+        b_prime: &ValueMacBatch<C>,
+        c_prime: &ValueMacBatch<C>,
+    ) -> Result<(), LowGearError> {
+        // Generate a shared random value
+        let r = self.get_shared_randomness().await?;
+
+        // Open r * b - b'
+        let rho = &(b * r) - b_prime;
+        self.send_network_payload(rho.values()).await?;
+        let other_rho: Vec<Scalar<C>> = self.receive_network_payload().await?;
+
+        // TODO: mac check here
+
+        // Compute the expected rhs of the sacrifice identity
+        let recovered_rho =
+            other_rho.iter().zip(rho.iter()).map(|(a, b)| a + b.value()).collect_vec();
+        let rho_a = a * recovered_rho.as_slice();
+        let c_diff = &(c * r) - c_prime;
+        let tau = &c_diff - &rho_a;
+
+        // Open tau and check that all values are zero
+        self.send_network_payload(tau.values()).await?;
+        let other_tau: Vec<Scalar<C>> = self.receive_network_payload().await?;
+        let mut recovered_tau = other_tau.iter().zip(tau.iter()).map(|(a, b)| a + b.value());
+
+        // TODO: Mac check
+        let zero = Scalar::zero();
+        if !recovered_tau.all(|s| s == zero) {
+            return Err(LowGearError::SacrificeError);
+        }
+
+        Ok(())
+    }
+
+    // --------------------------
+    // | Arithmetic Subroutines |
+    // --------------------------
 
     /// Create shares of the product `c` by exchanging homomorphically evaluated
     /// encryptions of `my_b * other_a`
@@ -195,15 +245,17 @@ mod test {
     use ark_mpc::{
         algebra::Scalar,
         network::{MpcNetwork, NetworkPayload},
+        PARTY0,
     };
-    use itertools::izip;
+    use itertools::{izip, Itertools};
     use mp_spdz_rs::fhe::{
         params::BGVParams,
         plaintext::{Plaintext, PlaintextVector},
     };
-    use rand::rngs::OsRng;
+    use rand::{rngs::OsRng, thread_rng};
 
     use crate::{
+        beaver_source::ValueMacBatch,
         error::LowGearError,
         lowgear::LowGear,
         test_helpers::{mock_lowgear_with_keys, TestCurve},
@@ -216,6 +268,38 @@ mod test {
     /// Generate a vector of random scalar values
     fn random_scalars(n: usize) -> Vec<Scalar<TestCurve>> {
         (0..n).map(|_| Scalar::random(&mut OsRng)).collect()
+    }
+
+    /// Create secret shares of each value in the vector
+    fn create_shares(
+        values: &[Scalar<TestCurve>],
+    ) -> (Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>) {
+        let mut rng = thread_rng();
+        let mut shares1 = Vec::new();
+        let mut shares2 = Vec::new();
+
+        for x in values.iter() {
+            let r = Scalar::random(&mut rng);
+            shares1.push(r);
+            shares2.push(x - r);
+        }
+
+        (shares1, shares2)
+    }
+
+    /// Create authenticated shares of the given values using the given mac key
+    fn create_authenticated_shares(
+        key: Scalar<TestCurve>,
+        values: &[Scalar<TestCurve>],
+    ) -> (ValueMacBatch<TestCurve>, ValueMacBatch<TestCurve>) {
+        let macs = values.iter().map(|v| v * key).collect_vec();
+        let (shares1, shares2) = create_shares(values);
+        let (mac_shares1, mac_shares2) = create_shares(&macs);
+
+        let batch1 = ValueMacBatch::from_parts(&shares1, &mac_shares1);
+        let batch2 = ValueMacBatch::from_parts(&shares2, &mac_shares2);
+
+        (batch1, batch2)
     }
 
     /// Generate a plaintext vector with a single element from a vector of
@@ -239,7 +323,7 @@ mod test {
         }
 
         let n = pt_vec.len();
-        let slots = pt_vec.get(0).num_slots() as usize;
+        let slots = pt_vec.get(0).num_slots();
         let mut vec = Vec::with_capacity(n * slots);
 
         for i in 0..n {
@@ -306,9 +390,9 @@ mod test {
             // Exchange triples
             let (mut my_a, mut my_b, mut my_c) = (vec![], vec![], vec![]);
             for (a, b, c) in lowgear.triples.iter() {
-                my_a.push(*a);
-                my_b.push(*b);
-                my_c.push(*c);
+                my_a.push(a.value());
+                my_b.push(b.value());
+                my_c.push(c.value());
             }
 
             let their_a = send_receive_payload(my_a.clone(), &mut lowgear).await.unwrap();
@@ -373,6 +457,49 @@ mod test {
             verify_macs(&my_a, &their_a, &a_mac, their_a_mac, mac_key);
             verify_macs(&my_b, &their_b, &b_mac, their_b_mac, mac_key);
             verify_macs(&my_c, &their_c, &c_mac, their_c_mac, mac_key);
+        })
+        .await;
+    }
+
+    /// Tests the sacrifice subprotocol
+    #[tokio::test]
+    async fn test_sacrifice() {
+        const N: usize = 100;
+
+        // Define values
+        let mac_key = Scalar::random(&mut OsRng);
+        let mac_key1 = Scalar::random(&mut OsRng);
+        let mac_key2 = mac_key - mac_key1;
+
+        let a = random_scalars(N);
+        let b = random_scalars(N);
+        let c = a.iter().zip(b.iter()).map(|(x, y)| x * y).collect_vec();
+        let b_prime = random_scalars(N);
+        let c_prime = a.iter().zip(b_prime.iter()).map(|(x, y)| x * y).collect_vec();
+
+        // Split into shares
+        let (a1, a2) = create_authenticated_shares(mac_key, &a);
+        let (b1, b2) = create_authenticated_shares(mac_key, &b);
+        let (c1, c2) = create_authenticated_shares(mac_key, &c);
+        let (b_prime1, b_prime2) = create_authenticated_shares(mac_key, &b_prime);
+        let (c_prime1, c_prime2) = create_authenticated_shares(mac_key, &c_prime);
+
+        // Run the sacrifice protocol
+        mock_lowgear_with_keys(|mut lowgear| {
+            // Set the mac key shares
+            let is_party0 = lowgear.network.party_id() == PARTY0;
+            let my_share = if is_party0 { mac_key1 } else { mac_key2 };
+            lowgear.mac_share = my_share;
+
+            let (my_a, my_b, my_c, my_b_prime, my_c_prime) = if is_party0 {
+                (a1.clone(), b1.clone(), c1.clone(), b_prime1.clone(), c_prime1.clone())
+            } else {
+                (a2.clone(), b2.clone(), c2.clone(), b_prime2.clone(), c_prime2.clone())
+            };
+
+            async move {
+                lowgear.sacrifice(&my_a, &my_b, &my_c, &my_b_prime, &my_c_prime).await.unwrap();
+            }
         })
         .await;
     }

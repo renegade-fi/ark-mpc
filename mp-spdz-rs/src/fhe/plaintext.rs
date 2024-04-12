@@ -72,15 +72,15 @@ impl<C: CurveGroup> Plaintext<C> {
     }
 
     /// Get the number of slots in the plaintext
-    pub fn num_slots(&self) -> u32 {
-        self.inner.num_slots()
+    pub fn num_slots(&self) -> usize {
+        self.inner.num_slots() as usize
     }
 
     /// Set each slot with the given value
     pub fn set_all<T: Into<Scalar<C>>>(&mut self, value: T) {
         let val_bigint = scalar_to_ffi_bigint(value.into());
         for i in 0..self.num_slots() {
-            ffi::set_element_bigint(self.inner.pin_mut(), i as usize, val_bigint.as_ref().unwrap());
+            ffi::set_element_bigint(self.inner.pin_mut(), i, val_bigint.as_ref().unwrap());
         }
     }
 
@@ -171,7 +171,7 @@ impl<C: CurveGroup> PlaintextVector<C> {
         if self.is_empty() {
             0
         } else {
-            self.get(0).num_slots() as usize * self.len()
+            self.get(0).num_slots() * self.len()
         }
     }
 
