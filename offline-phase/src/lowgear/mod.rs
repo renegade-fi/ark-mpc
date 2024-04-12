@@ -1,6 +1,8 @@
 //! Defines the lowgear protocol for generating triples, inverse pairs, mac
 //! keys, authenticating inputs, etc
 
+pub mod commit_reveal;
+pub mod mac_check;
 pub mod setup;
 pub mod shared_random;
 pub mod triplets;
@@ -8,7 +10,6 @@ pub mod triplets;
 use ark_ec::CurveGroup;
 use ark_mpc::{
     algebra::Scalar,
-    beaver::PartyIDBeaverSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
 };
 use futures::{SinkExt, StreamExt};

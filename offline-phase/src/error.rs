@@ -6,6 +6,8 @@ use std::{error::Error, fmt::Display};
 pub enum LowGearError {
     /// An invalid commitment was provided in a commit/reveal phase
     InvalidCommitment,
+    /// An error with the mac on a value
+    InvalidMac,
     /// Error exchanging keys
     KeyExchange(String),
     /// The lowgear setup params requested before setup
@@ -22,6 +24,7 @@ impl Display for LowGearError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LowGearError::InvalidCommitment => write!(f, "Received invalid commitment"),
+            LowGearError::InvalidMac => write!(f, "Received invalid MAC"),
             LowGearError::KeyExchange(e) => write!(f, "Key exchange error: {e}"),
             LowGearError::NotSetup => write!(f, "LowGear not setup"),
             LowGearError::SacrificeError => write!(f, "Error during sacrifice phase"),
