@@ -58,7 +58,7 @@ pub mod benchmark_helpers {
         let mut rng = thread_rng();
         let mut pt = Plaintext::new(params);
 
-        for i in 0..pt.num_slots() as usize {
+        for i in 0..pt.num_slots() {
             pt.set_element(i, Scalar::random(&mut rng));
         }
 

@@ -9,7 +9,7 @@
 
 use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
-use itertools::{izip, Itertools};
+use itertools::izip;
 use mp_spdz_rs::fhe::{
     ciphertext::{CiphertextPoK, CiphertextVector},
     plaintext::{Plaintext, PlaintextVector},
@@ -126,27 +126,19 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         let r = self.get_shared_randomness().await?;
 
         // Open r * b - b'
-        let rho = &(b * r) - b_prime;
-        self.send_network_payload(rho.values()).await?;
-        let other_rho: Vec<Scalar<C>> = self.receive_network_payload().await?;
-
-        // TODO: mac check here
+        let my_rho = &(b * r) - b_prime;
+        let rho = self.open_and_check_macs(my_rho).await?;
 
         // Compute the expected rhs of the sacrifice identity
-        let recovered_rho =
-            other_rho.iter().zip(rho.iter()).map(|(a, b)| a + b.value()).collect_vec();
-        let rho_a = a * recovered_rho.as_slice();
+        let rho_a = a * rho.as_slice();
         let c_diff = &(c * r) - c_prime;
-        let tau = &c_diff - &rho_a;
+        let my_tau = &c_diff - &rho_a;
 
         // Open tau and check that all values are zero
-        self.send_network_payload(tau.values()).await?;
-        let other_tau: Vec<Scalar<C>> = self.receive_network_payload().await?;
-        let mut recovered_tau = other_tau.iter().zip(tau.iter()).map(|(a, b)| a + b.value());
+        let tau = self.open_and_check_macs(my_tau).await?;
 
-        // TODO: Mac check
         let zero = Scalar::zero();
-        if !recovered_tau.all(|s| s == zero) {
+        if !tau.into_iter().all(|s| s == zero) {
             return Err(LowGearError::SacrificeError);
         }
 

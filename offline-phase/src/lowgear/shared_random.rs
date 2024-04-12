@@ -4,7 +4,6 @@ use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
 use itertools::Itertools;
 use rand::rngs::OsRng;
-use sha3::{Digest, Sha3_256};
 
 use crate::error::LowGearError;
 
@@ -30,19 +29,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         // Generate local random values
         let mut rng = OsRng;
         let my_shares = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
-
-        let my_comm = Self::commit_randomness(&my_shares);
-        self.send_network_payload(my_comm).await?;
-        let their_comm: Scalar<C> = self.receive_network_payload().await?;
-
-        self.send_network_payload(my_shares.clone()).await?;
-        let their_shares: Vec<Scalar<C>> = self.receive_network_payload().await?;
-
-        // Verify commitments
-        let expected_comm = Self::commit_randomness(&their_shares);
-        if expected_comm != their_comm {
-            return Err(LowGearError::InvalidCommitment);
-        }
+        let their_shares = self.commit_reveal(&my_shares).await?;
 
         let final_shares = my_shares
             .iter()
@@ -50,17 +37,6 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
             .map(|(my_share, their_share)| my_share + their_share)
             .collect_vec();
         Ok(final_shares)
-    }
-
-    /// Hash commit to a set of random values
-    fn commit_randomness(values: &[Scalar<C>]) -> Scalar<C> {
-        let mut hasher = Sha3_256::new();
-        for value in values.iter() {
-            hasher.update(value.to_bytes_be());
-        }
-        let hash_output = hasher.finalize();
-
-        Scalar::<C>::from_be_bytes_mod_order(&hash_output)
     }
 }
 
