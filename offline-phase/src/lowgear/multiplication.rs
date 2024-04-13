@@ -61,7 +61,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     ///
     /// Only the first party adds the public term to their shares, both parties
     /// add the corresponding mac term
-    fn add_public_value(&mut self, public: &[Scalar<C>], batch: &mut ValueMacBatch<C>) {
+    pub(crate) fn add_public_value(&mut self, public: &[Scalar<C>], batch: &mut ValueMacBatch<C>) {
         let is_party0 = self.party_id() == PARTY0;
         for (val, public) in batch.iter_mut().zip(public.iter()) {
             val.mac += self.mac_share * public;
@@ -74,63 +74,27 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
 
 #[cfg(test)]
 mod tests {
-    use ark_mpc::{algebra::Scalar, PARTY0};
-    use itertools::{izip, Itertools};
-    use rand::thread_rng;
+    use itertools::izip;
 
-    use crate::test_helpers::{
-        encrypt_all, generate_authenticated_secret_shares, generate_triples,
-        mock_lowgear_with_keys, TestCurve,
-    };
+    use crate::test_helpers::mock_lowgear_with_triples;
 
     #[tokio::test]
     async fn test_beaver_mul() {
         const N: usize = 100;
-        let mut rng = thread_rng();
 
-        // Setup mock keys and triplets
-        let mac_key = Scalar::<TestCurve>::random(&mut rng);
-        let mac_key1 = Scalar::<TestCurve>::random(&mut rng);
-        let mac_key2 = mac_key - mac_key1;
+        mock_lowgear_with_triples(N, |mut lowgear| async move {
+            let lhs = lowgear.get_authenticated_randomness_vec(N).await.unwrap();
+            let rhs = lowgear.get_authenticated_randomness_vec(N).await.unwrap();
+            let res = lowgear.beaver_mul(&lhs, &rhs).await.unwrap();
 
-        let (a, b, c) = generate_triples(N);
-        let (a1, a2) = generate_authenticated_secret_shares(&a, mac_key);
-        let (b1, b2) = generate_authenticated_secret_shares(&b, mac_key);
-        let (c1, c2) = generate_authenticated_secret_shares(&c, mac_key);
+            // Open all values
+            let lhs_open = lowgear.open_and_check_macs(&lhs).await.unwrap();
+            let rhs_open = lowgear.open_and_check_macs(&rhs).await.unwrap();
+            let res_open = lowgear.open_and_check_macs(&res).await.unwrap();
 
-        mock_lowgear_with_keys(|mut lowgear| {
-            // Setup the mac shares and counterparty mac share encryptions
-            let is_party0 = lowgear.party_id() == PARTY0;
-            lowgear.mac_share = if is_party0 { mac_key1 } else { mac_key2 };
-
-            let other_pk = lowgear.other_pk.as_ref().unwrap();
-            let other_share = if is_party0 { mac_key2 } else { mac_key1 };
-            lowgear.other_mac_enc = Some(encrypt_all(other_share, other_pk, &lowgear.params));
-
-            // Setup the mock triplets
-            let (my_a, my_b, my_c) = if is_party0 { (&a1, &b1, &c1) } else { (&a2, &b2, &c2) };
-            lowgear.triples = izip!(
-                my_a.clone().into_inner(),
-                my_b.clone().into_inner(),
-                my_c.clone().into_inner()
-            )
-            .collect_vec();
-
-            // Test the multiplication sub-protocol
-            async move {
-                let lhs = lowgear.get_authenticated_randomness_vec(N).await.unwrap();
-                let rhs = lowgear.get_authenticated_randomness_vec(N).await.unwrap();
-                let res = lowgear.beaver_mul(&lhs, &rhs).await.unwrap();
-
-                // Open all values
-                let lhs_open = lowgear.open_and_check_macs(&lhs).await.unwrap();
-                let rhs_open = lowgear.open_and_check_macs(&rhs).await.unwrap();
-                let res_open = lowgear.open_and_check_macs(&res).await.unwrap();
-
-                // Assert that the result is equal to the expected value
-                for (l, r, re) in izip!(lhs_open, rhs_open, res_open) {
-                    assert_eq!(re, l * r);
-                }
+            // Assert that the result is equal to the expected value
+            for (l, r, re) in izip!(lhs_open, rhs_open, res_open) {
+                assert_eq!(re, l * r);
             }
         })
         .await;

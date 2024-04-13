@@ -6,6 +6,7 @@ pub mod inverse_tuples;
 pub mod mac_check;
 pub mod multiplication;
 pub mod setup;
+pub mod shared_bits;
 pub mod shared_random;
 pub mod triplets;
 
@@ -47,6 +48,8 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     pub triples: Vec<(ValueMac<C>, ValueMac<C>, ValueMac<C>)>,
     /// The inverse tuples generated during the offline phase
     pub inverse_tuples: Vec<(ValueMac<C>, ValueMac<C>)>,
+    /// The shared bits generated during the offline phase
+    pub shared_bits: Vec<ValueMac<C>>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -68,6 +71,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             other_mac_enc: None,
             triples: Default::default(),
             inverse_tuples: Default::default(),
+            shared_bits: Default::default(),
             network,
         }
     }

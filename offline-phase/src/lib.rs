@@ -27,7 +27,7 @@ pub(crate) mod test_helpers {
         PARTY0, PARTY1,
     };
     use futures::Future;
-    use itertools::Itertools;
+    use itertools::{izip, Itertools};
     use mp_spdz_rs::fhe::{
         ciphertext::Ciphertext,
         keys::{BGVKeypair, BGVPublicKey},
@@ -145,18 +145,53 @@ pub(crate) mod test_helpers {
         S: Future<Output = T> + Send + 'static,
         F: FnMut(LowGear<TestCurve, MockNetwork<TestCurve>>) -> S,
     {
-        let mut rng = thread_rng();
+        let (stream1, stream2) = UnboundedDuplexStream::new_duplex_pair();
+        let net1 = MockNetwork::new(PARTY0, stream1);
+        let net2 = MockNetwork::new(PARTY1, stream2);
+        let (lowgear1, lowgear2) = create_lowgear_with_keys(net1, net2);
+
+        run_mock_lowgear(f, lowgear1, lowgear2).await
+    }
+
+    /// Run a mock lowgear protocol with `n` Beaver triples pre-generated
+    pub async fn mock_lowgear_with_triples<F, S, T>(n: usize, f: F) -> (T, T)
+    where
+        T: Send + 'static,
+        S: Future<Output = T> + Send + 'static,
+        F: FnMut(LowGear<TestCurve, MockNetwork<TestCurve>>) -> S,
+    {
         let (stream1, stream2) = UnboundedDuplexStream::new_duplex_pair();
         let net1 = MockNetwork::new(PARTY0, stream1);
         let net2 = MockNetwork::new(PARTY1, stream2);
 
+        let (mut lowgear1, mut lowgear2) = create_lowgear_with_keys(net1, net2);
+
+        let mac_key = lowgear1.mac_share + lowgear2.mac_share;
+        let (a, b, c) = generate_triples(n);
+        let (a1, a2) = generate_authenticated_secret_shares(&a, mac_key);
+        let (b1, b2) = generate_authenticated_secret_shares(&b, mac_key);
+        let (c1, c2) = generate_authenticated_secret_shares(&c, mac_key);
+
+        lowgear1.triples = izip!(a1, b1, c1).collect_vec();
+        lowgear2.triples = izip!(a2, b2, c2).collect_vec();
+
+        run_mock_lowgear(f, lowgear1, lowgear2).await
+    }
+
+    /// Setup two lowgear instances with keys given the network implementations
+    pub fn create_lowgear_with_keys(
+        net1: MockNetwork<TestCurve>,
+        net2: MockNetwork<TestCurve>,
+    ) -> (LowGear<TestCurve, MockNetwork<TestCurve>>, LowGear<TestCurve, MockNetwork<TestCurve>>)
+    {
+        let mut rng = thread_rng();
         let mut lowgear1 = LowGear::new(net1);
         let mut lowgear2 = LowGear::new(net2);
 
         // Setup the lowgear instances
-        let params = BGVParams::new_no_mults();
-        let keypair1 = BGVKeypair::gen(&params);
-        let keypair2 = BGVKeypair::gen(&params);
+        let params = &lowgear1.params;
+        let keypair1 = BGVKeypair::gen(params);
+        let keypair2 = BGVKeypair::gen(params);
 
         let mac_share1 = Scalar::random(&mut rng);
         let mac_share2 = Scalar::random(&mut rng);
@@ -169,11 +204,11 @@ pub(crate) mod test_helpers {
 
         // Set the exchanged values
         lowgear1.other_pk = Some(keypair2.public_key());
-        lowgear1.other_mac_enc = Some(encrypt_all(mac_share2, &keypair2.public_key(), &params));
+        lowgear1.other_mac_enc = Some(encrypt_all(mac_share2, &keypair2.public_key(), params));
         lowgear2.other_pk = Some(keypair1.public_key());
-        lowgear2.other_mac_enc = Some(encrypt_all(mac_share1, &keypair1.public_key(), &params));
+        lowgear2.other_mac_enc = Some(encrypt_all(mac_share1, &keypair1.public_key(), params));
 
-        run_mock_lowgear(f, lowgear1, lowgear2).await
+        (lowgear1, lowgear2)
     }
 
     /// Run a two-party protocol using the given `LowGear` instances
