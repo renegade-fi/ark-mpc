@@ -13,7 +13,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     /// Returns the opened values
     pub async fn open_and_check_macs(
         &mut self,
-        x: ValueMacBatch<C>,
+        x: &ValueMacBatch<C>,
     ) -> Result<Vec<Scalar<C>>, LowGearError> {
         // Open and reconstruct
         let recovered_values = self.open_batch(&x.values()).await?;

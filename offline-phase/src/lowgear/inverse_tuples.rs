@@ -16,7 +16,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         let random_values = self.get_authenticated_randomness_vec(2 * n).await?;
 
         // Split into halves that we will multiply using the Beaver trick
-        let (random_values1, random_values2) = random_values.split_at(n);
+        let (random_values1, random_values2) = random_values.into_inner().split_at(n);
 
         Ok(())
     }
