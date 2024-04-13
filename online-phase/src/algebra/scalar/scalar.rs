@@ -83,6 +83,11 @@ impl<C: CurveGroup> Scalar<C> {
         Scalar(self.0.inverse().unwrap())
     }
 
+    /// Compute the square root of the given scalar
+    pub fn sqrt(&self) -> Option<Self> {
+        self.0.sqrt().map(Scalar)
+    }
+
     /// Compute the batch inversion of a list of Scalars
     pub fn batch_inverse(vals: &mut [Self]) {
         let mut values = vals.iter().map(|x| x.0).collect_vec();

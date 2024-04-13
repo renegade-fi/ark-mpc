@@ -42,51 +42,20 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
 
 #[cfg(test)]
 mod test {
-    use ark_mpc::{algebra::Scalar, test_helpers::TestCurve, PARTY0};
-    use itertools::{izip, Itertools};
-    use rand::thread_rng;
+    use ark_mpc::{algebra::Scalar, test_helpers::TestCurve};
+    use itertools::izip;
 
     use crate::{
         beaver_source::{ValueMac, ValueMacBatch},
-        test_helpers::{
-            encrypt_all, generate_authenticated_secret_shares, generate_triples,
-            mock_lowgear_with_keys,
-        },
+        test_helpers::mock_lowgear_with_triples,
     };
 
     /// Tests generating inverse tuples
     #[tokio::test]
     async fn test_generate_inverse_tuples() {
-        let mut rng = thread_rng();
         const N: usize = 100; // The number of tuples to generate
 
-        // Generate a mac key and shares
-        let mac_key = Scalar::random(&mut rng);
-        let mac_key1 = Scalar::random(&mut rng);
-        let mac_key2 = mac_key - mac_key1;
-
-        // Setup a set of mock triples
-        let (a, b, c) = generate_triples(N);
-        let (a1, a2) = generate_authenticated_secret_shares(&a, mac_key);
-        let (b1, b2) = generate_authenticated_secret_shares(&b, mac_key);
-        let (c1, c2) = generate_authenticated_secret_shares(&c, mac_key);
-
-        mock_lowgear_with_keys(|mut lowgear| {
-            // Setup the mac keys
-            let is_party0 = lowgear.party_id() == PARTY0;
-            let other_pk = lowgear.other_pk.as_ref().unwrap();
-
-            let my_mac_key = if is_party0 { mac_key1 } else { mac_key2 };
-            let their_mac_key = if is_party0 { mac_key2 } else { mac_key1 };
-            lowgear.mac_share = my_mac_key;
-            lowgear.other_mac_enc = Some(encrypt_all(their_mac_key, other_pk, &lowgear.params));
-
-            // Setup the triplets
-            let (my_a, my_b, my_c) = if is_party0 { (&a1, &b1, &c1) } else { (&a2, &b2, &c2) };
-            lowgear.triples =
-                izip!(my_a.clone().into_iter(), my_b.clone().into_iter(), my_c.clone().into_iter())
-                    .collect_vec();
-
+        mock_lowgear_with_triples(N, |mut lowgear| {
             async move {
                 lowgear.generate_inverse_tuples(N).await.unwrap();
 
