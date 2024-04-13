@@ -2,7 +2,9 @@
 //! keys, authenticating inputs, etc
 
 pub mod commit_reveal;
+pub mod inverse_tuples;
 pub mod mac_check;
+pub mod multiplication;
 pub mod setup;
 pub mod shared_random;
 pub mod triplets;
@@ -43,6 +45,8 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     pub other_mac_enc: Option<Ciphertext<C>>,
     /// The Beaver triples generated during the offline phase
     pub triples: Vec<(ValueMac<C>, ValueMac<C>, ValueMac<C>)>,
+    /// The inverse tuples generated during the offline phase
+    pub inverse_tuples: Vec<(ValueMac<C>, ValueMac<C>)>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -63,6 +67,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             other_pk: None,
             other_mac_enc: None,
             triples: Default::default(),
+            inverse_tuples: Default::default(),
             network,
         }
     }

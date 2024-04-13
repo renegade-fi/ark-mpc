@@ -57,13 +57,13 @@ impl<C: CurveGroup> BGVParams<C> {
     }
 
     /// Get the number of plaintext slots the given parameters support
-    pub fn plaintext_slots(&self) -> u32 {
-        self.as_ref().n_plaintext_slots()
+    pub fn plaintext_slots(&self) -> usize {
+        self.as_ref().n_plaintext_slots() as usize
     }
 
     /// Get the number of ciphertexts that may be proven together
     pub fn ciphertext_pok_batch_size(&self) -> usize {
-        (self.plaintext_slots() as usize) * (DEFAULT_DROWN_SEC as usize)
+        self.plaintext_slots() * (DEFAULT_DROWN_SEC as usize)
     }
 }
 

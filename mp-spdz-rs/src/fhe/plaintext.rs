@@ -76,6 +76,16 @@ impl<C: CurveGroup> Plaintext<C> {
         self.inner.num_slots() as usize
     }
 
+    /// Get a vector of scalars from the plaintext slots
+    pub fn to_scalars(&self) -> Vec<Scalar<C>> {
+        let mut scalars = Vec::with_capacity(self.num_slots());
+        for i in 0..self.num_slots() {
+            scalars.push(self.get_element(i));
+        }
+
+        scalars
+    }
+
     /// Set each slot with the given value
     pub fn set_all<T: Into<Scalar<C>>>(&mut self, value: T) {
         let val_bigint = scalar_to_ffi_bigint(value.into());
@@ -153,6 +163,35 @@ impl<C: CurveGroup> PlaintextVector<C> {
     pub fn new(size: usize, params: &BGVParams<C>) -> Self {
         let inner = ffi::new_plaintext_vector(size, params.as_ref());
         Self { inner, _phantom: PhantomData }
+    }
+
+    /// Create a plaintext vector from a vector of scalars, packing them into
+    /// slots
+    pub fn from_scalars(scalars: &[Scalar<C>], params: &BGVParams<C>) -> Self {
+        let n_plaintexts = scalars.len() / params.plaintext_slots() + 1;
+        let mut pt = Self::new(n_plaintexts, params);
+
+        for chunk in scalars.chunks(params.plaintext_slots()) {
+            let mut plaintext = Plaintext::new(params);
+            for (i, scalar) in chunk.iter().enumerate() {
+                plaintext.set_element(i, *scalar);
+            }
+
+            pt.push(&plaintext);
+        }
+
+        pt
+    }
+
+    /// Create a vector of scalars from the plaintext vector
+    pub fn to_scalars(&self) -> Vec<Scalar<C>> {
+        let mut scalars = Vec::with_capacity(self.total_slots());
+        for i in 0..self.len() {
+            let plaintext = self.get(i);
+            scalars.extend(plaintext.to_scalars());
+        }
+
+        scalars
     }
 
     /// Create a new empty `PlaintextVector`

@@ -3,9 +3,10 @@
 use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
 use itertools::Itertools;
+use mp_spdz_rs::fhe::plaintext::PlaintextVector;
 use rand::rngs::OsRng;
 
-use crate::error::LowGearError;
+use crate::{beaver_source::ValueMac, error::LowGearError};
 
 use super::LowGear;
 
@@ -38,14 +39,39 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
             .collect_vec();
         Ok(final_shares)
     }
+
+    /// Generate secret shared, authenticated random values
+    pub async fn get_authenticated_randomness_vec(
+        &mut self,
+        n: usize,
+    ) -> Result<Vec<ValueMac<C>>, LowGearError> {
+        // Each party generates shares locally with the represented value implicitly
+        // defined as the sum of the shares
+        let mut rng = OsRng;
+        let my_shares = (0..n).map(|_| Scalar::<C>::random(&mut rng)).collect_vec();
+
+        let pt_vec = PlaintextVector::from_scalars(&my_shares, &self.params);
+        let mut macs = self.authenticate_vec(&pt_vec).await?.to_scalars();
+
+        // Recombine into ValueMac pairs
+        macs.truncate(n);
+        let res =
+            my_shares.into_iter().zip(macs.into_iter()).map(|(v, m)| ValueMac::new(v, m)).collect();
+
+        Ok(res)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::test_helpers::mock_lowgear;
+    use crate::{
+        beaver_source::ValueMacBatch,
+        test_helpers::{mock_lowgear, mock_lowgear_with_keys},
+    };
 
     use super::*;
 
+    /// Tests creating a shared vector of public randomness values
     #[tokio::test]
     async fn test_get_shared_randomness_vec() {
         mock_lowgear(|mut lowgear| async move {
@@ -59,6 +85,21 @@ mod tests {
             let their_shares: Vec<Scalar<_>> = lowgear.receive_network_payload().await.unwrap();
 
             assert_eq!(shares, their_shares);
+        })
+        .await;
+    }
+
+    /// Tests creating a shared vector of authenticated random values
+    #[tokio::test]
+    async fn test_get_authenticated_randomness_vec() {
+        const N: usize = 100;
+
+        mock_lowgear_with_keys(|mut lowgear| async move {
+            let shares = lowgear.get_authenticated_randomness_vec(N).await.unwrap();
+            assert_eq!(shares.len(), N);
+
+            // Check the macs on the shares
+            lowgear.open_and_check_macs(ValueMacBatch::new(shares)).await.unwrap();
         })
         .await;
     }
