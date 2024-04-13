@@ -122,6 +122,12 @@ impl<C: CurveGroup> ValueMacBatch<C> {
         self.inner.iter_mut()
     }
 
+    /// Split the batch in two at the given index
+    pub fn split_at(&self, i: usize) -> (Self, Self) {
+        let (lhs, rhs) = self.inner.split_at(i);
+        (Self { inner: lhs.to_vec() }, Self { inner: rhs.to_vec() })
+    }
+
     /// Create a new ValueMacBatch from a batch of values and macs
     pub fn from_parts(values: &[Scalar<C>], macs: &[Scalar<C>]) -> Self {
         assert_eq!(values.len(), macs.len());
