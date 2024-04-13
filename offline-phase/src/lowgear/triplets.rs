@@ -100,7 +100,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     }
 
     /// Authenticate a plaintext vector with the counterparty
-    async fn authenticate_vec(
+    pub async fn authenticate_vec(
         &mut self,
         a: &PlaintextVector<C>,
     ) -> Result<PlaintextVector<C>, LowGearError> {
@@ -416,7 +416,7 @@ mod test {
         // The number of plaintext vectors to test
         mock_lowgear_with_keys(|mut lowgear| async move {
             // Generate values for the triplets
-            let n_slots = lowgear.params.plaintext_slots() as usize;
+            let n_slots = lowgear.params.plaintext_slots();
             let my_a = random_scalars(n_slots);
             let my_b = random_scalars(n_slots);
             let my_c = random_scalars(n_slots);
