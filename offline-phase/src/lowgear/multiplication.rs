@@ -78,52 +78,10 @@ mod tests {
     use itertools::{izip, Itertools};
     use rand::thread_rng;
 
-    use crate::{
-        beaver_source::ValueMacBatch,
-        test_helpers::{encrypt_all, mock_lowgear_with_keys, TestCurve},
+    use crate::test_helpers::{
+        encrypt_all, generate_authenticated_secret_shares, generate_triples,
+        mock_lowgear_with_keys, TestCurve,
     };
-
-    /// Generate random mock triples for the Beaver trick
-    #[allow(clippy::type_complexity)]
-    fn generate_triples(
-        n: usize,
-    ) -> (Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>) {
-        let mut rng = thread_rng();
-        let a = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
-        let b = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
-        let c = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
-
-        (a, b, c)
-    }
-
-    /// Generate authenticated secret shares of a given set of values
-    fn generate_authenticated_secret_shares(
-        values: &[Scalar<TestCurve>],
-        mac_key: Scalar<TestCurve>,
-    ) -> (ValueMacBatch<TestCurve>, ValueMacBatch<TestCurve>) {
-        let (shares1, shares2) = generate_secret_shares(values);
-        let macs = values.iter().map(|value| *value * mac_key).collect_vec();
-        let (macs1, macs2) = generate_secret_shares(&macs);
-
-        (ValueMacBatch::from_parts(&shares1, &macs1), ValueMacBatch::from_parts(&shares2, &macs2))
-    }
-
-    /// Generate secret shares of a set of values
-    fn generate_secret_shares(
-        values: &[Scalar<TestCurve>],
-    ) -> (Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>) {
-        let mut rng = thread_rng();
-        let mut shares1 = Vec::with_capacity(values.len());
-        let mut shares2 = Vec::with_capacity(values.len());
-        for value in values {
-            let share1 = Scalar::<TestCurve>::random(&mut rng);
-            let share2 = value - share1;
-            shares1.push(share1);
-            shares2.push(share2);
-        }
-
-        (shares1, shares2)
-    }
 
     #[tokio::test]
     async fn test_beaver_mul() {
