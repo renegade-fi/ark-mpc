@@ -168,8 +168,7 @@ impl<C: CurveGroup> PlaintextVector<C> {
     /// Create a plaintext vector from a vector of scalars, packing them into
     /// slots
     pub fn from_scalars(scalars: &[Scalar<C>], params: &BGVParams<C>) -> Self {
-        let n_plaintexts = scalars.len() / params.plaintext_slots() + 1;
-        let mut pt = Self::new(n_plaintexts, params);
+        let mut pt = Self::empty();
 
         for chunk in scalars.chunks(params.plaintext_slots()) {
             let mut plaintext = Plaintext::new(params);

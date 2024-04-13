@@ -127,7 +127,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
 
         // Open r * b - b'
         let my_rho = &(b * r) - b_prime;
-        let rho = self.open_and_check_macs(my_rho).await?;
+        let rho = self.open_and_check_macs(&my_rho).await?;
 
         // Compute the expected rhs of the sacrifice identity
         let rho_a = a * rho.as_slice();
@@ -135,7 +135,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         let my_tau = &c_diff - &rho_a;
 
         // Open tau and check that all values are zero
-        let tau = self.open_and_check_macs(my_tau).await?;
+        let tau = self.open_and_check_macs(&my_tau).await?;
 
         let zero = Scalar::zero();
         if !tau.into_iter().all(|s| s == zero) {

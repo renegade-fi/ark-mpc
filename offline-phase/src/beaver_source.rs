@@ -28,9 +28,9 @@ pub struct LowGearParams<C: CurveGroup> {
 #[derive(Default, Copy, Clone)]
 pub struct ValueMac<C: CurveGroup> {
     /// The value
-    value: Scalar<C>,
+    pub(crate) value: Scalar<C>,
     /// The mac
-    mac: Scalar<C>,
+    pub(crate) mac: Scalar<C>,
 }
 
 impl<C: CurveGroup> ValueMac<C> {
@@ -87,6 +87,21 @@ impl<C: CurveGroup> ValueMacBatch<C> {
         Self { inner }
     }
 
+    /// Get the length of the batch
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Check if the batch is empty
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Get the inner vector
+    pub fn into_inner(self) -> Vec<ValueMac<C>> {
+        self.inner
+    }
+
     /// Get all values
     pub fn values(&self) -> Vec<Scalar<C>> {
         self.inner.iter().map(|vm| vm.value).collect()
@@ -100,6 +115,11 @@ impl<C: CurveGroup> ValueMacBatch<C> {
     /// Get an iterator over the vector
     pub fn iter(&self) -> std::slice::Iter<'_, ValueMac<C>> {
         self.inner.iter()
+    }
+
+    /// Get a mutable iterator over the vector
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, ValueMac<C>> {
+        self.inner.iter_mut()
     }
 
     /// Create a new ValueMacBatch from a batch of values and macs

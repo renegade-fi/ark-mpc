@@ -6,7 +6,7 @@ use itertools::Itertools;
 use mp_spdz_rs::fhe::plaintext::PlaintextVector;
 use rand::rngs::OsRng;
 
-use crate::{beaver_source::ValueMac, error::LowGearError};
+use crate::{beaver_source::ValueMacBatch, error::LowGearError};
 
 use super::LowGear;
 
@@ -44,7 +44,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     pub async fn get_authenticated_randomness_vec(
         &mut self,
         n: usize,
-    ) -> Result<Vec<ValueMac<C>>, LowGearError> {
+    ) -> Result<ValueMacBatch<C>, LowGearError> {
         // Each party generates shares locally with the represented value implicitly
         // defined as the sum of the shares
         let mut rng = OsRng;
@@ -55,19 +55,13 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
 
         // Recombine into ValueMac pairs
         macs.truncate(n);
-        let res =
-            my_shares.into_iter().zip(macs.into_iter()).map(|(v, m)| ValueMac::new(v, m)).collect();
-
-        Ok(res)
+        Ok(ValueMacBatch::from_parts(&my_shares, &macs))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        beaver_source::ValueMacBatch,
-        test_helpers::{mock_lowgear, mock_lowgear_with_keys},
-    };
+    use crate::test_helpers::{mock_lowgear, mock_lowgear_with_keys};
 
     use super::*;
 
@@ -99,7 +93,7 @@ mod tests {
             assert_eq!(shares.len(), N);
 
             // Check the macs on the shares
-            lowgear.open_and_check_macs(ValueMacBatch::new(shares)).await.unwrap();
+            lowgear.open_and_check_macs(&shares).await.unwrap();
         })
         .await;
     }
