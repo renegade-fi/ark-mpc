@@ -21,7 +21,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     /// 5. Shift this range to 0, 1; i.e. add one, divide by two
     pub async fn generate_shared_bits(&mut self, n: usize) -> Result<(), LowGearError> {
         // This method requires `n` tuples to sacrifice in the multiplication step
-        assert!(self.triples.len() >= n, "Not enough triples to generate {} bits", n);
+        assert!(self.num_triples() >= n, "Not enough triples to generate {} bits", n);
         let random_vals = self.get_authenticated_randomness_vec(n).await?;
         let squared_vals = self.beaver_mul(&random_vals, &random_vals).await?;
 
@@ -36,8 +36,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
 
         let mut neg_one_or_one = &random_vals * sqrt_inv_vals.as_slice();
         self.add_public_value(&ones, &mut neg_one_or_one);
-        let bits = &neg_one_or_one * inv_twos.as_slice();
-        self.shared_bits = bits.into_inner();
+        self.shared_bits = &neg_one_or_one * inv_twos.as_slice();
 
         Ok(())
     }
@@ -47,7 +46,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
 mod test {
     use ark_mpc::algebra::Scalar;
 
-    use crate::{beaver_source::ValueMacBatch, test_helpers::mock_lowgear_with_triples};
+    use crate::test_helpers::mock_lowgear_with_triples;
 
     /// Tests the `generate_shared_bits` method
     #[tokio::test]
@@ -57,7 +56,7 @@ mod test {
             lowgear.generate_shared_bits(N).await.unwrap();
 
             // Open the shared bits and check that they are either 0 or 1
-            let bits = ValueMacBatch::new(lowgear.shared_bits.clone());
+            let bits = lowgear.shared_bits.clone();
             let opened_bits = lowgear.open_and_check_macs(&bits).await.unwrap();
             assert!(opened_bits.iter().all(|x| *x == Scalar::zero() || *x == Scalar::one()));
         })

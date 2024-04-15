@@ -6,7 +6,7 @@ use itertools::Itertools;
 use mp_spdz_rs::fhe::plaintext::PlaintextVector;
 use rand::rngs::OsRng;
 
-use crate::{beaver_source::ValueMacBatch, error::LowGearError};
+use crate::{error::LowGearError, structs::ValueMacBatch};
 
 use super::LowGear;
 

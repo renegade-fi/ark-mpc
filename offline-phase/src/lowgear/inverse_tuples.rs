@@ -19,7 +19,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     ///    product to get the inverse of the blinded randomness
     pub async fn generate_inverse_tuples(&mut self, n: usize) -> Result<(), LowGearError> {
         // We need `n` triplets to sacrifice for `n` inverse tuples
-        assert!(self.triples.len() >= n, "Not enough triplets to generate {n} inverse tuples");
+        assert!(self.num_triples() >= n, "Not enough triplets to generate {n} inverse tuples");
         let random_values = self.get_authenticated_randomness_vec(2 * n).await?;
         let (lhs, rhs) = random_values.split_at(n);
 
@@ -32,23 +32,17 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         let inverses = product_open.into_iter().map(|x| x.inverse()).collect_vec();
         let shared_inverses = &rhs * inverses.as_slice(); // this leaves `1 / lhs`
 
-        // Structure into inverse tuples
-        let tuples = lhs.into_iter().zip(shared_inverses.into_iter()).collect_vec();
-        self.inverse_tuples = tuples;
-
+        self.inverse_tuples = (lhs, shared_inverses);
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use ark_mpc::{algebra::Scalar, test_helpers::TestCurve};
+    use ark_mpc::algebra::Scalar;
     use itertools::izip;
 
-    use crate::{
-        beaver_source::{ValueMac, ValueMacBatch},
-        test_helpers::mock_lowgear_with_triples,
-    };
+    use crate::test_helpers::mock_lowgear_with_triples;
 
     /// Tests generating inverse tuples
     #[tokio::test]
@@ -60,11 +54,10 @@ mod test {
                 lowgear.generate_inverse_tuples(N).await.unwrap();
 
                 // Check the inverse triples
-                let (a, a_inv): (Vec<ValueMac<TestCurve>>, Vec<ValueMac<TestCurve>>) =
-                    lowgear.inverse_tuples.clone().into_iter().unzip();
-                let a_inv_open =
-                    lowgear.open_and_check_macs(&ValueMacBatch::new(a_inv)).await.unwrap();
-                let a_open = lowgear.open_and_check_macs(&ValueMacBatch::new(a)).await.unwrap();
+                let (a, a_inv) =
+                    (lowgear.inverse_tuples.0.clone(), lowgear.inverse_tuples.1.clone());
+                let a_inv_open = lowgear.open_and_check_macs(&a_inv).await.unwrap();
+                let a_open = lowgear.open_and_check_macs(&a).await.unwrap();
 
                 for (a, a_inv) in izip!(a_open, a_inv_open) {
                     assert_eq!(a * a_inv, Scalar::one());

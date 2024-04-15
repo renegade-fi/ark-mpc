@@ -3,7 +3,7 @@
 use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
 
-use crate::{beaver_source::ValueMacBatch, error::LowGearError};
+use crate::{error::LowGearError, structs::ValueMacBatch};
 
 use super::LowGear;
 

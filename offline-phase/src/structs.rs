@@ -9,6 +9,10 @@ use mp_spdz_rs::fhe::keys::{BGVKeypair, BGVPublicKey};
 use mp_spdz_rs::fhe::params::BGVParams;
 use mp_spdz_rs::fhe::plaintext::PlaintextVector;
 
+// ------------------------
+// | Offline Phase Result |
+// ------------------------
+
 /// The parameters setup by the offline phase
 #[derive(Clone)]
 pub struct LowGearParams<C: CurveGroup> {
@@ -23,6 +27,66 @@ pub struct LowGearParams<C: CurveGroup> {
     /// The BGV cryptosystem parameters
     pub bgv_params: BGVParams<C>,
 }
+
+/// The resulting shared values created by the lowgear offline phase
+#[derive(Clone)]
+pub struct LowGearPrep<C: CurveGroup> {
+    /// The shared inverse pairs
+    pub inverse_pairs: (ValueMacBatch<C>, ValueMacBatch<C>),
+    /// The shared bits
+    pub bits: ValueMacBatch<C>,
+    /// The shared Beaver triplets
+    pub triplets: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
+}
+
+impl<C: CurveGroup> LowGearPrep<C> {
+    /// Create a new `LowGearPrep`
+    pub fn new(
+        inverse_pairs: (ValueMacBatch<C>, ValueMacBatch<C>),
+        bits: ValueMacBatch<C>,
+        triplets: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
+    ) -> Self {
+        Self { inverse_pairs, bits, triplets }
+    }
+
+    /// Create an empty `LowGearPrep`
+    pub fn empty() -> Self {
+        Self {
+            inverse_pairs: (ValueMacBatch::new(vec![]), ValueMacBatch::new(vec![])),
+            bits: ValueMacBatch::new(vec![]),
+            triplets: (
+                ValueMacBatch::new(vec![]),
+                ValueMacBatch::new(vec![]),
+                ValueMacBatch::new(vec![]),
+            ),
+        }
+    }
+
+    /// Append the given inverse pairs to this one
+    pub fn append_inverse_pairs(&mut self, mut other: (ValueMacBatch<C>, ValueMacBatch<C>)) {
+        self.inverse_pairs.0.append(&mut other.0);
+        self.inverse_pairs.1.append(&mut other.1);
+    }
+
+    /// Append the given bits to this one
+    pub fn append_bits(&mut self, other: &mut ValueMacBatch<C>) {
+        self.bits.append(other);
+    }
+
+    /// Append the given triplets to this one
+    pub fn append_triplets(
+        &mut self,
+        mut other: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
+    ) {
+        self.triplets.0.append(&mut other.0);
+        self.triplets.1.append(&mut other.1);
+        self.triplets.2.append(&mut other.2);
+    }
+}
+
+// ------------------------
+// | Authenticated Shares |
+// ------------------------
 
 /// A type storing values and their macs
 #[derive(Default, Copy, Clone)]
@@ -75,7 +139,7 @@ impl<C: CurveGroup> Mul<Scalar<C>> for &ValueMac<C> {
 }
 
 /// A struct containing a batch of values and macs
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ValueMacBatch<C: CurveGroup> {
     /// The values and macs
     inner: Vec<ValueMac<C>>,
@@ -95,6 +159,11 @@ impl<C: CurveGroup> ValueMacBatch<C> {
     /// Check if the batch is empty
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
+    }
+
+    /// Append the given batch to this one
+    pub fn append(&mut self, other: &mut Self) {
+        self.inner.append(&mut other.inner);
     }
 
     /// Get the inner vector
@@ -126,6 +195,13 @@ impl<C: CurveGroup> ValueMacBatch<C> {
     pub fn split_at(&self, i: usize) -> (Self, Self) {
         let (lhs, rhs) = self.inner.split_at(i);
         (Self { inner: lhs.to_vec() }, Self { inner: rhs.to_vec() })
+    }
+
+    /// Split off the last `n` elements from the batch
+    pub fn split_off(&mut self, n: usize) -> Self {
+        let split_idx = self.len() - n;
+        let split = self.inner.split_off(split_idx);
+        Self { inner: split }
     }
 
     /// Create a new ValueMacBatch from a batch of values and macs

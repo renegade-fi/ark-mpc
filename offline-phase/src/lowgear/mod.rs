@@ -28,8 +28,8 @@ use mp_spdz_rs::{
 use rand::thread_rng;
 
 use crate::{
-    beaver_source::{LowGearParams, ValueMac},
     error::LowGearError,
+    structs::{LowGearParams, LowGearPrep, ValueMacBatch},
 };
 
 /// A type implementing Lowgear protocol logic
@@ -45,11 +45,11 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     /// An encryption of the counterparty's MAC key share under their public key
     pub other_mac_enc: Option<Ciphertext<C>>,
     /// The Beaver triples generated during the offline phase
-    pub triples: Vec<(ValueMac<C>, ValueMac<C>, ValueMac<C>)>,
+    pub triples: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
     /// The inverse tuples generated during the offline phase
-    pub inverse_tuples: Vec<(ValueMac<C>, ValueMac<C>)>,
+    pub inverse_tuples: (ValueMacBatch<C>, ValueMacBatch<C>),
     /// The shared bits generated during the offline phase
-    pub shared_bits: Vec<ValueMac<C>>,
+    pub shared_bits: ValueMacBatch<C>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -81,6 +81,11 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         self.network.party_id()
     }
 
+    /// Get the number of triples available
+    pub fn num_triples(&self) -> usize {
+        self.triples.0.len()
+    }
+
     /// Get the setup parameters from the offline phase
     pub fn get_setup_params(&self) -> Result<LowGearParams<C>, LowGearError> {
         Ok(LowGearParams {
@@ -90,6 +95,15 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             other_mac_enc: self.other_mac_enc.clone().ok_or(LowGearError::NotSetup)?,
             bgv_params: self.params.clone(),
         })
+    }
+
+    /// Get the prep result from the LowGear
+    pub fn get_offline_result(&mut self) -> LowGearPrep<C> {
+        LowGearPrep::new(
+            self.inverse_tuples.clone(),
+            self.shared_bits.clone(),
+            self.triples.clone(),
+        )
     }
 
     /// Get a plaintext with the local mac share in all slots

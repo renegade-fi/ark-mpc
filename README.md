@@ -18,7 +18,7 @@
 `ark-mpc` provides a malicious secure [SPDZ](https://eprint.iacr.org/2011/535.pdf) style framework for two party secure computation. The circuit is constructed on the fly, by overloading arithmetic operators of MPC types, see the example below in which each of the parties shares a value and together they compute the product:
 ```rust
 use ark_mpc::{
-    algebra::scalar::Scalar, beaver::SharedValueSource, network::QuicTwoPartyNet, MpcFabric,
+    algebra::scalar::Scalar, beaver::OfflinePhase, network::QuicTwoPartyNet, MpcFabric,
     PARTY0, PARTY1,
 };
 use ark_curve25519::EdwardsProjective as Curve25519Projective;

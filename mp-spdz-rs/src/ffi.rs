@@ -1,5 +1,6 @@
 //! The FFI bindings for the MP-SPDZ library
 
+#[allow(unused)]
 #[allow(clippy::missing_safety_doc)]
 #[allow(clippy::missing_docs_in_private_items)]
 #[allow(missing_docs)]
