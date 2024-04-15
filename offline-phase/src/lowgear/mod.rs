@@ -50,6 +50,8 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     pub inverse_tuples: (ValueMacBatch<C>, ValueMacBatch<C>),
     /// The shared bits generated during the offline phase
     pub shared_bits: ValueMacBatch<C>,
+    /// The shared random values generated during the offline phase
+    pub shared_randomness: ValueMacBatch<C>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -72,6 +74,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             triples: Default::default(),
             inverse_tuples: Default::default(),
             shared_bits: Default::default(),
+            shared_randomness: Default::default(),
             network,
         }
     }
@@ -98,12 +101,14 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     }
 
     /// Get the prep result from the LowGear
-    pub fn get_offline_result(&mut self) -> LowGearPrep<C> {
-        LowGearPrep::new(
+    pub fn get_offline_result(&mut self) -> Result<LowGearPrep<C>, LowGearError> {
+        Ok(LowGearPrep::new(
+            self.get_setup_params()?,
             self.inverse_tuples.clone(),
             self.shared_bits.clone(),
+            self.shared_randomness.clone(),
             self.triples.clone(),
-        )
+        ))
     }
 
     /// Get a plaintext with the local mac share in all slots
