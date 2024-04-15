@@ -4,11 +4,11 @@
 
 mod authenticated_curve;
 mod curve;
-mod mpc_curve;
+mod share;
 
 pub use authenticated_curve::*;
 pub use curve::*;
-pub use mpc_curve::*;
+pub use share::*;
 
 #[cfg(feature = "test_helpers")]
 pub use authenticated_curve::test_helpers as curve_test_helpers;
