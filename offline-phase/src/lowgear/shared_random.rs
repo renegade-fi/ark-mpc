@@ -11,6 +11,14 @@ use crate::{error::LowGearError, structs::ValueMacBatch};
 use super::LowGear;
 
 impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
+    /// Generate shared randomness to store in the offline phase result
+    pub async fn generate_shared_randomness(&mut self, n: usize) -> Result<(), LowGearError> {
+        let random_vals = self.get_authenticated_randomness_vec(n).await?;
+        self.shared_randomness = random_vals;
+
+        Ok(())
+    }
+
     /// Generate a single shared random value via commit/reveal
     pub async fn get_shared_randomness(&mut self) -> Result<Scalar<C>, LowGearError> {
         Ok(self.get_shared_randomness_vec(1).await?[0])

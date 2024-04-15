@@ -31,10 +31,14 @@ pub struct LowGearParams<C: CurveGroup> {
 /// The resulting shared values created by the lowgear offline phase
 #[derive(Clone)]
 pub struct LowGearPrep<C: CurveGroup> {
+    /// The params in the lowgear instance
+    pub params: LowGearParams<C>,
     /// The shared inverse pairs
     pub inverse_pairs: (ValueMacBatch<C>, ValueMacBatch<C>),
     /// The shared bits
     pub bits: ValueMacBatch<C>,
+    /// The shared random values
+    pub shared_randomness: ValueMacBatch<C>,
     /// The shared Beaver triplets
     pub triplets: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
 }
@@ -42,18 +46,22 @@ pub struct LowGearPrep<C: CurveGroup> {
 impl<C: CurveGroup> LowGearPrep<C> {
     /// Create a new `LowGearPrep`
     pub fn new(
+        params: LowGearParams<C>,
         inverse_pairs: (ValueMacBatch<C>, ValueMacBatch<C>),
         bits: ValueMacBatch<C>,
+        shared_randomness: ValueMacBatch<C>,
         triplets: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
     ) -> Self {
-        Self { inverse_pairs, bits, triplets }
+        Self { params, inverse_pairs, bits, shared_randomness, triplets }
     }
 
     /// Create an empty `LowGearPrep`
-    pub fn empty() -> Self {
+    pub fn empty(params: LowGearParams<C>) -> Self {
         Self {
+            params,
             inverse_pairs: (ValueMacBatch::new(vec![]), ValueMacBatch::new(vec![])),
             bits: ValueMacBatch::new(vec![]),
+            shared_randomness: ValueMacBatch::new(vec![]),
             triplets: (
                 ValueMacBatch::new(vec![]),
                 ValueMacBatch::new(vec![]),
