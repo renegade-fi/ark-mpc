@@ -7,8 +7,8 @@ use ark_ec::CurveGroup;
 use itertools::Itertools;
 
 use crate::{
-    algebra::{AuthenticatedScalarResult, Scalar, ScalarResult, AUTHENTICATED_SCALAR_RESULT_LEN},
-    MpcFabric, ResultValue, PARTY0,
+    algebra::{AuthenticatedScalarResult, Scalar, ScalarResult, ScalarShare},
+    MpcFabric, ResultValue,
 };
 
 /// Single bit xor, assumes that `a` and `b` are scalars representing bits
@@ -20,52 +20,20 @@ pub fn bit_xor<C: CurveGroup>(
 ) -> AuthenticatedScalarResult<C> {
     let a_times_b = a * b;
     let fabric = a.fabric();
-    let ids = vec![
-        a.share.id(),
-        a.mac.id(),
-        a.public_modifier.id(),
-        b.share.id(),
-        b.mac.id(),
-        b.public_modifier.id(),
-        a_times_b.share.id(),
-        a_times_b.mac.id(),
-        a_times_b.public_modifier.id(),
-    ];
+    let ids = vec![a.id(), b.id(), a_times_b.id()];
 
-    let mut results =
-        fabric.new_batch_gate_op(ids, AUTHENTICATED_SCALAR_RESULT_LEN, move |mut args| {
-            // Destructure the gate args
-            let a_share: Scalar<C> = args.next().unwrap().into();
-            let a_mac: Scalar<C> = args.next().unwrap().into();
-            let a_public_modifier: Scalar<C> = args.next().unwrap().into();
+    fabric.new_gate_op(ids, move |mut args| {
+        // Destructure the gate args
+        let a_share: ScalarShare<C> = args.next().unwrap().into();
+        let b_share: ScalarShare<C> = args.next().unwrap().into();
+        let a_times_b_share: ScalarShare<C> = args.next().unwrap().into();
 
-            let b_share: Scalar<C> = args.next().unwrap().into();
-            let b_mac: Scalar<C> = args.next().unwrap().into();
-            let b_public_modifier: Scalar<C> = args.next().unwrap().into();
+        // Compute the xor identity
+        let two = Scalar::from(2u64);
+        let new_share = a_share + b_share - two * a_times_b_share;
 
-            let a_times_b_share: Scalar<C> = args.next().unwrap().into();
-            let a_times_b_mac: Scalar<C> = args.next().unwrap().into();
-            let a_times_b_public_modifier: Scalar<C> = args.next().unwrap().into();
-
-            // Compute the xor identity
-            let two = Scalar::from(2u64);
-            let new_share = a_share + b_share - two * a_times_b_share;
-            let new_mac = a_mac + b_mac - two * a_times_b_mac;
-            let new_public_modifier =
-                a_public_modifier + b_public_modifier - two * a_times_b_public_modifier;
-
-            vec![
-                ResultValue::Scalar(new_share),
-                ResultValue::Scalar(new_mac),
-                ResultValue::Scalar(new_public_modifier),
-            ]
-        });
-
-    let public_modifier = results.pop().unwrap();
-    let mac = results.pop().unwrap().into();
-    let share = results.pop().unwrap().into();
-
-    AuthenticatedScalarResult { share, mac, public_modifier }
+        ResultValue::ScalarShare(new_share)
+    })
 }
 
 /// XOR a batch of bits
@@ -92,39 +60,21 @@ pub fn bit_xor_public<C: CurveGroup>(
     b: &AuthenticatedScalarResult<C>,
 ) -> AuthenticatedScalarResult<C> {
     let fabric = a.fabric();
-    let party0 = fabric.party_id() == PARTY0;
-    let ids = vec![a.id(), b.share.id(), b.mac.id(), b.public_modifier.id()];
+    let party_id = fabric.party_id();
+    let mac_key = fabric.mac_key();
 
-    let mut results =
-        fabric.new_batch_gate_op(ids, AUTHENTICATED_SCALAR_RESULT_LEN, move |mut args| {
-            // Public value
-            let a = args.next().unwrap().into();
+    let ids = vec![a.id(), b.id()];
+    fabric.new_gate_op(ids, move |mut args| {
+        // Public value
+        let a: Scalar<C> = args.next().unwrap().into();
+        let b_share: ScalarShare<C> = args.next().unwrap().into();
 
-            // Shared value
-            let b_share: Scalar<C> = args.next().unwrap().into();
-            let b_mac: Scalar<C> = args.next().unwrap().into();
-            let b_public_modifier: Scalar<C> = args.next().unwrap().into();
+        // Compute the xor identity
+        let two_a = Scalar::from(2u64) * a;
+        let new_share = (b_share - two_a * b_share).add_public(a, mac_key, party_id);
 
-            // Compute the xor identity
-            let two = Scalar::from(2u64);
-            let additive_share = if party0 { a } else { Scalar::zero() };
-            let share = additive_share + b_share - two * a * b_share;
-
-            let mac = b_mac - two * a * b_mac;
-            let modifier = b_public_modifier - a - two * a * b_public_modifier;
-
-            vec![
-                ResultValue::Scalar(share),
-                ResultValue::Scalar(mac),
-                ResultValue::Scalar(modifier),
-            ]
-        });
-
-    let public_modifier = results.pop().unwrap();
-    let mac = results.pop().unwrap().into();
-    let share = results.pop().unwrap().into();
-
-    AuthenticatedScalarResult { share, mac, public_modifier }
+        ResultValue::ScalarShare(new_share)
+    })
 }
 
 /// XOR a batch of bits where one of the bit vectors is public

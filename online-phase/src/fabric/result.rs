@@ -14,8 +14,8 @@ use ark_ec::CurveGroup;
 use futures::Future;
 
 use crate::{
-    algebra::{CurvePoint, Scalar},
-    network::NetworkPayload,
+    algebra::{CurvePoint, PointShare, Scalar, ScalarShare},
+    network::{NetworkPayload, PartyId},
 };
 
 use super::MpcFabric;
@@ -53,10 +53,14 @@ pub enum ResultValue<C: CurveGroup> {
     Scalar(Scalar<C>),
     /// A batch of scalars
     ScalarBatch(Vec<Scalar<C>>),
+    /// A share and mac of a scalar value
+    ScalarShare(ScalarShare<C>),
     /// A point on the curve
     Point(CurvePoint<C>),
     /// A batch of points on the curve
     PointBatch(Vec<CurvePoint<C>>),
+    /// A share and mac of a curve point value
+    PointShare(PointShare<C>),
 }
 
 impl<C: CurveGroup> Debug for ResultValue<C> {
@@ -68,8 +72,10 @@ impl<C: CurveGroup> Debug for ResultValue<C> {
             ResultValue::ScalarBatch(scalars) => {
                 f.debug_tuple("ScalarBatch").field(scalars).finish()
             },
+            ResultValue::ScalarShare(share) => f.debug_tuple("ScalarShare").field(share).finish(),
             ResultValue::Point(point) => f.debug_tuple("Point").field(point).finish(),
             ResultValue::PointBatch(points) => f.debug_tuple("PointBatch").field(points).finish(),
+            ResultValue::PointShare(share) => f.debug_tuple("PointShare").field(share).finish(),
         }
     }
 }
@@ -80,8 +86,10 @@ impl<C: CurveGroup> From<NetworkPayload<C>> for ResultValue<C> {
             NetworkPayload::Bytes(bytes) => ResultValue::Bytes(bytes),
             NetworkPayload::Scalar(scalar) => ResultValue::Scalar(scalar),
             NetworkPayload::ScalarBatch(scalars) => ResultValue::ScalarBatch(scalars),
+            NetworkPayload::ScalarShare(share) => ResultValue::ScalarShare(share),
             NetworkPayload::Point(point) => ResultValue::Point(point),
             NetworkPayload::PointBatch(points) => ResultValue::PointBatch(points),
+            NetworkPayload::PointShare(share) => ResultValue::PointShare(share),
         }
     }
 }
@@ -92,8 +100,10 @@ impl<C: CurveGroup> From<ResultValue<C>> for NetworkPayload<C> {
             ResultValue::Bytes(bytes) => NetworkPayload::Bytes(bytes),
             ResultValue::Scalar(scalar) => NetworkPayload::Scalar(scalar),
             ResultValue::ScalarBatch(scalars) => NetworkPayload::ScalarBatch(scalars),
+            ResultValue::ScalarShare(share) => NetworkPayload::ScalarShare(share),
             ResultValue::Point(point) => NetworkPayload::Point(point),
             ResultValue::PointBatch(points) => NetworkPayload::PointBatch(points),
+            ResultValue::PointShare(share) => NetworkPayload::PointShare(share),
             _ => unimplemented!("Cannot convert {value:?} to network payload"),
         }
     }
@@ -136,6 +146,15 @@ impl<C: CurveGroup> From<ResultValue<C>> for Vec<Scalar<C>> {
     }
 }
 
+impl<C: CurveGroup> From<ResultValue<C>> for ScalarShare<C> {
+    fn from(value: ResultValue<C>) -> Self {
+        match value {
+            ResultValue::ScalarShare(share) => share,
+            _ => panic!("Cannot cast {:?} to scalar share", value),
+        }
+    }
+}
+
 impl<C: CurveGroup> From<ResultValue<C>> for CurvePoint<C> {
     fn from(value: ResultValue<C>) -> Self {
         match value {
@@ -159,6 +178,15 @@ impl<C: CurveGroup> From<ResultValue<C>> for Vec<CurvePoint<C>> {
         match value {
             ResultValue::PointBatch(points) => points,
             _ => panic!("Cannot cast {:?} to point batch", value),
+        }
+    }
+}
+
+impl<C: CurveGroup> From<ResultValue<C>> for PointShare<C> {
+    fn from(value: ResultValue<C>) -> Self {
+        match value {
+            ResultValue::PointShare(share) => share,
+            _ => panic!("Cannot cast {:?} to point share", value),
         }
     }
 }
@@ -198,6 +226,11 @@ impl<C: CurveGroup, T: From<ResultValue<C>>> ResultHandle<C, T> {
     /// Get the id of the result
     pub fn id(&self) -> ResultId {
         self.id
+    }
+
+    /// Get the party ID of the local party
+    pub fn party_id(&self) -> PartyId {
+        self.fabric().party_id()
     }
 
     /// Borrow the fabric that this result is allocated within

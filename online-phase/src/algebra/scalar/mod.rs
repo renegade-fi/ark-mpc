@@ -3,14 +3,14 @@
 #![allow(clippy::module_inception)]
 
 mod authenticated_scalar;
-mod mpc_scalar;
 mod scalar;
+mod share;
 
 use ark_ec::CurveGroup;
 use ark_ff::Field;
 pub use authenticated_scalar::*;
-pub use mpc_scalar::*;
 pub use scalar::*;
+pub use share::*;
 
 #[cfg(feature = "test_helpers")]
 pub use authenticated_scalar::test_helpers as scalar_test_helpers;

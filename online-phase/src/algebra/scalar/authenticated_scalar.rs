@@ -1,7 +1,6 @@
 //! Defines the authenticated (malicious secure) variant of the MPC scalar type
 
 use std::{
-    fmt::Debug,
     iter::{self, Sum},
     ops::{Add, Div, Mul, Neg, Sub},
     pin::Pin,
@@ -18,130 +17,30 @@ use crate::{
     algebra::{macros::*, AuthenticatedPointResult, CurvePoint, CurvePointResult},
     commitment::{HashCommitment, HashCommitmentResult},
     error::MpcError,
-    fabric::{MpcFabric, ResultId, ResultValue},
-    PARTY0,
+    fabric::{ResultId, ResultValue},
+    network::NetworkPayload,
+    ResultHandle, PARTY0,
 };
 
 use super::{
-    mpc_scalar::MpcScalarResult,
     scalar::{BatchScalarResult, Scalar, ScalarResult},
+    ScalarShare,
 };
 
-/// The number of results wrapped by an `AuthenticatedScalarResult<C>`
-pub const AUTHENTICATED_SCALAR_RESULT_LEN: usize = 3;
+// -----------------------------
+// | AuthenticatedScalarResult |
+// -----------------------------
 
 /// A maliciously secure wrapper around an `MpcScalarResult`, includes a MAC as
 /// per the SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
 /// that ensures security against a malicious adversary
-#[derive(Clone)]
-pub struct AuthenticatedScalarResult<C: CurveGroup> {
-    /// The secret shares of the underlying value
-    pub(crate) share: MpcScalarResult<C>,
-    /// The SPDZ style, unconditionally secure MAC of the value
-    ///
-    /// If the value is `x`, parties hold secret shares of the value
-    /// \delta * x for the global MAC key `\delta`. The parties individually
-    /// hold secret shares of this MAC key [\delta], so we can very naturally
-    /// extend the secret share arithmetic of the underlying `MpcScalarResult`
-    /// to the MAC updates as well
-    pub(crate) mac: MpcScalarResult<C>,
-    /// The public modifier tracks additions and subtractions of public values
-    /// to the underlying value. This is necessary because in the case of a
-    /// public addition, only the first party adds the public value to their
-    /// share, so the second party must track this up until the point that
-    /// the value is opened and the MAC is checked
-    pub(crate) public_modifier: ScalarResult<C>,
-}
-
-impl<C: CurveGroup> Debug for AuthenticatedScalarResult<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuthenticatedScalarResult<C>")
-            .field("value", &self.share.id())
-            .field("mac", &self.mac.id())
-            .field("public_modifier", &self.public_modifier.id)
-            .finish()
-    }
-}
+pub type AuthenticatedScalarResult<C: CurveGroup> = ResultHandle<C, ScalarShare<C>>;
 
 impl<C: CurveGroup> AuthenticatedScalarResult<C> {
-    /// Create a new result from the given shared value
-    pub fn new_shared(value: ScalarResult<C>) -> Self {
-        // Create an `MpcScalarResult` to represent the fact that this is a shared value
-        let fabric = value.fabric.clone();
-
-        let mpc_value = MpcScalarResult::new_shared(value);
-        let mac = fabric.borrow_mac_key() * mpc_value.clone();
-
-        // Allocate a zero for the public modifier
-        let public_modifier = fabric.zero();
-
-        Self { share: mpc_value, mac, public_modifier }
-    }
-
-    /// Create a new batch of shared values
-    pub fn new_shared_batch(values: &[ScalarResult<C>]) -> Vec<Self> {
-        if values.is_empty() {
-            return vec![];
-        }
-
-        let n = values.len();
-        let fabric = values[0].fabric();
-        let mpc_values =
-            values.iter().map(|v| MpcScalarResult::new_shared(v.clone())).collect_vec();
-
-        let mac_keys = (0..n).map(|_| fabric.borrow_mac_key().clone()).collect_vec();
-        let values_macs = MpcScalarResult::batch_mul(&mpc_values, &mac_keys);
-
-        mpc_values
-            .into_iter()
-            .zip(values_macs)
-            .map(|(value, mac)| Self { share: value, mac, public_modifier: fabric.zero() })
-            .collect_vec()
-    }
-
-    /// Create a nwe shared batch of values from a batch network result
-    ///
-    /// The batch result combines the batch into one result, so it must be split
-    /// out first before creating the `AuthenticatedScalarResult`s
-    pub fn new_shared_from_batch_result(
-        values: BatchScalarResult<C>,
-        n: usize,
-    ) -> Vec<AuthenticatedScalarResult<C>> {
-        // Convert to a set of scalar results
-        let scalar_results: Vec<ScalarResult<C>> =
-            values.fabric().new_batch_gate_op(vec![values.id()], n, |mut args| {
-                let scalars: Vec<Scalar<C>> = args.next().unwrap().into();
-                scalars.into_iter().map(ResultValue::Scalar).collect()
-            });
-
-        Self::new_shared_batch(&scalar_results)
-    }
-
-    /// Get the raw share as an `MpcScalarResult`
-    #[cfg(feature = "test_helpers")]
-    pub fn mpc_share(&self) -> MpcScalarResult<C> {
-        self.share.clone()
-    }
-
-    /// Get the raw share as a `ScalarResult`
-    pub fn share(&self) -> ScalarResult<C> {
-        self.share.to_scalar()
-    }
-
-    /// Get the raw share of the MAC as a `ScalarResult`
-    pub fn mac_share(&self) -> ScalarResult<C> {
-        self.mac.to_scalar()
-    }
-
-    /// Get a reference to the underlying MPC fabric
-    pub fn fabric(&self) -> &MpcFabric<C> {
-        self.share.fabric()
-    }
-
     /// Get the ids of the results that must be awaited
     /// before the value is ready
     pub fn ids(&self) -> Vec<ResultId> {
-        vec![self.share.id(), self.mac.id(), self.public_modifier.id]
+        vec![self.id()]
     }
 
     /// Compute the inverse of a
@@ -207,32 +106,71 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 impl<C: CurveGroup> AuthenticatedScalarResult<C> {
     /// Open the value without checking its MAC
     pub fn open(&self) -> ScalarResult<C> {
-        self.share.open()
+        let (val0, val1) = if self.party_id() == PARTY0 {
+            let party0_value = self.fabric().new_network_op(self.ids(), |mut args| {
+                let share: ScalarShare<C> = args.next().unwrap().into();
+                NetworkPayload::Scalar(share.share())
+            });
+            let party1_value: ScalarResult<C> = self.fabric().receive_value();
+
+            (party0_value, party1_value)
+        } else {
+            let party0_value: ScalarResult<C> = self.fabric().receive_value();
+            let party1_value = self.fabric().new_network_op(self.ids(), |mut args| {
+                let share: ScalarShare<C> = args.next().unwrap().into();
+                NetworkPayload::Scalar(share.share())
+            });
+
+            (party0_value, party1_value)
+        };
+
+        val0 + val1
     }
 
     /// Open a batch of values without checking their MACs
     pub fn open_batch(values: &[Self]) -> Vec<ScalarResult<C>> {
-        MpcScalarResult::open_batch(&values.iter().map(|val| val.share.clone()).collect_vec())
-    }
+        if values.is_empty() {
+            return Vec::new();
+        }
 
-    /// Convert a flattened iterator into a batch of
-    /// `AuthenticatedScalarResult`s
-    ///
-    /// We assume that the iterator has been flattened in the same way order
-    /// that `Self::id`s returns the `AuthenticatedScalar<C>`'s values:
-    /// `[share, mac, public_modifier]`
-    pub fn from_flattened_iterator<I>(iter: I) -> Vec<Self>
-    where
-        I: Iterator<Item = ScalarResult<C>>,
-    {
-        iter.chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
-            .into_iter()
-            .map(|mut chunk| Self {
-                share: chunk.next().unwrap().into(),
-                mac: chunk.next().unwrap().into(),
-                public_modifier: chunk.next().unwrap(),
-            })
-            .collect_vec()
+        let n = values.len();
+        let fabric = values[0].fabric();
+        let my_results = values.iter().map(|val| val.id()).collect_vec();
+
+        // Party zero sends first then receives
+        let (party0_vals, party1_vals) = if values[0].fabric().party_id() == PARTY0 {
+            // Send the local shares
+            let party0_vals: BatchScalarResult<C> = fabric.new_network_op(my_results, |args| {
+                let shares: Vec<Scalar<C>> =
+                    args.map(ScalarShare::from).map(|s| s.share()).collect();
+                NetworkPayload::ScalarBatch(shares)
+            });
+            let party1_vals: BatchScalarResult<C> = fabric.receive_value();
+
+            (party0_vals, party1_vals)
+        } else {
+            let party0_vals: BatchScalarResult<C> = fabric.receive_value();
+            let party1_vals: BatchScalarResult<C> = fabric.new_network_op(my_results, |args| {
+                let shares: Vec<Scalar<C>> =
+                    args.map(ScalarShare::from).map(|s| s.share()).collect();
+                NetworkPayload::ScalarBatch(shares)
+            });
+
+            (party0_vals, party1_vals)
+        };
+
+        // Create the new values by combining the additive shares
+        fabric.new_batch_gate_op(vec![party0_vals.id, party1_vals.id], n, move |mut args| {
+            let party0_vals: Vec<Scalar<C>> = args.next().unwrap().into();
+            let party1_vals: Vec<Scalar<C>> = args.next().unwrap().into();
+
+            let mut results = Vec::with_capacity(n);
+            for i in 0..n {
+                results.push(ResultValue::Scalar(party0_vals[i] + party1_vals[i]));
+            }
+
+            results
+        })
     }
 
     /// Check the commitment to a MAC check and that the MAC checks sum to zero
@@ -290,26 +228,19 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
     /// Section 6.6.2
     pub fn open_authenticated(&self) -> AuthenticatedScalarOpenResult<C> {
         // Both parties open the underlying value
-        let recovered_value = self.share.open();
+        let recovered_value = self.open();
+        let fabric = self.fabric();
 
         // Add a gate to compute the MAC check value: `key_share * opened_value -
         // mac_share`
-        let mac_check_value: ScalarResult<C> = self.fabric().new_gate_op(
-            vec![
-                self.fabric().borrow_mac_key().id(),
-                recovered_value.id,
-                self.public_modifier.id,
-                self.mac.id(),
-            ],
-            move |mut args| {
-                let mac_key_share: Scalar<C> = args.next().unwrap().into();
+        let mac_key = fabric.mac_key();
+        let mac_check_value: ScalarResult<C> =
+            fabric.new_gate_op(vec![recovered_value.id, self.id()], move |mut args| {
                 let value: Scalar<C> = args.next().unwrap().into();
-                let modifier: Scalar<C> = args.next().unwrap().into();
-                let mac_share: Scalar<C> = args.next().unwrap().into();
+                let share: ScalarShare<C> = args.next().unwrap().into();
 
-                ResultValue::Scalar(mac_key_share * (value + modifier) - mac_share)
-            },
-        );
+                ResultValue::Scalar(mac_key * value - share.mac())
+            });
 
         // Compute a commitment to this value and share it with the peer
         let my_comm = HashCommitmentResult::commit(mac_check_value);
@@ -353,6 +284,7 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         let n = values.len();
         let fabric = &values[0].fabric();
+        let mac_key = fabric.mac_key();
 
         // Both parties open the underlying values
         let values_open = Self::open_batch(values);
@@ -360,25 +292,21 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         // --- Mac Checks --- //
 
         // Compute the shares of the MAC check in batch
-        let mut mac_check_deps = Vec::with_capacity(1 + 3 * n);
-        mac_check_deps.push(fabric.borrow_mac_key().id());
+        let mut mac_check_deps = Vec::with_capacity(2 * n);
         for i in 0..n {
             mac_check_deps.push(values_open[i].id());
-            mac_check_deps.push(values[i].public_modifier.id());
-            mac_check_deps.push(values[i].mac.id());
+            mac_check_deps.push(values[i].id());
         }
 
         let mac_checks: Vec<ScalarResult<C>> =
             fabric.new_batch_gate_op(mac_check_deps, n /* output_arity */, move |mut args| {
-                let mac_key_share: Scalar<C> = args.next().unwrap().into();
                 let mut check_result = Vec::with_capacity(n);
 
                 for _ in 0..n {
                     let value: Scalar<C> = args.next().unwrap().into();
-                    let modifier: Scalar<C> = args.next().unwrap().into();
-                    let mac_share: Scalar<C> = args.next().unwrap().into();
+                    let share: ScalarShare<C> = args.next().unwrap().into();
 
-                    check_result.push(mac_key_share * (value + modifier) - mac_share);
+                    check_result.push(mac_key * value - share.mac());
                 }
 
                 check_result.into_iter().map(ResultValue::Scalar).collect()
@@ -471,17 +399,16 @@ impl<C: CurveGroup> Add<&Scalar<C>> for &AuthenticatedScalarResult<C> {
         // Both parties add the public value to their modifier, and the MACs do not
         // change when adding a public value
         let fabric = self.fabric();
-        let rhs_share = if fabric.party_id() == PARTY0 { *rhs } else { Scalar::zero() };
-        let neg_rhs = -rhs;
-        let mut results = ScalarResult::batch_add_constant(
-            &[self.share.to_scalar(), self.public_modifier.clone()],
-            &[rhs_share, neg_rhs],
-        );
+        let party_id = self.party_id();
+        let mac_key = fabric.mac_key();
 
-        let public_modifier = results.pop().unwrap();
-        let share = results.pop().unwrap().into();
+        let rhs_copy = *rhs;
+        fabric.new_gate_op(self.ids(), move |mut args| {
+            let share: ScalarShare<C> = args.next().unwrap().into();
+            let new_share = share.add_public(rhs_copy, mac_key, party_id);
 
-        AuthenticatedScalarResult { share, mac: self.mac.clone(), public_modifier }
+            ResultValue::ScalarShare(new_share)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Add, add, +, Scalar<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -497,25 +424,16 @@ impl<C: CurveGroup> Add<&ScalarResult<C>> for &AuthenticatedScalarResult<C> {
         //
         // Party 1 adds a zero value to their share to allocate a new ID for the result
         let fabric = self.fabric();
-        let party_zero = fabric.party_id() == PARTY0;
-        let mut results = fabric.new_batch_gate_op(
-            vec![self.share.id(), self.public_modifier.id(), rhs.id()],
-            2, // arity
-            move |mut args| {
-                let share: Scalar<C> = args.next().unwrap().into();
-                let modifier: Scalar<C> = args.next().unwrap().into();
-                let rhs: Scalar<C> = args.next().unwrap().into();
+        let party_id = fabric.party_id();
+        let mac_key = fabric.mac_key();
 
-                let new_share = if party_zero { share + rhs } else { share };
-                let new_modifier = modifier - rhs;
+        fabric.new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
+            let share: ScalarShare<C> = args.next().unwrap().into();
+            let rhs: Scalar<C> = args.next().unwrap().into();
 
-                vec![ResultValue::Scalar(new_share), ResultValue::Scalar(new_modifier)]
-            },
-        );
-
-        let public_modifier = results.pop().unwrap();
-        let share = results.pop().unwrap().into();
-        AuthenticatedScalarResult { share, mac: self.mac.clone(), public_modifier }
+            let new_share = share.add_public(rhs, mac_key, party_id);
+            ResultValue::ScalarShare(new_share)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Add, add, +, ScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -525,16 +443,13 @@ impl<C: CurveGroup> Add<&AuthenticatedScalarResult<C>> for &AuthenticatedScalarR
     type Output = AuthenticatedScalarResult<C>;
 
     fn add(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
-        let mut results = ScalarResult::batch_add(
-            &[self.share.to_scalar(), self.mac.to_scalar(), self.public_modifier.clone()],
-            &[rhs.share.to_scalar(), rhs.mac.to_scalar(), rhs.public_modifier.clone()],
-        );
+        self.fabric().new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+            let lhs: ScalarShare<C> = args.next().unwrap().into();
+            let rhs: ScalarShare<C> = args.next().unwrap().into();
 
-        let public_modifier = results.pop().unwrap();
-        let mac = results.pop().unwrap().into();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac, public_modifier }
+            let new_share = lhs + rhs;
+            ResultValue::ScalarShare(new_share)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Add, add, +, AuthenticatedScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -551,39 +466,28 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         let fabric = a[0].fabric();
 
         // Collect ids chunking the result into the order in which they will be added
-        let chunk_size = AUTHENTICATED_SCALAR_RESULT_LEN * 2;
-        let mut all_ids = Vec::with_capacity(chunk_size * n);
+        let mut all_ids = Vec::with_capacity(2 * n);
         for (a, b) in a.iter().zip(b.iter()) {
-            all_ids.extend(a.ids());
-            all_ids.extend(b.ids());
+            all_ids.push(a.id());
+            all_ids.push(b.id());
         }
 
         // Add the underlying values
-        let gate_results: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
+        fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_SCALAR_RESULT_LEN * n, // output_arity
+            n, // output_arity
             move |args| {
-                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
-                for mut chunk in &args.chunks(chunk_size) {
-                    let a_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_mac_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_modifier: Scalar<C> = chunk.next().unwrap().into();
+                let mut result = Vec::with_capacity(n);
+                for mut chunk in &args.chunks(2) {
+                    let a_share: ScalarShare<C> = chunk.next().unwrap().into();
+                    let b_share: ScalarShare<C> = chunk.next().unwrap().into();
 
-                    let b_share: Scalar<C> = chunk.next().unwrap().into();
-                    let b_mac_share: Scalar<C> = chunk.next().unwrap().into();
-                    let b_modifier: Scalar<C> = chunk.next().unwrap().into();
-
-                    result.push(ResultValue::Scalar(a_share + b_share));
-                    result.push(ResultValue::Scalar(a_mac_share + b_mac_share));
-                    result.push(ResultValue::Scalar(a_modifier + b_modifier));
+                    result.push(ResultValue::ScalarShare(a_share + b_share));
                 }
 
                 result
             },
-        );
-
-        // Collect the gate results into a series of `AuthenticatedScalarResult`s
-        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+        )
     }
 
     /// Add a batch of `AuthenticatedScalarResult`s to a batch of
@@ -592,51 +496,37 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         a: &[AuthenticatedScalarResult<C>],
         b: &[ScalarResult<C>],
     ) -> Vec<AuthenticatedScalarResult<C>> {
-        assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
-
         let n = a.len();
-        let results_per_value = 3;
+        assert_eq!(n, b.len(), "Cannot add batches of different sizes");
         let fabric = a[0].fabric();
 
-        let chunk_size = AUTHENTICATED_SCALAR_RESULT_LEN + 1;
-        let mut all_ids = Vec::with_capacity(chunk_size * n);
+        let mut all_ids = Vec::with_capacity(n);
         for (a, b) in a.iter().zip(b.iter()) {
-            all_ids.extend(a.ids());
+            all_ids.push(a.id());
             all_ids.push(b.id());
         }
 
         // Add the underlying values
         let party_id = fabric.party_id();
-        let gate_results: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
+        let mac_key = fabric.mac_key();
+
+        fabric.new_batch_gate_op(
             all_ids,
-            results_per_value * n, // output_arity
+            n, // output_arity
             move |args| {
                 // Split the args
-                let mut result = Vec::with_capacity(results_per_value * n);
-                for mut chunk in &args.chunks(chunk_size) {
-                    let a_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_mac_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_modifier: Scalar<C> = chunk.next().unwrap().into();
-
+                let mut result = Vec::with_capacity(n);
+                for mut chunk in &args.chunks(2) {
+                    let a_share: ScalarShare<C> = chunk.next().unwrap().into();
                     let public_value: Scalar<C> = chunk.next().unwrap().into();
 
-                    // Only the first party adds the public value to their share
-                    if party_id == PARTY0 {
-                        result.push(ResultValue::Scalar(a_share + public_value));
-                    } else {
-                        result.push(ResultValue::Scalar(a_share));
-                    }
-
-                    result.push(ResultValue::Scalar(a_mac_share));
-                    result.push(ResultValue::Scalar(a_modifier - public_value));
+                    let new_share = a_share.add_public(public_value, mac_key, party_id);
+                    result.push(ResultValue::ScalarShare(new_share));
                 }
 
                 result
             },
-        );
-
-        // Collect the gate results into a series of `AuthenticatedScalarResult<C>`s
-        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+        )
     }
 
     /// Add a batch of `Scalar`s to a batch of  `AuthenticatedScalarResult`s
@@ -647,42 +537,28 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
 
         let n = a.len();
-        let results_per_value = 3;
         let fabric = a[0].fabric();
-        let all_ids = a.iter().flat_map(|v| v.ids()).collect_vec();
+        let all_ids = a.iter().map(|v| v.id()).collect_vec();
 
         // Add the underlying values
         let b = b.to_vec();
         let party_id = fabric.party_id();
-        let gate_results: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
+        let mac_key = fabric.mac_key();
+        fabric.new_batch_gate_op(
             all_ids,
-            results_per_value * n, // output_arity
+            n, // output_arity
             move |args| {
-                let mut result = Vec::with_capacity(results_per_value * n);
-                for (mut a_vals, public_value) in
-                    args.chunks(results_per_value).into_iter().zip(b.into_iter())
-                {
-                    let a_share: Scalar<C> = a_vals.next().unwrap().into();
-                    let a_mac_share: Scalar<C> = a_vals.next().unwrap().into();
-                    let a_modifier: Scalar<C> = a_vals.next().unwrap().into();
+                let mut result = Vec::with_capacity(n);
+                for (arg, public_value) in args.into_iter().zip(b.into_iter()) {
+                    let a_share: ScalarShare<C> = arg.into();
+                    let new_share = a_share.add_public(public_value, mac_key, party_id);
 
-                    // Only the first party adds the public value to their share
-                    if party_id == PARTY0 {
-                        result.push(ResultValue::Scalar(a_share + public_value));
-                    } else {
-                        result.push(ResultValue::Scalar(a_share));
-                    }
-
-                    result.push(ResultValue::Scalar(a_mac_share));
-                    result.push(ResultValue::Scalar(a_modifier - public_value));
+                    result.push(ResultValue::ScalarShare(new_share));
                 }
 
                 result
             },
-        );
-
-        // Collect the gate results into a series of `AuthenticatedScalarResult<C>`s
-        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+        )
     }
 }
 
@@ -690,35 +566,14 @@ impl<C: CurveGroup> Sum for AuthenticatedScalarResult<C> {
     /// Assumes the iterator is non-empty
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         let values = iter.collect_vec();
-        let n = values.len();
         let fabric = values[0].fabric();
 
-        // Order the result ids as shares, mac, public modifier
-        let mut ids = Vec::with_capacity(n * AUTHENTICATED_SCALAR_RESULT_LEN);
-        ids.append(&mut values.iter().map(|v| v.share.id()).collect_vec());
-        ids.append(&mut values.iter().map(|v| v.mac.id()).collect_vec());
-        ids.append(&mut values.iter().map(|v| v.public_modifier.id).collect_vec());
-
         // Add the underlying values
-        let res = fabric.new_batch_gate_op(ids, AUTHENTICATED_SCALAR_RESULT_LEN, move |args| {
-            let chunked = args.map(Scalar::from).chunks(n);
-            let mut chunked_iter = chunked.into_iter();
-            let new_share = chunked_iter.next().unwrap().sum();
-            let new_mac_share = chunked_iter.next().unwrap().sum();
-            let new_modifier = chunked_iter.next().unwrap().sum();
-
-            vec![
-                ResultValue::Scalar(new_share),
-                ResultValue::Scalar(new_mac_share),
-                ResultValue::Scalar(new_modifier),
-            ]
-        });
-
-        let share = res[0].clone().into();
-        let mac = res[1].clone().into();
-        let public_modifier = res[2].clone();
-
-        Self { share, mac, public_modifier }
+        let ids = values.iter().map(|v| v.id()).collect_vec();
+        fabric.new_gate_op(ids, move |args| {
+            let sum = args.map(|v| ScalarShare::from(v)).sum();
+            ResultValue::ScalarShare(sum)
+        })
     }
 }
 
@@ -727,22 +582,8 @@ impl<C: CurveGroup> Sum for AuthenticatedScalarResult<C> {
 impl<C: CurveGroup> Sub<&Scalar<C>> for &AuthenticatedScalarResult<C> {
     type Output = AuthenticatedScalarResult<C>;
 
-    /// As in the case for addition, only party 0 subtracts the public value
-    /// from their share, but both parties track this in the public modifier
     fn sub(self, rhs: &Scalar<C>) -> Self::Output {
-        // Party 1 subtracts a zero value from their share to allocate a new ID for the
-        // result and stay in sync with party 0
-        let fabric = self.fabric();
-        let rhs_share = if fabric.party_id() == PARTY0 { -rhs } else { Scalar::zero() };
-        let mut results = ScalarResult::batch_add_constant(
-            &[self.share.to_scalar(), self.public_modifier.clone()],
-            &[rhs_share, *rhs],
-        );
-
-        let public_modifier = results.pop().unwrap();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac: self.mac.clone(), public_modifier }
+        self + -rhs
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Sub, sub, -, Scalar<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -753,32 +594,15 @@ impl<C: CurveGroup> Sub<&AuthenticatedScalarResult<C>> for &Scalar<C> {
     fn sub(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
         let val = *self;
         let fabric = rhs.fabric();
-        let party0 = fabric.party_id() == PARTY0;
-        let mut results = fabric.new_batch_gate_op(
-            vec![rhs.share.id(), rhs.mac.id(), rhs.public_modifier.id()],
-            AUTHENTICATED_SCALAR_RESULT_LEN,
-            move |mut args| {
-                let share: Scalar<C> = args.next().unwrap().into();
-                let mac_share: Scalar<C> = args.next().unwrap().into();
-                let modifier: Scalar<C> = args.next().unwrap().into();
+        let party_id = fabric.party_id();
+        let mac_key = fabric.mac_key();
 
-                let new_share = if party0 { val - share } else { -share };
-                let new_mac_share = -mac_share;
-                let new_modifier = -val - modifier;
+        fabric.new_gate_op(rhs.ids(), move |mut args| {
+            let share: ScalarShare<C> = args.next().unwrap().into();
+            let new_share = (-share).add_public(val, mac_key, party_id);
 
-                vec![
-                    ResultValue::Scalar(new_share),
-                    ResultValue::Scalar(new_mac_share),
-                    ResultValue::Scalar(new_modifier),
-                ]
-            },
-        );
-
-        let public_modifier = results.pop().unwrap();
-        let mac = results.pop().unwrap().into();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac, public_modifier }
+            ResultValue::ScalarShare(new_share)
+        })
     }
 }
 impl_borrow_variants!(Scalar<C>, Sub, sub, -, AuthenticatedScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -786,29 +610,18 @@ impl_borrow_variants!(Scalar<C>, Sub, sub, -, AuthenticatedScalarResult<C>, Outp
 impl<C: CurveGroup> Sub<&ScalarResult<C>> for &AuthenticatedScalarResult<C> {
     type Output = AuthenticatedScalarResult<C>;
 
-    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: &ScalarResult<C>) -> Self::Output {
         let fabric = self.fabric();
-        let party0 = fabric.party_id() == PARTY0;
-        let mut results = fabric.new_batch_gate_op(
-            vec![self.share.id(), self.public_modifier.id(), rhs.id()],
-            2, // arity
-            move |mut args| {
-                let share: Scalar<C> = args.next().unwrap().into();
-                let modifier: Scalar<C> = args.next().unwrap().into();
-                let rhs: Scalar<C> = args.next().unwrap().into();
+        let party_id = fabric.party_id();
+        let mac_key = fabric.mac_key();
 
-                let new_share = if party0 { share - rhs } else { share };
-                let new_modifier = modifier + rhs;
+        fabric.new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
+            let share: ScalarShare<C> = args.next().unwrap().into();
+            let rhs: Scalar<C> = args.next().unwrap().into();
 
-                vec![ResultValue::Scalar(new_share), ResultValue::Scalar(new_modifier)]
-            },
-        );
-
-        let public_modifier = results.pop().unwrap();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac: self.mac.clone(), public_modifier }
+            let new_share = share.sub_public(rhs, mac_key, party_id);
+            ResultValue::ScalarShare(new_share)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Sub, sub, -, ScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -818,33 +631,16 @@ impl<C: CurveGroup> Sub<&AuthenticatedScalarResult<C>> for &ScalarResult<C> {
 
     fn sub(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
         let fabric = rhs.fabric();
-        let party0 = fabric.party_id() == PARTY0;
-        let mut results = fabric.new_batch_gate_op(
-            vec![self.id(), rhs.share.id(), rhs.mac.id(), rhs.public_modifier.id()],
-            AUTHENTICATED_SCALAR_RESULT_LEN,
-            move |mut args| {
-                let lhs: Scalar<C> = args.next().unwrap().into();
-                let share: Scalar<C> = args.next().unwrap().into();
-                let mac_share: Scalar<C> = args.next().unwrap().into();
-                let modifier: Scalar<C> = args.next().unwrap().into();
+        let party_id = fabric.party_id();
+        let mac_key = fabric.mac_key();
 
-                let new_share = if party0 { lhs - share } else { -share };
-                let new_mac_share = -mac_share;
-                let new_modifier = -lhs - modifier;
+        fabric.new_gate_op(vec![self.id(), rhs.id()], move |mut args| {
+            let lhs: Scalar<C> = args.next().unwrap().into();
+            let share: ScalarShare<C> = args.next().unwrap().into();
 
-                vec![
-                    ResultValue::Scalar(new_share),
-                    ResultValue::Scalar(new_mac_share),
-                    ResultValue::Scalar(new_modifier),
-                ]
-            },
-        );
-
-        let public_modifier = results.pop().unwrap();
-        let mac = results.pop().unwrap().into();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac, public_modifier }
+            let new_share = (-share).add_public(lhs, mac_key, party_id);
+            ResultValue::ScalarShare(new_share)
+        })
     }
 }
 impl_borrow_variants!(ScalarResult<C>, Sub, sub, -, AuthenticatedScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -853,15 +649,12 @@ impl<C: CurveGroup> Sub<&AuthenticatedScalarResult<C>> for &AuthenticatedScalarR
     type Output = AuthenticatedScalarResult<C>;
 
     fn sub(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
-        let mut result = ScalarResult::batch_sub(
-            &[self.share.to_scalar(), self.mac.to_scalar(), self.public_modifier.clone()],
-            &[rhs.share.to_scalar(), rhs.mac.to_scalar(), rhs.public_modifier.clone()],
-        );
-        let public_modifier = result.pop().unwrap();
-        let mac = result.pop().unwrap().into();
-        let share = result.pop().unwrap().into();
+        self.fabric.new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+            let lhs: ScalarShare<C> = args.next().unwrap().into();
+            let rhs: ScalarShare<C> = args.next().unwrap().into();
 
-        AuthenticatedScalarResult { share, mac, public_modifier }
+            ResultValue::ScalarShare(lhs - rhs)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Sub, sub, -, AuthenticatedScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -872,44 +665,28 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         a: &[AuthenticatedScalarResult<C>],
         b: &[AuthenticatedScalarResult<C>],
     ) -> Vec<AuthenticatedScalarResult<C>> {
-        assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
-
         let n = a.len();
+        assert_eq!(n, b.len(), "Cannot add batches of different sizes");
         let fabric = &a[0].fabric();
 
-        let chunk_size = AUTHENTICATED_SCALAR_RESULT_LEN * 2;
-        let mut all_ids = Vec::with_capacity(chunk_size * n);
+        let mut all_ids = Vec::with_capacity(n);
         for (a, b) in a.iter().zip(b.iter()) {
-            all_ids.extend(a.ids());
-            all_ids.extend(b.ids());
+            all_ids.push(a.id());
+            all_ids.push(b.id());
         }
 
-        // Add the underlying values
-        let gate_results: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
-            all_ids,
-            AUTHENTICATED_SCALAR_RESULT_LEN * n, // output_arity
-            move |args| {
-                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
-                for mut chunk in &args.chunks(chunk_size) {
-                    let a_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_mac_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_modifier: Scalar<C> = chunk.next().unwrap().into();
+        // Sub the underlying values
+        fabric.new_batch_gate_op(all_ids, n /* arity */, move |args| {
+            let mut result = Vec::with_capacity(n);
+            for mut chunk in &args.chunks(2) {
+                let a_share: ScalarShare<C> = chunk.next().unwrap().into();
+                let b_share: ScalarShare<C> = chunk.next().unwrap().into();
 
-                    let b_share: Scalar<C> = chunk.next().unwrap().into();
-                    let b_mac_share: Scalar<C> = chunk.next().unwrap().into();
-                    let b_modifier: Scalar<C> = chunk.next().unwrap().into();
+                result.push(ResultValue::ScalarShare(a_share - b_share));
+            }
 
-                    result.push(ResultValue::Scalar(a_share - b_share));
-                    result.push(ResultValue::Scalar(a_mac_share - b_mac_share));
-                    result.push(ResultValue::Scalar(a_modifier - b_modifier));
-                }
-
-                result
-            },
-        );
-
-        // Collect the gate results into a series of `AuthenticatedScalarResult`s
-        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+            result
+        })
     }
 
     /// Subtract a batch of `ScalarResult`s from a batch of
@@ -921,48 +698,35 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         assert_eq!(a.len(), b.len(), "Cannot add batches of different sizes");
 
         let n = a.len();
-        let results_per_value = 3;
         let fabric = a[0].fabric();
 
-        let chunk_size = AUTHENTICATED_SCALAR_RESULT_LEN + 1;
-        let mut all_ids = Vec::with_capacity(chunk_size * n);
+        let mut all_ids = Vec::with_capacity(n);
         for (a, b) in a.iter().zip(b.iter()) {
-            all_ids.extend(a.ids());
+            all_ids.push(a.id());
             all_ids.push(b.id());
         }
 
         // Add the underlying values
         let party_id = fabric.party_id();
-        let gate_results: Vec<ScalarResult<C>> = fabric.new_batch_gate_op(
+        let mac_key = fabric.mac_key();
+
+        fabric.new_batch_gate_op(
             all_ids,
-            results_per_value * n, // output_arity
+            n, // output_arity
             move |args| {
                 // Split the args
-                let mut result = Vec::with_capacity(results_per_value * n);
-                for mut chunk in &args.chunks(chunk_size) {
-                    let a_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_mac_share: Scalar<C> = chunk.next().unwrap().into();
-                    let a_modifier: Scalar<C> = chunk.next().unwrap().into();
-
+                let mut result = Vec::with_capacity(n);
+                for mut chunk in &args.chunks(2) {
+                    let share: ScalarShare<C> = chunk.next().unwrap().into();
                     let public_value: Scalar<C> = chunk.next().unwrap().into();
 
-                    // Only the first party adds the public value to their share
-                    if party_id == PARTY0 {
-                        result.push(ResultValue::Scalar(a_share - public_value));
-                    } else {
-                        result.push(ResultValue::Scalar(a_share));
-                    }
-
-                    result.push(ResultValue::Scalar(a_mac_share));
-                    result.push(ResultValue::Scalar(a_modifier + public_value));
+                    let new_share = share.sub_public(public_value, mac_key, party_id);
+                    result.push(ResultValue::ScalarShare(new_share));
                 }
 
                 result
             },
-        );
-
-        // Collect the gate results into a series of `AuthenticatedScalarResult`s
-        AuthenticatedScalarResult::from_flattened_iterator(gate_results.into_iter())
+        )
     }
 }
 
@@ -972,16 +736,10 @@ impl<C: CurveGroup> Neg for &AuthenticatedScalarResult<C> {
     type Output = AuthenticatedScalarResult<C>;
 
     fn neg(self) -> Self::Output {
-        let mut results = ScalarResult::batch_neg(&[
-            self.share.to_scalar(),
-            self.mac.to_scalar(),
-            self.public_modifier.clone(),
-        ]);
-        let public_modifier = results.pop().unwrap();
-        let mac = results.pop().unwrap().into();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac, public_modifier }
+        self.fabric.new_gate_op(self.ids(), |mut args| {
+            let share: ScalarShare<C> = args.next().unwrap().into();
+            ResultValue::ScalarShare(-share)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Neg, neg, -, C: CurveGroup);
@@ -995,15 +753,17 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let all_ids = a.iter().flat_map(|v| v.ids()).collect_vec();
+        let all_ids = a.iter().map(|v| v.id()).collect_vec();
 
-        let scalars = fabric.new_batch_gate_op(
+        fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_SCALAR_RESULT_LEN * n, // output_arity
-            |args| args.into_iter().map(|arg| ResultValue::Scalar(-Scalar::from(arg))).collect(),
-        );
-
-        AuthenticatedScalarResult::from_flattened_iterator(scalars.into_iter())
+            n, // output_arity
+            |args| {
+                args.into_iter()
+                    .map(|arg| ResultValue::ScalarShare(-ScalarShare::from(arg)))
+                    .collect()
+            },
+        )
     }
 }
 
@@ -1013,16 +773,11 @@ impl<C: CurveGroup> Mul<&Scalar<C>> for &AuthenticatedScalarResult<C> {
     type Output = AuthenticatedScalarResult<C>;
 
     fn mul(self, rhs: &Scalar<C>) -> Self::Output {
-        let mut results = ScalarResult::batch_mul_constant(
-            &[self.share.to_scalar(), self.mac.to_scalar(), self.public_modifier.clone()],
-            &[*rhs, *rhs, *rhs],
-        );
-
-        let public_modifier = results.pop().unwrap();
-        let mac = results.pop().unwrap().into();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac, public_modifier }
+        let rhs = *rhs;
+        self.fabric().new_gate_op(self.ids(), move |mut args| {
+            let share: ScalarShare<C> = args.next().unwrap().into();
+            ResultValue::ScalarShare(share * rhs)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Mul, mul, *, Scalar<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -1032,16 +787,12 @@ impl<C: CurveGroup> Mul<&ScalarResult<C>> for &AuthenticatedScalarResult<C> {
     type Output = AuthenticatedScalarResult<C>;
 
     fn mul(self, rhs: &ScalarResult<C>) -> Self::Output {
-        let mut results = ScalarResult::batch_mul(
-            &[self.share.to_scalar(), self.mac.to_scalar(), self.public_modifier.clone()],
-            &[rhs.clone(), rhs.clone(), rhs.clone()],
-        );
+        self.fabric().new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+            let lhs: ScalarShare<C> = args.next().unwrap().into();
+            let rhs: Scalar<C> = args.next().unwrap().into();
 
-        let public_modifier = results.pop().unwrap();
-        let mac = results.pop().unwrap().into();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac, public_modifier }
+            ResultValue::ScalarShare(lhs * rhs)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Mul, mul, *, ScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -1070,53 +821,26 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &AuthenticatedScalarR
         // public multiplications are applied to the MACs and the public
         // modifiers as well Identity: [x * y] = de + d[b] + e[a] + [c]
         let fabric = self.fabric();
-        let party0 = fabric.party_id() == PARTY0;
-        let mut ids = a.ids();
-        ids.extend(b.ids());
-        ids.extend(c.ids());
-        ids.push(d.id());
-        ids.push(e.id());
+        let party_id = fabric.party_id();
+        let mac_key = fabric.mac_key();
+        let ids = vec![a.id(), b.id(), c.id(), d.id(), e.id()];
 
-        let mut results =
-            fabric.new_batch_gate_op(ids, AUTHENTICATED_SCALAR_RESULT_LEN, move |mut args| {
-                // Destructure the args iter
-                let a_share: Scalar<C> = args.next().unwrap().into();
-                let a_mac: Scalar<C> = args.next().unwrap().into();
-                let a_modifier: Scalar<C> = args.next().unwrap().into();
+        fabric.new_gate_op(ids, move |mut args| {
+            // Destructure the args iter
+            let a_share: ScalarShare<C> = args.next().unwrap().into();
+            let b_share: ScalarShare<C> = args.next().unwrap().into();
+            let c_share: ScalarShare<C> = args.next().unwrap().into();
 
-                let b_share: Scalar<C> = args.next().unwrap().into();
-                let b_mac: Scalar<C> = args.next().unwrap().into();
-                let b_modifier: Scalar<C> = args.next().unwrap().into();
+            let d: Scalar<C> = args.next().unwrap().into();
+            let e: Scalar<C> = args.next().unwrap().into();
 
-                let c_share: Scalar<C> = args.next().unwrap().into();
-                let c_mac: Scalar<C> = args.next().unwrap().into();
-                let c_modifier: Scalar<C> = args.next().unwrap().into();
+            // Compute the beaver identity: [x * y] = de + d[b] + e[a] + [c]
+            let de = d * e;
+            let res = d * b_share + e * a_share + c_share;
+            let res = res.add_public(de, mac_key, party_id);
 
-                let d: Scalar<C> = args.next().unwrap().into();
-                let e: Scalar<C> = args.next().unwrap().into();
-
-                // Compute the beaver identity: [x * y] = de + d[b] + e[a] + [c]
-                let de = d * e;
-
-                let masked_share = if party0 { de } else { Scalar::zero() };
-                let new_share = masked_share + d * b_share + e * a_share + c_share;
-
-                let new_mac = d * b_mac + e * a_mac + c_mac;
-
-                let new_modifier = d * b_modifier + e * a_modifier + c_modifier - de;
-
-                vec![
-                    ResultValue::Scalar(new_share),
-                    ResultValue::Scalar(new_mac),
-                    ResultValue::Scalar(new_modifier),
-                ]
-            });
-
-        let public_modifier = results.pop().unwrap();
-        let mac = results.pop().unwrap().into();
-        let share = results.pop().unwrap().into();
-
-        AuthenticatedScalarResult { share, mac, public_modifier }
+            ResultValue::ScalarShare(res)
+        })
     }
 }
 impl_borrow_variants!(AuthenticatedScalarResult<C>, Mul, mul, *, AuthenticatedScalarResult<C>, Output=AuthenticatedScalarResult<C>, C: CurveGroup);
@@ -1170,35 +894,27 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         let n = a.len();
         let fabric = a[0].fabric();
 
-        let chunk_size = AUTHENTICATED_SCALAR_RESULT_LEN + 1;
-        let mut all_ids = Vec::with_capacity(chunk_size * n);
+        let mut all_ids = Vec::with_capacity(2 * n);
         for (a, b) in a.iter().zip(b.iter()) {
-            all_ids.extend(a.ids());
+            all_ids.push(a.id());
             all_ids.push(b.id());
         }
 
-        let scalars = fabric.new_batch_gate_op(
+        fabric.new_batch_gate_op(
             all_ids,
-            AUTHENTICATED_SCALAR_RESULT_LEN * n, // output_arity
+            n, // output_arity
             move |args| {
-                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
-                for mut chunk in &args.map(Scalar::from).chunks(chunk_size) {
-                    let a_share = chunk.next().unwrap();
-                    let a_mac_share = chunk.next().unwrap();
-                    let a_modifier = chunk.next().unwrap();
+                let mut result = Vec::with_capacity(n);
+                for mut chunk in &args.chunks(2) {
+                    let a_share: ScalarShare<C> = chunk.next().unwrap().into();
+                    let public_value: Scalar<C> = chunk.next().unwrap().into();
 
-                    let public_value = chunk.next().unwrap();
-
-                    result.push(ResultValue::Scalar(a_share * public_value));
-                    result.push(ResultValue::Scalar(a_mac_share * public_value));
-                    result.push(ResultValue::Scalar(a_modifier * public_value));
+                    result.push(ResultValue::ScalarShare(a_share * public_value));
                 }
 
                 result
             },
-        );
-
-        AuthenticatedScalarResult::from_flattened_iterator(scalars.into_iter())
+        )
     }
 
     /// Multiply a batch of `AuthenticatedScalarResult`s by a batch of `Scalar`s
@@ -1215,33 +931,22 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
         let fabric = a[0].fabric();
 
         let b = b.to_vec();
-        let all_ids = a.iter().flat_map(|a| a.ids()).collect_vec();
+        let ids = a.iter().map(|a| a.id()).collect_vec();
 
-        let scalars = fabric.new_batch_gate_op(
-            all_ids,
-            AUTHENTICATED_SCALAR_RESULT_LEN * n, // output_arity
+        fabric.new_batch_gate_op(
+            ids,
+            n, // output_arity
             move |args| {
-                let mut result = Vec::with_capacity(AUTHENTICATED_SCALAR_RESULT_LEN * n);
-                for (mut a_vals, b_val) in args
-                    .map(Scalar::from)
-                    .chunks(AUTHENTICATED_SCALAR_RESULT_LEN)
-                    .into_iter()
-                    .zip(b.into_iter())
-                {
-                    let a_share = a_vals.next().unwrap();
-                    let a_mac_share = a_vals.next().unwrap();
-                    let a_modifier = a_vals.next().unwrap();
+                let mut result = Vec::with_capacity(n);
+                for (a_val, b_val) in args.into_iter().zip(b.into_iter()) {
+                    let a_share: ScalarShare<C> = a_val.into();
 
-                    result.push(ResultValue::Scalar(a_share * b_val));
-                    result.push(ResultValue::Scalar(a_mac_share * b_val));
-                    result.push(ResultValue::Scalar(a_modifier * b_val));
+                    result.push(ResultValue::ScalarShare(a_share * b_val));
                 }
 
                 result
             },
-        );
-
-        AuthenticatedScalarResult::from_flattened_iterator(scalars.into_iter())
+        )
     }
 }
 
@@ -1280,11 +985,11 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &CurvePoint<C> {
     type Output = AuthenticatedPointResult<C>;
 
     fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
-        AuthenticatedPointResult {
-            share: self * &rhs.share,
-            mac: self * &rhs.mac,
-            public_modifier: self * &rhs.public_modifier,
-        }
+        let lhs = *self;
+        rhs.fabric().new_gate_op(vec![rhs.id()], move |mut args| {
+            let scalar: ScalarShare<C> = args.next().unwrap().into();
+            ResultValue::PointShare(lhs * scalar)
+        })
     }
 }
 impl_commutative!(CurvePoint<C>, Mul, mul, *, AuthenticatedScalarResult<C>, Output=AuthenticatedPointResult<C>, C: CurveGroup);
@@ -1293,11 +998,12 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &CurvePointResult<C> 
     type Output = AuthenticatedPointResult<C>;
 
     fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
-        AuthenticatedPointResult {
-            share: self * &rhs.share,
-            mac: self * &rhs.mac,
-            public_modifier: self * &rhs.public_modifier,
-        }
+        self.fabric().new_gate_op(vec![self.id(), rhs.id()], |mut args| {
+            let point: CurvePoint<C> = args.next().unwrap().into();
+            let scalar: ScalarShare<C> = args.next().unwrap().into();
+
+            ResultValue::PointShare(point * scalar)
+        })
     }
 }
 impl_borrow_variants!(CurvePointResult<C>, Mul, mul, *, AuthenticatedScalarResult<C>, Output=AuthenticatedPointResult<C>, C: CurveGroup);
@@ -1351,36 +1057,17 @@ where
         domain: D,
     ) -> Vec<AuthenticatedScalarResult<C>> {
         assert!(!x.is_empty(), "Cannot compute FFT of empty vector");
+        let n = x.len();
 
-        // Take the FFT of the shares and the macs separately
-        let shares = x.iter().map(|v| v.share()).collect_vec();
-        let macs = x.iter().map(|v| v.mac_share()).collect_vec();
-        let modifiers = x.iter().map(|v| v.public_modifier.clone()).collect_vec();
+        let fabric = x[0].fabric();
+        let ids = x.iter().map(|v| v.id()).collect_vec();
 
-        let (share_fft, mac_fft, modifier_fft) = if is_forward {
-            (
-                ScalarResult::fft_with_domain::<D>(&shares, domain),
-                ScalarResult::fft_with_domain::<D>(&macs, domain),
-                ScalarResult::fft_with_domain::<D>(&modifiers, domain),
-            )
-        } else {
-            (
-                ScalarResult::ifft_with_domain::<D>(&shares, domain),
-                ScalarResult::ifft_with_domain::<D>(&macs, domain),
-                ScalarResult::ifft_with_domain::<D>(&modifiers, domain),
-            )
-        };
+        fabric.new_batch_gate_op(ids, n, move |args| {
+            let shares: Vec<ScalarShare<C>> = args.map(ScalarShare::from).collect();
+            let res = ScalarShare::fft_helper(&shares, is_forward, domain);
 
-        let mut res = Vec::with_capacity(domain.size());
-        for (share, mac, modifier) in izip!(share_fft, mac_fft, modifier_fft) {
-            res.push(AuthenticatedScalarResult {
-                share: MpcScalarResult::new_shared(share),
-                mac: MpcScalarResult::new_shared(mac),
-                public_modifier: modifier,
-            })
-        }
-
-        res
+            res.into_iter().map(|x| ResultValue::ScalarShare(x)).collect()
+        })
     }
 }
 
@@ -1394,13 +1081,21 @@ where
 pub mod test_helpers {
     use ark_ec::CurveGroup;
 
-    use crate::algebra::scalar::Scalar;
+    use crate::{
+        algebra::{scalar::Scalar, ScalarShare},
+        ResultValue,
+    };
 
     use super::AuthenticatedScalarResult;
 
     /// Modify the MAC of an `AuthenticatedScalarResult`
     pub fn modify_mac<C: CurveGroup>(val: &mut AuthenticatedScalarResult<C>, new_value: Scalar<C>) {
-        val.mac = val.fabric().allocate_scalar(new_value).into()
+        *val = val.fabric().new_gate_op(val.ids(), move |mut args| {
+            let mut share: ScalarShare<C> = args.next().unwrap().into();
+            share.mac = new_value;
+
+            ResultValue::ScalarShare(share)
+        });
     }
 
     /// Modify the underlying secret share of an `AuthenticatedScalarResult`
@@ -1408,16 +1103,12 @@ pub mod test_helpers {
         val: &mut AuthenticatedScalarResult<C>,
         new_value: Scalar<C>,
     ) {
-        val.share = val.fabric().allocate_scalar(new_value).into()
-    }
+        *val = val.fabric().new_gate_op(val.ids(), move |mut args| {
+            let mut share: ScalarShare<C> = args.next().unwrap().into();
+            share.share = new_value;
 
-    /// Modify the public modifier of an `AuthenticatedScalarResult` by adding
-    /// an offset
-    pub fn modify_public_modifier<C: CurveGroup>(
-        val: &mut AuthenticatedScalarResult<C>,
-        new_value: Scalar<C>,
-    ) {
-        val.public_modifier = val.fabric().allocate_scalar(new_value)
+            ResultValue::ScalarShare(share)
+        });
     }
 }
 

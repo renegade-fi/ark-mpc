@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    algebra::{CurvePoint, Scalar},
+    algebra::{CurvePoint, PointShare, Scalar, ScalarShare},
     error::MpcNetworkError,
     fabric::ResultId,
 };
@@ -49,10 +49,14 @@ pub enum NetworkPayload<C: CurveGroup> {
     Scalar(Scalar<C>),
     /// A batch of scalar values
     ScalarBatch(Vec<Scalar<C>>),
+    /// A share of a scalar value
+    ScalarShare(ScalarShare<C>),
     /// A point on the curve
     Point(CurvePoint<C>),
     /// A batch of points on the curve
     PointBatch(Vec<CurvePoint<C>>),
+    /// A share of a curve point value
+    PointShare(PointShare<C>),
 }
 
 // ---------------
