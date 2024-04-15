@@ -15,11 +15,11 @@ use ark_ec::CurveGroup;
 use rand::thread_rng;
 
 pub mod algebra;
-pub mod beaver;
 pub mod commitment;
 pub mod error;
 pub(crate) mod fabric;
 pub mod gadgets;
+pub mod offline_prep;
 #[cfg(feature = "benchmarks")]
 pub use fabric::*;
 #[cfg(not(feature = "benchmarks"))]
@@ -53,9 +53,9 @@ pub mod test_helpers {
     use futures::Future;
 
     use crate::{
-        beaver::{PartyIDBeaverSource, SharedValueSource},
         fabric::ExecutorSizeHints,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
+        offline_prep::{OfflinePhase, PartyIDBeaverSource},
         MpcFabric, PARTY0, PARTY1,
     };
 
@@ -124,7 +124,7 @@ pub mod test_helpers {
         party1_beaver: B,
     ) -> (T, T)
     where
-        B: 'static + SharedValueSource<TestCurve>,
+        B: 'static + OfflinePhase<TestCurve>,
         T: Send + 'static,
         S: Future<Output = T> + Send + 'static,
         F: FnMut(MpcFabric<TestCurve>) -> S,

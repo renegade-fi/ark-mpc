@@ -6,12 +6,12 @@ use itertools::Itertools;
 
 use crate::{algebra::Scalar, network::PartyId};
 
-/// SharedValueSource implements both the functionality for:
+/// OfflinePhase implements both the functionality for:
 ///     1. Single additively shared values [x] where party 1 holds x_1 and party
 ///        2 holds x_2 such that x_1 + x_2 = x
 ///     2. Beaver triplets; additively shared values [a], [b], [c] such that a *
 ///        b = c
-pub trait SharedValueSource<C: CurveGroup>: Send + Sync {
+pub trait OfflinePhase<C: CurveGroup>: Send + Sync {
     /// Fetch the next shared single bit
     fn next_shared_bit(&mut self) -> Scalar<C>;
     /// Fetch the next shared batch of bits
@@ -77,7 +77,7 @@ impl PartyIDBeaverSource {
 /// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] =
 /// (2, 4)
 #[cfg(any(feature = "test_helpers", test))]
-impl<C: CurveGroup> SharedValueSource<C> for PartyIDBeaverSource {
+impl<C: CurveGroup> OfflinePhase<C> for PartyIDBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar<C> {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
@@ -117,7 +117,7 @@ impl ZeroBeaverSource {
 }
 
 #[cfg(any(feature = "test_helpers", test))]
-impl<C: CurveGroup> SharedValueSource<C> for ZeroBeaverSource {
+impl<C: CurveGroup> OfflinePhase<C> for ZeroBeaverSource {
     fn next_shared_bit(&mut self) -> Scalar<C> {
         Scalar::zero()
     }

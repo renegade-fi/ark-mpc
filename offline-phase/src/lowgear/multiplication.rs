@@ -4,7 +4,7 @@ use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork, PARTY0};
 use itertools::Itertools;
 
-use crate::{beaver_source::ValueMacBatch, error::LowGearError};
+use crate::{error::LowGearError, structs::ValueMacBatch};
 
 use super::LowGear;
 
@@ -17,7 +17,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     ) -> Result<ValueMacBatch<C>, LowGearError> {
         let n = lhs.len();
         assert_eq!(rhs.len(), n, "Batch sizes must match");
-        assert!(self.triples.len() >= n, "Not enough triples for batch size");
+        assert!(self.num_triples() >= n, "Not enough triples for batch size");
 
         // Get triples for the beaver trick
         let (a, b, c) = self.consume_triples(n);
@@ -43,18 +43,12 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         &mut self,
         n: usize,
     ) -> (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>) {
-        let triples = self.triples.split_off(n);
+        // let triples = self.triples.split_off(n);
+        let a = self.triples.0.split_off(n);
+        let b = self.triples.1.split_off(n);
+        let c = self.triples.2.split_off(n);
 
-        let mut a_res = Vec::with_capacity(n);
-        let mut b_res = Vec::with_capacity(n);
-        let mut c_res = Vec::with_capacity(n);
-        for (a, b, c) in triples.iter() {
-            a_res.push(*a);
-            b_res.push(*b);
-            c_res.push(*c);
-        }
-
-        (ValueMacBatch::new(a_res), ValueMacBatch::new(b_res), ValueMacBatch::new(c_res))
+        (a, b, c)
     }
 
     /// Add a batch of public values to a batch of shared values

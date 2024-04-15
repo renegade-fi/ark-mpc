@@ -14,9 +14,9 @@
 #![feature(inherent_associated_types)]
 #![feature(stmt_expr_attributes)]
 
-pub mod beaver_source;
 pub mod error;
 pub mod lowgear;
+pub mod structs;
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
@@ -27,7 +27,7 @@ pub(crate) mod test_helpers {
         PARTY0, PARTY1,
     };
     use futures::Future;
-    use itertools::{izip, Itertools};
+    use itertools::Itertools;
     use mp_spdz_rs::fhe::{
         ciphertext::Ciphertext,
         keys::{BGVKeypair, BGVPublicKey},
@@ -36,7 +36,7 @@ pub(crate) mod test_helpers {
     };
     use rand::thread_rng;
 
-    use crate::{beaver_source::ValueMacBatch, lowgear::LowGear};
+    use crate::{lowgear::LowGear, structs::ValueMacBatch};
 
     /// The curve used for testing in this crate
     pub type TestCurve = ark_bn254::G1Projective;
@@ -172,8 +172,8 @@ pub(crate) mod test_helpers {
         let (b1, b2) = generate_authenticated_secret_shares(&b, mac_key);
         let (c1, c2) = generate_authenticated_secret_shares(&c, mac_key);
 
-        lowgear1.triples = izip!(a1, b1, c1).collect_vec();
-        lowgear2.triples = izip!(a2, b2, c2).collect_vec();
+        lowgear1.triples = (a1, b1, c1);
+        lowgear2.triples = (a2, b2, c2);
 
         run_mock_lowgear(f, lowgear1, lowgear2).await
     }

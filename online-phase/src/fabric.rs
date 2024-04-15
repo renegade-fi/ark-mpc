@@ -41,8 +41,8 @@ use crate::{
         BatchScalarResult, CurvePoint, CurvePointResult, MpcPointResult, MpcScalarResult, Scalar,
         ScalarResult,
     },
-    beaver::SharedValueSource,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
+    offline_prep::OfflinePhase,
     PARTY0,
 };
 
@@ -203,7 +203,7 @@ pub struct FabricInner<C: CurveGroup> {
     /// The underlying queue to the network
     outbound_queue: KanalSender<NetworkOutbound<C>>,
     /// The underlying shared randomness source
-    beaver_source: Arc<Mutex<Box<dyn SharedValueSource<C>>>>,
+    beaver_source: Arc<Mutex<Box<dyn OfflinePhase<C>>>>,
 }
 
 impl<C: CurveGroup> Debug for FabricInner<C> {
@@ -214,7 +214,7 @@ impl<C: CurveGroup> Debug for FabricInner<C> {
 
 impl<C: CurveGroup> FabricInner<C> {
     /// Constructor
-    pub fn new<S: 'static + SharedValueSource<C>>(
+    pub fn new<S: 'static + OfflinePhase<C>>(
         party_id: u64,
         execution_queue: ExecutorJobQueue<C>,
         outbound_queue: KanalSender<NetworkOutbound<C>>,
@@ -388,7 +388,7 @@ impl<C: CurveGroup> FabricInner<C> {
 
 impl<C: CurveGroup> MpcFabric<C> {
     /// Constructor
-    pub fn new<N: 'static + MpcNetwork<C>, S: 'static + SharedValueSource<C>>(
+    pub fn new<N: 'static + MpcNetwork<C>, S: 'static + OfflinePhase<C>>(
         network: N,
         beaver_source: S,
     ) -> Self {
@@ -398,7 +398,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     /// Constructor that takes an additional size hint, indicating how much
     /// buffer space the fabric should allocate for results. The size is
     /// given in number of gates
-    pub fn new_with_size_hint<N: 'static + MpcNetwork<C>, S: 'static + SharedValueSource<C>>(
+    pub fn new_with_size_hint<N: 'static + MpcNetwork<C>, S: 'static + OfflinePhase<C>>(
         size_hints: ExecutorSizeHints,
         network: N,
         beaver_source: S,
@@ -421,7 +421,7 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Constructor that takes an additional size hint as well as a queue for
     /// the executor
-    pub fn new_with_executor<N: 'static + MpcNetwork<C>, S: 'static + SharedValueSource<C>>(
+    pub fn new_with_executor<N: 'static + MpcNetwork<C>, S: 'static + OfflinePhase<C>>(
         network: N,
         beaver_source: S,
         executor_queue: ExecutorJobQueue<C>,

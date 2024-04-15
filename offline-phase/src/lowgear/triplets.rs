@@ -9,13 +9,12 @@
 
 use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
-use itertools::izip;
 use mp_spdz_rs::fhe::{
     ciphertext::{CiphertextPoK, CiphertextVector},
     plaintext::{Plaintext, PlaintextVector},
 };
 
-use crate::{beaver_source::ValueMacBatch, error::LowGearError};
+use crate::{error::LowGearError, structs::ValueMacBatch};
 
 use super::LowGear;
 
@@ -57,7 +56,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         self.sacrifice(&a, &b, &c, &b_prime, &c_prime).await?;
 
         // Increase the size of self.triples by self.params.ciphertext_pok_batch_size
-        self.triples = izip!(a, b, c).collect();
+        self.triples = (a, b, c);
         Ok(())
     }
 
@@ -247,9 +246,9 @@ mod test {
     use rand::{rngs::OsRng, thread_rng};
 
     use crate::{
-        beaver_source::ValueMacBatch,
         error::LowGearError,
         lowgear::LowGear,
+        structs::ValueMacBatch,
         test_helpers::{mock_lowgear_with_keys, TestCurve},
     };
 
@@ -343,6 +342,8 @@ mod test {
         Ok(their_val)
     }
 
+    /// Send and receive a message between two `LowGear` instances
+
     /// Verify the macs on a set of values given the opened shares from both
     /// parties
     fn verify_macs(
@@ -377,27 +378,22 @@ mod test {
         mock_lowgear_with_keys(|mut lowgear| async move {
             lowgear.generate_triples().await.unwrap();
 
-            assert_eq!(lowgear.triples.len(), lowgear.params.ciphertext_pok_batch_size());
+            assert_eq!(lowgear.num_triples(), lowgear.params.ciphertext_pok_batch_size());
 
             // Exchange triples
-            let (mut my_a, mut my_b, mut my_c) = (vec![], vec![], vec![]);
-            for (a, b, c) in lowgear.triples.iter() {
-                my_a.push(a.value());
-                my_b.push(b.value());
-                my_c.push(c.value());
-            }
+            let (my_a, my_b, my_c) = lowgear.triples.clone();
 
-            let their_a = send_receive_payload(my_a.clone(), &mut lowgear).await.unwrap();
-            let their_b = send_receive_payload(my_b.clone(), &mut lowgear).await.unwrap();
-            let their_c = send_receive_payload(my_c.clone(), &mut lowgear).await.unwrap();
+            let their_a = send_receive_payload(my_a.values(), &mut lowgear).await.unwrap();
+            let their_b = send_receive_payload(my_b.values(), &mut lowgear).await.unwrap();
+            let their_c = send_receive_payload(my_c.values(), &mut lowgear).await.unwrap();
 
             // Add together all the shares to get the final values
             for (a_1, a_2, b_1, b_2, c_1, c_2) in izip!(
-                my_a.iter(),
+                my_a.values().iter(),
                 their_a.iter(),
-                my_b.iter(),
+                my_b.values().iter(),
                 their_b.iter(),
-                my_c.iter(),
+                my_c.values().iter(),
                 their_c.iter()
             ) {
                 let a = a_1 + a_2;
