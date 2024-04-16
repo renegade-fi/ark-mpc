@@ -216,6 +216,8 @@ pub struct ResultHandle<C: CurveGroup, T: From<ResultValue<C>>> {
     phantom: PhantomData<T>,
 }
 
+impl<C: CurveGroup, T: From<ResultValue<C>>> Unpin for ResultHandle<C, T> {}
+
 impl<C: CurveGroup, T: From<ResultValue<C>>> Clone for ResultHandle<C, T> {
     fn clone(&self) -> Self {
         Self { id: self.id, result_buffer: None, fabric: self.fabric.clone(), phantom: PhantomData }

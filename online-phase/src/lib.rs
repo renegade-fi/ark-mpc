@@ -50,9 +50,11 @@ pub fn random_point<C: CurveGroup>() -> CurvePoint<C> {
 pub mod test_helpers {
     //! Defines test helpers for use in unit and integration tests, as well as
     //! benchmarks
-    use futures::Future;
+    use ark_ec::CurveGroup;
+    use futures::{future, Future};
 
     use crate::{
+        algebra::{AuthenticatedScalarResult, Scalar},
         fabric::ExecutorSizeHints,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
         offline_prep::{OfflinePhase, PartyIDBeaverSource},
@@ -63,6 +65,18 @@ pub mod test_helpers {
 
     /// A curve used for testing algebra implementations, set to bn254
     pub type TestCurve = Bn254Projective;
+
+    /// Open and await a batch of scalars
+    pub async fn open_await_all<C: CurveGroup>(
+        scalars: &[AuthenticatedScalarResult<C>],
+    ) -> Vec<Scalar<C>>
+    where
+        C::ScalarField: Unpin,
+    {
+        let results = AuthenticatedScalarResult::open_authenticated_batch(scalars);
+
+        future::join_all(results).await.into_iter().collect::<Result<Vec<_>, _>>().unwrap()
+    }
 
     /// Create a mock fabric
     pub fn mock_fabric() -> MpcFabric<TestCurve> {

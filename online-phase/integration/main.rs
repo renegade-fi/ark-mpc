@@ -4,6 +4,7 @@ use ark_bn254::G1Projective as Bn254Projective;
 use ark_mpc::{
     algebra::{CurvePoint, Scalar},
     network::{NetworkOutbound, NetworkPayload, QuicTwoPartyNet},
+    offline_prep::PartyIDBeaverSource,
     MpcFabric, PARTY0,
 };
 use clap::Parser;
@@ -11,7 +12,7 @@ use colored::Colorize;
 use dns_lookup::lookup_host;
 use env_logger::Builder;
 use futures::{SinkExt, StreamExt};
-use helpers::PartyIDBeaverSource;
+// use helpers::PartyIDBeaverSource;
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use tracing::log::{self, LevelFilter};
 
@@ -20,8 +21,6 @@ mod authenticated_scalar;
 mod circuits;
 mod fabric;
 mod helpers;
-mod mpc_curve;
-mod mpc_scalar;
 
 /// The amount of time to sleep after sending a shutdown
 const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds

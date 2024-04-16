@@ -29,6 +29,7 @@ use super::{
 
 /// A maliciously secure wrapper around `MpcPointResult` that includes a MAC as
 /// per the SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
+#[allow(type_alias_bounds)]
 pub type AuthenticatedPointResult<C: CurveGroup> = ResultHandle<C, PointShare<C>>;
 
 impl<C: CurveGroup> AuthenticatedPointResult<C> {
@@ -659,7 +660,7 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &AuthenticatedPointRe
     fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> AuthenticatedPointResult<C> {
         // Sample a beaver triple
         let generator = CurvePoint::generator();
-        let (a, b, c) = self.fabric().next_authenticated_triple();
+        let (a, b, c) = self.fabric().next_triple();
 
         // Open the values d = [rhs - a] and e = [lhs - bG] for curve group generator G
         let masked_rhs = rhs - &a;
@@ -693,7 +694,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
         let fabric = a[0].fabric();
 
         // Sample a set of beaver triples for the multiplications
-        let (beaver_a, beaver_b, beaver_c) = fabric.next_authenticated_triple_batch(n);
+        let (beaver_a, beaver_b, beaver_c) = fabric.next_triple_batch(n);
         let beaver_b_gen = AuthenticatedPointResult::batch_mul_generator(&beaver_b);
 
         let masked_rhs = AuthenticatedScalarResult::batch_sub(a, &beaver_a);
@@ -803,7 +804,7 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
         fabric.new_gate_op(all_ids, move |mut args| {
             let mut share: PointShare<C> = args.next().unwrap().into();
-            args.into_iter().map(PointShare::from).for_each(|x| share = share + x);
+            args.map(PointShare::from).for_each(|x| share = share + x);
 
             ResultValue::PointShare(share)
         })

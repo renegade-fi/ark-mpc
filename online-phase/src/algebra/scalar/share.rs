@@ -47,9 +47,19 @@ impl<C: CurveGroup> ScalarShare<C> {
         self.share
     }
 
+    /// Set the share
+    pub fn set_share(&mut self, share: Scalar<C>) {
+        self.share = share;
+    }
+
     /// Get the mac
     pub fn mac(&self) -> Scalar<C> {
         self.mac
+    }
+
+    /// Set the mac
+    pub fn set_mac(&mut self, mac: Scalar<C>) {
+        self.mac = mac;
     }
 }
 
@@ -160,7 +170,7 @@ impl<C: CurveGroup> ScalarShare<C> {
         is_forward: bool,
         domain: D,
     ) -> Vec<Self> {
-        assert!(x.is_empty(), "FFT/IFFT helper requires non-empty input");
+        assert!(!x.is_empty(), "FFT/IFFT helper requires non-empty input");
 
         // Convert to arkworks types
         let share_scalars = x.iter().map(|s| s.share.inner()).collect_vec();
@@ -177,10 +187,6 @@ impl<C: CurveGroup> ScalarShare<C> {
         let new_shares = share_fft.into_iter().map(|x| Scalar::new(x)).collect_vec();
         let new_macs = mac_fft.into_iter().map(|x| Scalar::new(x)).collect_vec();
 
-        new_shares
-            .into_iter()
-            .zip(new_macs.into_iter())
-            .map(|(share, mac)| Self { share, mac })
-            .collect_vec()
+        new_shares.into_iter().zip(new_macs).map(|(share, mac)| Self { share, mac }).collect_vec()
     }
 }

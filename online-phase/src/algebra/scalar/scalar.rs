@@ -902,6 +902,7 @@ mod test {
         let domain_size = rng.gen_range(n..10 * n);
 
         let seq = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+        println!("seq.len() = {:?}", seq.len());
 
         let domain = Radix2EvaluationDomain::<TestPolyField>::new(domain_size).unwrap();
         let fft_res = domain.fft(&seq.iter().map(|s| s.inner()).collect_vec());
@@ -920,6 +921,7 @@ mod test {
         })
         .await;
 
+        println!("res.len() = {:?}", res.len());
         assert_eq!(res.len(), expected_res.len());
         assert_eq!(res, expected_res);
     }

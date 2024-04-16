@@ -58,9 +58,9 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     pub(crate) fn add_public_value(&mut self, public: &[Scalar<C>], batch: &mut ValueMacBatch<C>) {
         let is_party0 = self.party_id() == PARTY0;
         for (val, public) in batch.iter_mut().zip(public.iter()) {
-            val.mac += self.mac_share * public;
+            val.set_mac(val.mac() + self.mac_share * public);
             if is_party0 {
-                val.value += *public;
+                val.set_share(val.share() + *public);
             }
         }
     }

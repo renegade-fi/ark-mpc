@@ -34,6 +34,7 @@ use super::{
 /// A maliciously secure wrapper around an `MpcScalarResult`, includes a MAC as
 /// per the SPDZ protocol: https://eprint.iacr.org/2011/535.pdf
 /// that ensures security against a malicious adversary
+#[allow(type_alias_bounds)]
 pub type AuthenticatedScalarResult<C: CurveGroup> = ResultHandle<C, ScalarShare<C>>;
 
 impl<C: CurveGroup> AuthenticatedScalarResult<C> {
@@ -66,7 +67,7 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         // 1. Sample a random shared group element from the shared value source
         // call these values r_i for i=1..n
-        let shared_scalars = fabric.random_shared_scalars_authenticated(n);
+        let shared_scalars = fabric.random_shared_scalars(n);
 
         // 2. Mask the values by multiplying them with the random scalars, i.e. compute
         //    m_i = (r_i * x_i)
@@ -571,7 +572,7 @@ impl<C: CurveGroup> Sum for AuthenticatedScalarResult<C> {
         // Add the underlying values
         let ids = values.iter().map(|v| v.id()).collect_vec();
         fabric.new_gate_op(ids, move |args| {
-            let sum = args.map(|v| ScalarShare::from(v)).sum();
+            let sum = args.map(ScalarShare::from).sum();
             ResultValue::ScalarShare(sum)
         })
     }
@@ -805,7 +806,7 @@ impl<C: CurveGroup> Mul<&AuthenticatedScalarResult<C>> for &AuthenticatedScalarR
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn mul(self, rhs: &AuthenticatedScalarResult<C>) -> Self::Output {
         // Sample a beaver triplet
-        let (a, b, c) = self.fabric().next_authenticated_triple();
+        let (a, b, c) = self.fabric().next_triple();
 
         // Mask the left and right hand sides and open them
         let masked_lhs_rhs = AuthenticatedScalarResult::batch_sub(
@@ -859,7 +860,7 @@ impl<C: CurveGroup> AuthenticatedScalarResult<C> {
 
         let n = a.len();
         let fabric = a[0].fabric();
-        let (beaver_a, beaver_b, beaver_c) = fabric.next_authenticated_triple_batch(n);
+        let (beaver_a, beaver_b, beaver_c) = fabric.next_triple_batch(n);
 
         // Open the values d = [lhs - a] and e = [rhs - b]
         let masked_lhs = AuthenticatedScalarResult::batch_sub(a, &beaver_a);
@@ -1057,7 +1058,7 @@ where
         domain: D,
     ) -> Vec<AuthenticatedScalarResult<C>> {
         assert!(!x.is_empty(), "Cannot compute FFT of empty vector");
-        let n = x.len();
+        let n = domain.size();
 
         let fabric = x[0].fabric();
         let ids = x.iter().map(|v| v.id()).collect_vec();
@@ -1121,9 +1122,31 @@ mod tests {
 
     use crate::{
         algebra::{poly_test_helpers::TestPolyField, scalar::Scalar, AuthenticatedScalarResult},
-        test_helpers::{execute_mock_mpc, TestCurve},
+        test_helpers::{execute_mock_mpc, open_await_all, TestCurve},
         PARTY0, PARTY1,
     };
+
+    // ------------
+    // | Addition |
+    // ------------
+
+    /// Tests addition with a constant value
+    #[tokio::test]
+    async fn test_add_constant() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let res = &a_shared + b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a + b)
+    }
 
     /// Tests batch addition with constant values
     #[tokio::test]
@@ -1143,17 +1166,103 @@ mod tests {
             async move {
                 let a_shared = fabric.batch_share_scalar(a, PARTY0 /* sender */);
                 let res = AuthenticatedScalarResult::batch_add_constant(&a_shared, &b);
-
-                let opening = AuthenticatedScalarResult::open_authenticated_batch(&res);
-                future::join_all(opening.into_iter())
-                    .await
-                    .into_iter()
-                    .collect::<Result<Vec<_>, _>>()
+                open_await_all(&res).await
             }
         })
         .await;
 
-        assert_eq!(res.unwrap(), expected_res)
+        assert_eq!(res, expected_res)
+    }
+
+    /// Tests addition with a public value    
+    #[tokio::test]
+    async fn test_add_public() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let b = fabric.allocate_scalar(b);
+            let res = &a_shared + b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a + b)
+    }
+
+    /// Tests batch addition with public values
+    #[tokio::test]
+    async fn test_batch_add_public() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+
+            async move {
+                let a_shared = fabric.batch_share_scalar(a, PARTY0);
+                let b = fabric.allocate_scalars(b);
+
+                let res = AuthenticatedScalarResult::batch_add_public(&a_shared, &b);
+                open_await_all(&res).await
+            }
+        })
+        .await;
+
+        let expected = a.iter().zip(b.iter()).map(|(a, b)| a + b).collect_vec();
+        assert_eq!(res, expected)
+    }
+
+    /// Tests adding two shared values
+    #[tokio::test]
+    async fn test_add() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let b_shared = fabric.share_scalar(b, PARTY1);
+
+            (a_shared + b_shared).open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a + b)
+    }
+
+    /// Tests adding two batches of shared values
+    #[tokio::test]
+    async fn test_batch_add() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected = a.iter().zip(b.iter()).map(|(a, b)| a + b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+
+            async move {
+                let a_shared = fabric.batch_share_scalar(a, PARTY0);
+                let b_shared = fabric.batch_share_scalar(b, PARTY1);
+
+                let res = AuthenticatedScalarResult::batch_add(&a_shared, &b_shared);
+                open_await_all(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected)
     }
 
     /// Tests summing values
@@ -1177,6 +1286,73 @@ mod tests {
         .await;
 
         assert_eq!(res.unwrap(), expected_res)
+    }
+
+    // ---------------
+    // | Subtraction |
+    // ---------------
+
+    /// Test subtraction with a constant value
+    #[tokio::test]
+    async fn test_sub_constant() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let res = &a_shared - b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a - b)
+    }
+
+    /// Tests subtraction with a public value
+    #[tokio::test]
+    async fn test_sub_public() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let b = fabric.allocate_scalar(b);
+            let res = &a_shared - b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a - b)
+    }
+
+    /// Tests batch subtraction with a public value
+    #[tokio::test]
+    async fn test_batch_sub_public() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a - b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let shared_values = fabric.batch_share_scalar(a, PARTY0 /* sender */);
+                let b = fabric.allocate_scalars(b);
+                let res = AuthenticatedScalarResult::batch_sub_public(&shared_values, &b);
+
+                open_await_all(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
     }
 
     /// Test subtraction across non-commutative types
@@ -1209,33 +1385,133 @@ mod tests {
         assert!(res.1)
     }
 
-    /// Tests subtraction with a constant value outside of the fabric
+    /// Tests batch subtraction between two sets of shared values
     #[tokio::test]
-    async fn test_sub_constant() {
+    async fn test_batch_sub() {
+        const N: usize = 100;
         let mut rng = thread_rng();
-        let value1 = Scalar::random(&mut rng);
-        let value2 = Scalar::random(&mut rng);
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
 
-        let (res, _) = execute_mock_mpc(|fabric| async move {
-            // Allocate the first value as a shared scalar and the second as a public scalar
-            let party0_value = fabric.share_scalar(value1, PARTY0);
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a - b).collect_vec();
 
-            // Subtract the public value from the shared value
-            let res1 = &party0_value - value2;
-            let res_open1 = res1.open_authenticated().await.unwrap();
-            let expected1 = value1 - value2;
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let shared_values_a = fabric.batch_share_scalar(a, PARTY0 /* sender */);
+                let shared_values_b = fabric.batch_share_scalar(b, PARTY1 /* sender */);
+                let res = AuthenticatedScalarResult::batch_sub(&shared_values_a, &shared_values_b);
 
-            // Subtract the shared value from the public value
-            let res2 = value2 - &party0_value;
-            let res_open2 = res2.open_authenticated().await.unwrap();
-            let expected2 = value2 - value1;
-
-            (res_open1 == expected1, res_open2 == expected2)
+                open_await_all(&res).await
+            }
         })
         .await;
 
-        assert!(res.0);
-        assert!(res.1)
+        assert_eq!(res, expected_res)
+    }
+
+    // ------------
+    // | Negation |
+    // ------------
+
+    /// Tests negation of a shared value
+    #[tokio::test]
+    async fn test_negation() {
+        let mut rng = thread_rng();
+        let value = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let shared_value = fabric.share_scalar(value, PARTY0);
+            let negated_value = -shared_value;
+
+            negated_value.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), -value)
+    }
+
+    /// Tests batch negation of shared values
+    #[tokio::test]
+    async fn test_batch_negation() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+
+        let expected_res = values.iter().map(|v| -v).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let values = values.clone();
+            async move {
+                let shared_values = fabric.batch_share_scalar(values, PARTY0);
+                let negated_values = AuthenticatedScalarResult::batch_neg(&shared_values);
+
+                open_await_all(&negated_values).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    // ------------------
+    // | Multiplication |
+    // ------------------
+
+    /// Tests multiplication between a constant and a shared value
+    #[tokio::test]
+    async fn test_mul_constant() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let res = &a_shared * b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a * b)
+    }
+
+    /// Tests multiplication between a public and a shared value
+    #[tokio::test]
+    async fn test_mul_public() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let b = fabric.allocate_scalar(b);
+            let res = &a_shared * b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a * b)
+    }
+
+    /// Tests multiplication between two shared values
+    #[tokio::test]
+    async fn test_mul() {
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_scalar(a, PARTY0);
+            let b_shared = fabric.share_scalar(b, PARTY1);
+
+            (a_shared * b_shared).open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a * b)
     }
 
     /// Tests the `batch_mul_constant` method
@@ -1266,6 +1542,63 @@ mod tests {
 
         assert_eq!(res.unwrap(), expected_res)
     }
+
+    /// Tests batch multiplication between a shared and public scalar
+    #[tokio::test]
+    async fn test_batch_mul_public() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let shared_values = fabric.batch_share_scalar(a, PARTY0 /* sender */);
+                let public_values = fabric.allocate_scalars(b);
+
+                let res =
+                    AuthenticatedScalarResult::batch_mul_public(&shared_values, &public_values);
+                open_await_all(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    /// Tests batch multiplication between two shared value batches
+    #[tokio::test]
+    async fn test_batch_mul() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let shared_values1 = fabric.batch_share_scalar(a, PARTY0 /* sender */);
+                let shared_values2 = fabric.batch_share_scalar(b, PARTY1 /* sender */);
+
+                let res = AuthenticatedScalarResult::batch_mul(&shared_values1, &shared_values2);
+                open_await_all(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    // ------------
+    // | Division |
+    // ------------
 
     /// Tests division between a shared and public scalar
     #[tokio::test]
@@ -1338,6 +1671,10 @@ mod tests {
         assert_eq!(res.unwrap(), expected_res)
     }
 
+    // ------------
+    // | Circuits |
+    // ------------
+
     /// Test a simple `XOR` circuit
     #[tokio::test]
     async fn test_xor_circuit() {
@@ -1379,6 +1716,10 @@ mod tests {
 
         assert_eq!(res.unwrap(), expected_res)
     }
+
+    // ------------------------------
+    // | Misc Arithmetic Operations |
+    // ------------------------------
 
     /// Tests exponentiation
     #[tokio::test]
@@ -1437,7 +1778,9 @@ mod tests {
         })
         .await;
 
-        assert_eq!(res.unwrap(), expected_res)
+        let res = res.unwrap();
+        assert_eq!(res.len(), expected_res.len());
+        assert_eq!(res, expected_res[..res.len()])
     }
 
     #[tokio::test]

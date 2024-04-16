@@ -74,23 +74,6 @@ fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result
     assert_err(await_result_with_error(res))
 }
 
-/// Tests opening with a corrupted public modifier
-#[allow(non_snake_case)]
-fn test_open_authenticated__bad_public_modifier(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
-    let mut rng = thread_rng();
-    let my_val = Scalar::random(&mut rng);
-    let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
-
-    // Corrupt the public modifier
-    modify_public_modifier(&mut party0_value, Scalar::random(&mut rng));
-
-    // Attempt to open and authenticate the value
-    let res = party0_value.open_authenticated();
-    assert_err(await_result_with_error(res))
-}
-
 // --------------
 // | Arithmetic |
 // --------------
@@ -494,11 +477,6 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated_scalar::test_open_authenticated__bad_share",
     test_fn: test_open_authenticated__bad_share,
-});
-
-inventory::submit!(IntegrationTest {
-    name: "authenticated_scalar::test_open_authenticated__bad_public_modifier",
-    test_fn: test_open_authenticated__bad_public_modifier,
 });
 
 inventory::submit!(IntegrationTest {

@@ -3,7 +3,7 @@
 use std::ops::{Add, Mul, Sub};
 
 use ark_ec::CurveGroup;
-use ark_mpc::algebra::Scalar;
+use ark_mpc::algebra::{Scalar, ScalarShare};
 use mp_spdz_rs::fhe::ciphertext::Ciphertext;
 use mp_spdz_rs::fhe::keys::{BGVKeypair, BGVPublicKey};
 use mp_spdz_rs::fhe::params::BGVParams;
@@ -96,66 +96,16 @@ impl<C: CurveGroup> LowGearPrep<C> {
 // | Authenticated Shares |
 // ------------------------
 
-/// A type storing values and their macs
-#[derive(Default, Copy, Clone)]
-pub struct ValueMac<C: CurveGroup> {
-    /// The value
-    pub(crate) value: Scalar<C>,
-    /// The mac
-    pub(crate) mac: Scalar<C>,
-}
-
-impl<C: CurveGroup> ValueMac<C> {
-    /// Create a new ValueMacPair
-    pub fn new(value: Scalar<C>, mac: Scalar<C>) -> Self {
-        Self { value, mac }
-    }
-
-    /// Get the value
-    pub fn value(&self) -> Scalar<C> {
-        self.value
-    }
-
-    /// Get the mac
-    pub fn mac(&self) -> Scalar<C> {
-        self.mac
-    }
-}
-
-impl<C: CurveGroup> Add for &ValueMac<C> {
-    type Output = ValueMac<C>;
-
-    fn add(self, other: Self) -> Self::Output {
-        ValueMac::new(self.value + other.value, self.mac + other.mac)
-    }
-}
-
-impl<C: CurveGroup> Sub for &ValueMac<C> {
-    type Output = ValueMac<C>;
-
-    fn sub(self, other: Self) -> Self::Output {
-        ValueMac::new(self.value - other.value, self.mac - other.mac)
-    }
-}
-
-impl<C: CurveGroup> Mul<Scalar<C>> for &ValueMac<C> {
-    type Output = ValueMac<C>;
-
-    fn mul(self, other: Scalar<C>) -> Self::Output {
-        ValueMac::new(self.value * other, self.mac * other)
-    }
-}
-
 /// A struct containing a batch of values and macs
 #[derive(Clone, Default)]
 pub struct ValueMacBatch<C: CurveGroup> {
     /// The values and macs
-    inner: Vec<ValueMac<C>>,
+    inner: Vec<ScalarShare<C>>,
 }
 
 impl<C: CurveGroup> ValueMacBatch<C> {
     /// Create a new ValueMacBatch
-    pub fn new(inner: Vec<ValueMac<C>>) -> Self {
+    pub fn new(inner: Vec<ScalarShare<C>>) -> Self {
         Self { inner }
     }
 
@@ -175,27 +125,27 @@ impl<C: CurveGroup> ValueMacBatch<C> {
     }
 
     /// Get the inner vector
-    pub fn into_inner(self) -> Vec<ValueMac<C>> {
+    pub fn into_inner(self) -> Vec<ScalarShare<C>> {
         self.inner
     }
 
     /// Get all values
     pub fn values(&self) -> Vec<Scalar<C>> {
-        self.inner.iter().map(|vm| vm.value).collect()
+        self.inner.iter().map(|vm| vm.share()).collect()
     }
 
     /// Get all macs
     pub fn macs(&self) -> Vec<Scalar<C>> {
-        self.inner.iter().map(|vm| vm.mac).collect()
+        self.inner.iter().map(|vm| vm.mac()).collect()
     }
 
     /// Get an iterator over the vector
-    pub fn iter(&self) -> std::slice::Iter<'_, ValueMac<C>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, ScalarShare<C>> {
         self.inner.iter()
     }
 
     /// Get a mutable iterator over the vector
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, ValueMac<C>> {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, ScalarShare<C>> {
         self.inner.iter_mut()
     }
 
@@ -219,7 +169,7 @@ impl<C: CurveGroup> ValueMacBatch<C> {
             return Self { inner: vec![] };
         }
 
-        let inner = values.iter().zip(macs.iter()).map(|(v, m)| ValueMac::new(*v, *m)).collect();
+        let inner = values.iter().zip(macs.iter()).map(|(v, m)| ScalarShare::new(*v, *m)).collect();
         Self { inner }
     }
 
@@ -252,8 +202,8 @@ impl<C: CurveGroup> ValueMacBatch<C> {
 }
 
 impl<C: CurveGroup> IntoIterator for ValueMacBatch<C> {
-    type Item = ValueMac<C>;
-    type IntoIter = std::vec::IntoIter<ValueMac<C>>;
+    type Item = ScalarShare<C>;
+    type IntoIter = std::vec::IntoIter<ScalarShare<C>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter()
