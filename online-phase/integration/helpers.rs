@@ -3,12 +3,8 @@
 use std::fmt::Debug;
 
 use ark_mpc::{
-    algebra::{
-        AuthenticatedPointResult, AuthenticatedScalarResult, MpcPointResult, MpcScalarResult,
-        Scalar,
-    },
+    algebra::{AuthenticatedPointResult, AuthenticatedScalarResult},
     network::{NetworkPayload, PartyId},
-    offline_prep::OfflinePhase,
     {MpcFabric, ResultHandle, ResultValue},
 };
 use futures::{future::join_all, Future};
@@ -117,38 +113,8 @@ pub(crate) fn share_scalar(
     value: TestScalar,
     sender: PartyId,
     test_args: &IntegrationTestArgs,
-) -> MpcScalarResult<TestCurve> {
-    let authenticated_value = test_args.fabric.share_scalar(value, sender);
-    authenticated_value.mpc_share()
-}
-
-/// Share a batch of scalars
-pub(crate) fn share_scalar_batch(
-    values: Vec<TestScalar>,
-    sender: PartyId,
-    test_args: &IntegrationTestArgs,
-) -> Vec<MpcScalarResult<TestCurve>> {
-    test_args.fabric.batch_share_scalar(values, sender).iter().map(|v| v.mpc_share()).collect_vec()
-}
-
-/// Send or receive a secret shared point from the given party
-pub(crate) fn share_point(
-    value: TestCurvePoint,
-    sender: PartyId,
-    test_args: &IntegrationTestArgs,
-) -> MpcPointResult<TestCurve> {
-    // Share the point then cast to an `MpcPointResult`
-    let authenticated_point = share_authenticated_point(value, sender, test_args);
-    authenticated_point.mpc_share()
-}
-
-/// Share a batch of points
-pub(crate) fn share_point_batch(
-    values: Vec<TestCurvePoint>,
-    sender: PartyId,
-    test_args: &IntegrationTestArgs,
-) -> Vec<MpcPointResult<TestCurve>> {
-    values.into_iter().map(|point| share_point(point, sender, test_args)).collect_vec()
+) -> AuthenticatedScalarResult<TestCurve> {
+    test_args.fabric.share_scalar(value, sender)
 }
 
 /// Send or receive a secret shared scalar from the given party and allocate it
@@ -216,47 +182,4 @@ pub(crate) fn share_plaintext_values_batch<
     fabric: &MpcFabric<TestCurve>,
 ) -> Vec<ResultHandle<TestCurve, T>> {
     values.iter().map(|v| share_plaintext_value(v.clone(), sender, fabric)).collect_vec()
-}
-
-// ---------
-// | Mocks |
-// ---------
-
-/// Returns beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
-#[derive(Clone, Debug)]
-pub(crate) struct PartyIDBeaverSource {
-    party_id: u64,
-}
-
-impl PartyIDBeaverSource {
-    pub fn new(party_id: u64) -> Self {
-        Self { party_id }
-    }
-}
-
-/// The PartyIDBeaverSource returns beaver triplets split statically between the
-/// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] =
-/// (2, 4)
-impl OfflinePhase<TestCurve> for PartyIDBeaverSource {
-    fn next_shared_bit(&mut self) -> TestScalar {
-        // Simply output partyID, assume partyID \in {0, 1}
-        assert!(self.party_id == 0 || self.party_id == 1);
-        Scalar::from(self.party_id)
-    }
-
-    fn next_triplet(&mut self) -> (TestScalar, TestScalar, TestScalar) {
-        if self.party_id == 0 {
-            (Scalar::from(1u64), Scalar::from(3u64), Scalar::from(2u64))
-        } else {
-            (Scalar::from(1u64), Scalar::from(0u64), Scalar::from(4u64))
-        }
-    }
-
-    fn next_shared_inverse_pair(&mut self) -> (TestScalar, TestScalar) {
-        (Scalar::from(1u8), Scalar::from(1u8))
-    }
-
-    fn next_shared_value(&mut self) -> TestScalar {
-        Scalar::from(self.party_id)
-    }
 }

@@ -2,7 +2,7 @@
 
 use ark_mpc::{
     algebra::{
-        curve_test_helpers::{modify_mac, modify_public_modifier, modify_share},
+        curve_test_helpers::{modify_mac, modify_share},
         AuthenticatedPointResult, Scalar,
     },
     random_point, PARTY0, PARTY1,
@@ -58,21 +58,6 @@ fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result
 
     // Corrupt the share and attempt to open
     modify_share(&mut shared_val, random_point());
-    let res_open = await_result_with_error(shared_val.open_authenticated());
-    assert_err(res_open)
-}
-
-/// Test opening a shared point with a corrupted public modifier
-#[allow(non_snake_case)]
-fn test_open_authenticated__bad_public_modifier(
-    test_args: &IntegrationTestArgs,
-) -> Result<(), String> {
-    // Sample a test point
-    let my_val = random_point();
-    let mut shared_val = share_authenticated_point(my_val, PARTY0, test_args);
-
-    // Corrupt the public modifier and attempt to open
-    modify_public_modifier(&mut shared_val, random_point());
     let res_open = await_result_with_error(shared_val.open_authenticated());
     assert_err(res_open)
 }
@@ -421,11 +406,6 @@ inventory::submit!(IntegrationTest {
 inventory::submit!(IntegrationTest {
     name: "authenticated_curve_point::test_open_authenticated__bad_share",
     test_fn: test_open_authenticated__bad_share
-});
-
-inventory::submit!(IntegrationTest {
-    name: "authenticated_curve_point::test_open_authenticated__bad_public_modifier",
-    test_fn: test_open_authenticated__bad_public_modifier
 });
 
 inventory::submit!(IntegrationTest {
