@@ -481,7 +481,6 @@ impl<C: CurveGroup> Sub<&CurvePoint<C>> for &AuthenticatedPointResult<C> {
     }
 }
 impl_borrow_variants!(AuthenticatedPointResult<C>, Sub, sub, -, CurvePoint<C>, C: CurveGroup);
-impl_commutative!(AuthenticatedPointResult<C>, Sub, sub, -, CurvePoint<C>, C: CurveGroup);
 
 impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &AuthenticatedPointResult<C> {
     type Output = AuthenticatedPointResult<C>;
@@ -501,7 +500,6 @@ impl<C: CurveGroup> Sub<&CurvePointResult<C>> for &AuthenticatedPointResult<C> {
     }
 }
 impl_borrow_variants!(AuthenticatedPointResult<C>, Sub, sub, -, CurvePointResult<C>, C: CurveGroup);
-impl_commutative!(AuthenticatedPointResult<C>, Sub, sub, -, CurvePointResult<C>, C: CurveGroup);
 
 impl<C: CurveGroup> Sub<&AuthenticatedPointResult<C>> for &AuthenticatedPointResult<C> {
     type Output = AuthenticatedPointResult<C>;
@@ -786,9 +784,6 @@ impl<C: CurveGroup> AuthenticatedPointResult<C> {
 
 impl<C: CurveGroup> AuthenticatedPointResult<C> {
     /// Multiscalar multiplication
-    ///
-    /// TODO: Maybe make use of a fast MSM operation under the hood once the
-    /// blinded points are revealed
     pub fn msm(
         scalars: &[AuthenticatedScalarResult<C>],
         points: &[AuthenticatedPointResult<C>],
@@ -869,7 +864,54 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::{random_point, test_helpers::execute_mock_mpc, PARTY0, PARTY1};
+    use itertools::Itertools;
+    use rand::thread_rng;
+
+    use crate::{
+        algebra::{AuthenticatedPointResult, CurvePoint, Scalar},
+        random_point,
+        test_helpers::{execute_mock_mpc, open_await_all_points, TestCurve},
+        PARTY0, PARTY1,
+    };
+
+    // ------------
+    // | Addition |
+    // ------------
+
+    /// Tests addition with a constant value
+    #[tokio::test]
+    async fn test_add_constant() {
+        let a = random_point();
+        let b = random_point();
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_point(a, PARTY0);
+            let res = &a_shared + b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a + b)
+    }
+
+    /// Tests addition with a public (allocated but not shared) value
+    #[tokio::test]
+    async fn test_add_public() {
+        let a = random_point();
+        let b = random_point();
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_point(a, PARTY0);
+            let b = fabric.allocate_point(b);
+            let res = &a_shared + b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a + b)
+    }
 
     /// Tests authenticated curve point addition
     #[tokio::test]
@@ -890,5 +932,365 @@ mod test {
         .await;
 
         assert_eq!(res.unwrap(), expected);
+    }
+
+    /// Tests batch addition with public (allocated but not shared) values
+    #[tokio::test]
+    async fn test_batch_add_public() {
+        const N: usize = 100;
+        let a = (0..N).map(|_| random_point()).collect_vec();
+        let b = (0..N).map(|_| random_point()).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a + b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_shared = fabric.batch_share_point(a, PARTY0);
+                let b = fabric.allocate_points(b);
+                let res = AuthenticatedPointResult::batch_add_public(&a_shared, &b);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    /// Tests batch addition with authenticated curve points
+    #[tokio::test]
+    async fn test_batch_add() {
+        const N: usize = 100;
+        let a = (0..N).map(|_| random_point()).collect_vec();
+        let b = (0..N).map(|_| random_point()).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a + b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_shared = fabric.batch_share_point(a, PARTY0);
+                let b_shared = fabric.batch_share_point(b, PARTY1);
+                let res = AuthenticatedPointResult::batch_add(&a_shared, &b_shared);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    // ---------------
+    // | Subtraction |
+    // ---------------
+
+    /// Tests subtraction between a shared value and a constant
+    #[tokio::test]
+    async fn test_sub_constant() {
+        let a = random_point();
+        let b = random_point();
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_point(a, PARTY0);
+            let res = &a_shared - b;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), a - b)
+    }
+
+    /// Tests subtraction between a shared value and a public value
+    #[tokio::test]
+    async fn test_sub_public() {
+        let a = random_point();
+        let b = random_point();
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_point(a, PARTY0);
+            let b = fabric.allocate_point(b);
+            let res = a_shared - b;
+
+            res.open_authenticated().await.unwrap()
+        })
+        .await;
+
+        assert_eq!(res, a - b)
+    }
+
+    /// Tests subtraction between two shared values
+    #[tokio::test]
+    async fn test_sub() {
+        let a = random_point();
+        let b = random_point();
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let a_shared = fabric.share_point(a, PARTY0);
+            let b_shared = fabric.share_point(b, PARTY1);
+            let res = a_shared - b_shared;
+
+            res.open_authenticated().await.unwrap()
+        })
+        .await;
+
+        assert_eq!(res, a - b)
+    }
+
+    /// Tests batch subtraction between a shared value and a public value
+    #[tokio::test]
+    async fn test_batch_sub_public() {
+        const N: usize = 100;
+        let a = (0..N).map(|_| random_point()).collect_vec();
+        let b = (0..N).map(|_| random_point()).collect_vec();
+        let expected = a.iter().zip(b.iter()).map(|(a, b)| a - b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_shared = fabric.batch_share_point(a, PARTY0);
+                let b = fabric.allocate_points(b);
+                let res = AuthenticatedPointResult::batch_sub_public(&a_shared, &b);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected)
+    }
+
+    /// Tests batch subtraction between two shared values
+    #[tokio::test]
+    async fn test_batch_sub() {
+        const N: usize = 100;
+        let a = (0..N).map(|_| random_point()).collect_vec();
+        let b = (0..N).map(|_| random_point()).collect_vec();
+        let expected = a.iter().zip(b.iter()).map(|(a, b)| a - b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_shared = fabric.batch_share_point(a, PARTY0);
+                let b_shared = fabric.batch_share_point(b, PARTY1);
+                let res = AuthenticatedPointResult::batch_sub(&a_shared, &b_shared);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected)
+    }
+
+    // ------------
+    // | Negation |
+    // ------------
+
+    /// Tests negation of a curve point
+    #[tokio::test]
+    async fn test_negation() {
+        let p = random_point();
+        let expected = -p;
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let p_shared = fabric.share_point(p, PARTY0);
+            let res = -p_shared;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected)
+    }
+
+    /// Tests batch negation of curve points
+    #[tokio::test]
+    async fn test_batch_negation() {
+        const N: usize = 100;
+        let p = (0..N).map(|_| random_point()).collect_vec();
+        let expected = p.iter().map(|p| -p).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let p = p.clone();
+            async move {
+                let p_shared = fabric.batch_share_point(p, PARTY0);
+                let res = AuthenticatedPointResult::batch_neg(&p_shared);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected)
+    }
+
+    // ------------------
+    // | Multiplication |
+    // ------------------
+
+    /// Tests multiplication with a constant scalar
+    #[tokio::test]
+    async fn test_mul_constant() {
+        let mut rng = thread_rng();
+        let p = random_point();
+        let s = Scalar::random(&mut rng);
+        let expected = p * s;
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let p_shared = fabric.share_point(p, PARTY0);
+            let res = &p_shared * s;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected)
+    }
+
+    /// Tests multiplication with a public (allocated but not shared) scalar
+    #[tokio::test]
+    async fn test_mul_public_scalar() {
+        let mut rng = thread_rng();
+        let p = random_point();
+        let s = Scalar::random(&mut rng);
+        let expected = p * s;
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let p_shared = fabric.share_point(p, PARTY0);
+            let s = fabric.allocate_scalar(s);
+            let res = &p_shared * s;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected)
+    }
+
+    /// Tests multiplication with a shared scalar
+    #[tokio::test]
+    async fn test_mul_shared_scalar() {
+        let mut rng = thread_rng();
+        let p = random_point();
+        let s = Scalar::random(&mut rng);
+        let expected = p * s;
+
+        let (res, _) = execute_mock_mpc(|fabric| async move {
+            let p_shared = fabric.share_point(p, PARTY0);
+            let s_shared = fabric.share_scalar(s, PARTY1);
+            let res = &p_shared * s_shared;
+
+            res.open_authenticated().await
+        })
+        .await;
+
+        assert_eq!(res.unwrap(), expected)
+    }
+
+    /// Tests batch multiplication with public (allocated but not shared)
+    /// scalars
+    #[tokio::test]
+    async fn test_batch_mul_public() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| random_point()).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_shared = fabric.batch_share_point(a, PARTY0);
+                let b = fabric.allocate_scalars(b);
+                let res = AuthenticatedPointResult::batch_mul_public(&b, &a_shared);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    /// Tests batch multiplication with shared scalars
+    #[tokio::test]
+    async fn test_batch_mul() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| random_point()).collect_vec();
+        let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_shared = fabric.batch_share_point(a, PARTY0);
+                let b = fabric.allocate_scalars(b);
+                let res = AuthenticatedPointResult::batch_mul_public(&b, &a_shared);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    /// Tests batch multiplication with generator
+    #[tokio::test]
+    async fn test_batch_mul_generator() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let expected_res = a.iter().map(|x| x * CurvePoint::<TestCurve>::generator()).collect_vec();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            async move {
+                let a_shared = fabric.batch_share_scalar(a, PARTY0);
+                let res = AuthenticatedPointResult::batch_mul_generator(&a_shared);
+
+                open_await_all_points(&res).await
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
+    }
+
+    // ------------------------------
+    // | Multiscalar Multiplication |
+    // ------------------------------
+
+    /// Tests multiscalar multiplication
+    #[tokio::test]
+    async fn test_msm() {
+        const N: usize = 100;
+        let mut rng = thread_rng();
+        let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let b = (0..N).map(|_| random_point()).collect_vec();
+        let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum();
+
+        let (res, _) = execute_mock_mpc(|fabric| {
+            let a = a.clone();
+            let b = b.clone();
+            async move {
+                let a_shared = fabric.batch_share_scalar(a, PARTY0);
+                let b = fabric.batch_share_point(b, PARTY1);
+                let res = AuthenticatedPointResult::msm(&a_shared, &b);
+
+                res.open_authenticated().await.unwrap()
+            }
+        })
+        .await;
+
+        assert_eq!(res, expected_res)
     }
 }

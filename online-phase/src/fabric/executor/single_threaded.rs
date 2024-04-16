@@ -267,7 +267,7 @@ impl<C: CurveGroup> SerialExecutor<C> {
                 }
 
                 // Mark the operation as ready for execution
-                ready_ops.push(operation.clone());
+                ready_ops.push(self.operations.take(*op_id).unwrap());
             }
         }
     }
