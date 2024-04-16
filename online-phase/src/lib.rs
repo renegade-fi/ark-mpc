@@ -54,7 +54,7 @@ pub mod test_helpers {
     use futures::{future, Future};
 
     use crate::{
-        algebra::{AuthenticatedScalarResult, Scalar},
+        algebra::{AuthenticatedPointResult, AuthenticatedScalarResult, CurvePoint, Scalar},
         fabric::ExecutorSizeHints,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
         offline_prep::{OfflinePhase, PartyIDBeaverSource},
@@ -75,6 +75,17 @@ pub mod test_helpers {
     {
         let results = AuthenticatedScalarResult::open_authenticated_batch(scalars);
 
+        future::join_all(results).await.into_iter().collect::<Result<Vec<_>, _>>().unwrap()
+    }
+
+    /// Open and await a batch of curve points
+    pub async fn open_await_all_points<C: CurveGroup>(
+        points: &[AuthenticatedPointResult<C>],
+    ) -> Vec<CurvePoint<C>>
+    where
+        C::ScalarField: Unpin,
+    {
+        let results = AuthenticatedPointResult::open_authenticated_batch(points);
         future::join_all(results).await.into_iter().collect::<Result<Vec<_>, _>>().unwrap()
     }
 
