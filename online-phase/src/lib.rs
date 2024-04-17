@@ -57,7 +57,7 @@ pub mod test_helpers {
         algebra::{AuthenticatedPointResult, AuthenticatedScalarResult, CurvePoint, Scalar},
         fabric::ExecutorSizeHints,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
-        offline_prep::{OfflinePhase, PartyIDBeaverSource},
+        offline_prep::{PartyIDBeaverSource, PreprocessingPhase},
         MpcFabric, PARTY0, PARTY1,
     };
 
@@ -149,7 +149,7 @@ pub mod test_helpers {
         party1_beaver: B,
     ) -> (T, T)
     where
-        B: 'static + OfflinePhase<TestCurve>,
+        B: 'static + PreprocessingPhase<TestCurve>,
         T: Send + 'static,
         S: Future<Output = T> + Send + 'static,
         F: FnMut(MpcFabric<TestCurve>) -> S,

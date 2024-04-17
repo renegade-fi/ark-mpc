@@ -118,6 +118,11 @@ impl<C: CurveGroup> From<ResultValue<C>> for Vec<u8> {
         }
     }
 }
+impl<C: CurveGroup> From<Vec<u8>> for ResultValue<C> {
+    fn from(value: Vec<u8>) -> Self {
+        ResultValue::Bytes(value)
+    }
+}
 
 impl<C: CurveGroup> From<ResultValue<C>> for Scalar<C> {
     fn from(value: ResultValue<C>) -> Self {
@@ -125,6 +130,12 @@ impl<C: CurveGroup> From<ResultValue<C>> for Scalar<C> {
             ResultValue::Scalar(scalar) => scalar,
             _ => panic!("Cannot cast {:?} to scalar", value),
         }
+    }
+}
+
+impl<C: CurveGroup> From<Scalar<C>> for ResultValue<C> {
+    fn from(value: Scalar<C>) -> Self {
+        ResultValue::Scalar(value)
     }
 }
 
@@ -146,6 +157,12 @@ impl<C: CurveGroup> From<ResultValue<C>> for Vec<Scalar<C>> {
     }
 }
 
+impl<C: CurveGroup> From<Vec<Scalar<C>>> for ResultValue<C> {
+    fn from(value: Vec<Scalar<C>>) -> Self {
+        ResultValue::ScalarBatch(value)
+    }
+}
+
 impl<C: CurveGroup> From<ResultValue<C>> for ScalarShare<C> {
     fn from(value: ResultValue<C>) -> Self {
         match value {
@@ -155,12 +172,24 @@ impl<C: CurveGroup> From<ResultValue<C>> for ScalarShare<C> {
     }
 }
 
+impl<C: CurveGroup> From<ScalarShare<C>> for ResultValue<C> {
+    fn from(value: ScalarShare<C>) -> Self {
+        ResultValue::ScalarShare(value)
+    }
+}
+
 impl<C: CurveGroup> From<ResultValue<C>> for CurvePoint<C> {
     fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::Point(point) => point,
             _ => panic!("Cannot cast {:?} to point", value),
         }
+    }
+}
+
+impl<C: CurveGroup> From<CurvePoint<C>> for ResultValue<C> {
+    fn from(value: CurvePoint<C>) -> Self {
+        ResultValue::Point(value)
     }
 }
 
@@ -182,12 +211,24 @@ impl<C: CurveGroup> From<ResultValue<C>> for Vec<CurvePoint<C>> {
     }
 }
 
+impl<C: CurveGroup> From<Vec<CurvePoint<C>>> for ResultValue<C> {
+    fn from(value: Vec<CurvePoint<C>>) -> Self {
+        ResultValue::PointBatch(value)
+    }
+}
+
 impl<C: CurveGroup> From<ResultValue<C>> for PointShare<C> {
     fn from(value: ResultValue<C>) -> Self {
         match value {
             ResultValue::PointShare(share) => share,
             _ => panic!("Cannot cast {:?} to point share", value),
         }
+    }
+}
+
+impl<C: CurveGroup> From<PointShare<C>> for ResultValue<C> {
+    fn from(value: PointShare<C>) -> Self {
+        ResultValue::PointShare(value)
     }
 }
 
