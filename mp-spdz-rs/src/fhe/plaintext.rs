@@ -76,6 +76,18 @@ impl<C: CurveGroup> Plaintext<C> {
         self.inner.num_slots() as usize
     }
 
+    /// Create a plaintext given a batch of scalars
+    pub fn from_scalars(scalars: &[Scalar<C>], params: &BGVParams<C>) -> Self {
+        assert!(scalars.len() < params.plaintext_slots(), "not enough plaintext slots");
+
+        let mut pt = Self::new(params);
+        for (i, scalar) in scalars.iter().enumerate() {
+            pt.set_element(i, *scalar);
+        }
+
+        pt
+    }
+
     /// Get a vector of scalars from the plaintext slots
     pub fn to_scalars(&self) -> Vec<Scalar<C>> {
         let mut scalars = Vec::with_capacity(self.num_slots());
