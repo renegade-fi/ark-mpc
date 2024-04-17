@@ -4,6 +4,7 @@ use std::ops::{Add, Mul, Sub};
 
 use ark_ec::CurveGroup;
 use ark_mpc::algebra::{Scalar, ScalarShare};
+use ark_mpc::offline_prep::OfflinePhase;
 use mp_spdz_rs::fhe::ciphertext::Ciphertext;
 use mp_spdz_rs::fhe::keys::{BGVKeypair, BGVPublicKey};
 use mp_spdz_rs::fhe::params::BGVParams;
@@ -89,6 +90,58 @@ impl<C: CurveGroup> LowGearPrep<C> {
         self.triplets.0.append(&mut other.0);
         self.triplets.1.append(&mut other.1);
         self.triplets.2.append(&mut other.2);
+    }
+}
+
+impl<C: CurveGroup> OfflinePhase<C> for LowGearPrep<C> {
+    fn next_shared_bit(&mut self) -> ScalarShare<C> {
+        self.bits.split_off(1).into_inner()[0]
+    }
+
+    fn next_shared_bit_batch(&mut self, num_values: usize) -> Vec<ScalarShare<C>> {
+        assert!(self.bits.len() >= num_values, "shared bits exhausted");
+        self.bits.split_off(num_values).into_inner()
+    }
+
+    fn next_shared_value(&mut self) -> ScalarShare<C> {
+        self.shared_randomness.split_off(1).into_inner()[0]
+    }
+
+    fn next_shared_value_batch(&mut self, num_values: usize) -> Vec<ScalarShare<C>> {
+        assert!(self.shared_randomness.len() >= num_values, "shared random values exhausted");
+        self.shared_randomness.split_off(num_values).into_inner()
+    }
+
+    fn next_shared_inverse_pair(&mut self) -> (ScalarShare<C>, ScalarShare<C>) {
+        let (lhs, rhs) = self.next_shared_inverse_pair_batch(1);
+        (lhs[0], rhs[0])
+    }
+
+    fn next_shared_inverse_pair_batch(
+        &mut self,
+        num_pairs: usize,
+    ) -> (Vec<ScalarShare<C>>, Vec<ScalarShare<C>>) {
+        assert!(self.inverse_pairs.0.len() >= num_pairs, "shared inverse pairs exhausted");
+        let lhs = self.inverse_pairs.0.split_off(num_pairs);
+        let rhs = self.inverse_pairs.1.split_off(num_pairs);
+        (lhs.into_inner(), rhs.into_inner())
+    }
+
+    fn next_triplet(&mut self) -> (ScalarShare<C>, ScalarShare<C>, ScalarShare<C>) {
+        let (a, b, c) = self.next_triplet_batch(1);
+        (a[0], b[0], c[0])
+    }
+
+    fn next_triplet_batch(
+        &mut self,
+        num_triplets: usize,
+    ) -> (Vec<ScalarShare<C>>, Vec<ScalarShare<C>>, Vec<ScalarShare<C>>) {
+        assert!(self.triplets.0.len() >= num_triplets, "shared triplets exhausted");
+        let a = self.triplets.0.split_off(num_triplets);
+        let b = self.triplets.1.split_off(num_triplets);
+        let c = self.triplets.2.split_off(num_triplets);
+
+        (a.into_inner(), b.into_inner(), c.into_inner())
     }
 }
 
@@ -240,5 +293,47 @@ impl<C: CurveGroup> Mul<&[Scalar<C>]> for &ValueMacBatch<C> {
 
     fn mul(self, other: &[Scalar<C>]) -> Self::Output {
         ValueMacBatch::new(self.inner.iter().zip(other.iter()).map(|(a, b)| a * *b).collect())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ark_mpc::{
+        algebra::Scalar, test_helpers::execute_mock_mpc_with_beaver_source, PARTY0, PARTY1,
+    };
+    use rand::thread_rng;
+
+    use crate::test_helpers::mock_lowgear_with_triples;
+
+    /// Tests the use of the `LowGear` type as an `OfflinePhase` implementation
+    #[tokio::test]
+    async fn test_lowgear_offline_phase() {
+        // Setup the mock offline phase
+        let (prep1, prep2) = mock_lowgear_with_triples(
+            100, // num_triples
+            |mut lowgear| async move { lowgear.get_offline_result().unwrap() },
+        )
+        .await;
+
+        // Run a mock mpc using the lowgear offline phase
+        let mut rng = thread_rng();
+        let a = Scalar::random(&mut rng);
+        let b = Scalar::random(&mut rng);
+        let expected = a * b;
+
+        let (res, _) = execute_mock_mpc_with_beaver_source(
+            |fabric| async move {
+                let a_shared = fabric.share_scalar(a, PARTY0);
+                let b_shared = fabric.share_scalar(b, PARTY1);
+
+                let c = a_shared * b_shared;
+                c.open().await
+            },
+            prep1,
+            prep2,
+        )
+        .await;
+
+        assert_eq!(res, expected);
     }
 }
