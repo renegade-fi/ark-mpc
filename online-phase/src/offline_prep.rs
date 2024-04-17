@@ -56,6 +56,7 @@ pub trait OfflinePhase<C: CurveGroup>: Send + Sync {
         (a_vals, b_vals, c_vals)
     }
 }
+
 /// An implementation of a beaver value source that returns
 /// beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
 #[cfg(any(feature = "test_helpers", test))]

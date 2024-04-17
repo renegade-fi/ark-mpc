@@ -168,7 +168,9 @@ mod ffi_inner {
 }
 pub use ffi_inner::*;
 unsafe impl Send for FHE_Params {}
+unsafe impl Sync for FHE_Params {}
 unsafe impl Send for FHE_KeyPair {}
+unsafe impl Sync for FHE_KeyPair {}
 unsafe impl Send for FHE_PK {}
 unsafe impl Sync for FHE_PK {}
 unsafe impl Send for Ciphertext {}

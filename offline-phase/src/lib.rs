@@ -87,7 +87,7 @@ pub(crate) mod test_helpers {
         let mut rng = thread_rng();
         let a = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let b = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
-        let c = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
+        let c = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
 
         (a, b, c)
     }
