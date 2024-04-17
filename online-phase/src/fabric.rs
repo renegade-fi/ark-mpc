@@ -4,7 +4,7 @@
 //! MpcFabric creates and manages dependencies needed to allocate network
 //! values. This provides a cleaner interface for consumers of the library; i.e.
 //! clients do not have to hold onto references of the network layer or the
-//! beaver sources to allocate values.
+//! offline phase implementation to allocate values.
 
 mod executor;
 mod network_sender;
@@ -16,7 +16,6 @@ pub use executor::ExecutorSizeHints;
 use executor::{single_threaded::SerialExecutor, ExecutorMessage};
 #[cfg(feature = "benchmarks")]
 pub use executor::{single_threaded::SerialExecutor, ExecutorMessage, GrowableBuffer};
-use rand::thread_rng;
 pub use result::{ResultHandle, ResultId, ResultValue};
 
 use futures::executor::block_on;
@@ -37,12 +36,11 @@ use itertools::Itertools;
 
 use crate::{
     algebra::{
-        AuthenticatedPointResult, AuthenticatedScalarResult, BatchCurvePointResult,
-        BatchScalarResult, CurvePoint, CurvePointResult, PointShare, Scalar, ScalarResult,
-        ScalarShare,
+        AuthenticatedPointResult, AuthenticatedScalarResult, CurvePoint, CurvePointResult,
+        PointShare, Scalar, ScalarResult, ScalarShare,
     },
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
-    offline_prep::OfflinePhase,
+    offline_prep::PreprocessingPhase,
     PARTY0,
 };
 
@@ -173,8 +171,6 @@ pub struct MpcFabric<C: CurveGroup> {
     /// The local party's share of the global MAC key
     ///
     /// The parties collectively hold an additive sharing of the global key
-    ///
-    /// We wrap in a reference counting structure to avoid recursive type issues
     #[cfg(not(feature = "benchmarks"))]
     mac_key: Scalar<C>,
     /// The MAC key, accessible publicly for benchmark mocking
@@ -209,7 +205,7 @@ pub struct FabricInner<C: CurveGroup> {
     /// The underlying queue to the network
     outbound_queue: KanalSender<NetworkOutbound<C>>,
     /// The underlying shared randomness source
-    beaver_source: Arc<Mutex<Box<dyn OfflinePhase<C>>>>,
+    offline_phase: Arc<Mutex<Box<dyn PreprocessingPhase<C>>>>,
 }
 
 impl<C: CurveGroup> Debug for FabricInner<C> {
@@ -220,12 +216,12 @@ impl<C: CurveGroup> Debug for FabricInner<C> {
 
 impl<C: CurveGroup> FabricInner<C> {
     /// Constructor
-    pub fn new<S: 'static + OfflinePhase<C>>(
+    pub fn new<S: 'static + PreprocessingPhase<C>>(
         party_id: u64,
         mac_key: Scalar<C>,
         execution_queue: ExecutorJobQueue<C>,
         outbound_queue: KanalSender<NetworkOutbound<C>>,
-        beaver_source: S,
+        offline_phase: S,
     ) -> Self {
         // Allocate a zero and a one as well as the curve identity in the fabric to
         // begin, for convenience
@@ -264,7 +260,7 @@ impl<C: CurveGroup> FabricInner<C> {
             next_op_id,
             execution_queue,
             outbound_queue,
-            beaver_source: Arc::new(Mutex::new(Box::new(beaver_source))),
+            offline_phase: Arc::new(Mutex::new(Box::new(offline_phase))),
         }
     }
 
@@ -357,26 +353,6 @@ impl<C: CurveGroup> FabricInner<C> {
         ids
     }
 
-    /// Allocate a secret shared value in the network
-    pub(crate) fn allocate_shared_value(
-        &self,
-        my_share: ResultValue<C>,
-        their_share: ResultValue<C>,
-    ) -> ResultId {
-        // Forward the local party's share to the executor
-        let id = self.new_result_id();
-        self.execution_queue.push(ExecutorMessage::Result(OpResult { id, value: my_share }));
-
-        // Send the counterparty their share
-        if let Err(e) =
-            self.outbound_queue.send(NetworkOutbound { result_id: id, payload: their_share.into() })
-        {
-            log::error!("error sending share to counterparty: {e:?}");
-        }
-
-        id
-    }
-
     /// Receive a value from a network operation initiated by a peer
     ///
     /// The peer will already send the value with the corresponding ID, so all
@@ -402,6 +378,7 @@ impl<C: CurveGroup> FabricInner<C> {
         }
 
         // Allocate IDs for the results
+        assert!(output_arity > 0, "output arity must be greater than 0");
         let ids = self.new_result_id_batch(output_arity);
 
         // Build the operation
@@ -422,24 +399,24 @@ impl<C: CurveGroup> FabricInner<C> {
 
 impl<C: CurveGroup> MpcFabric<C> {
     /// Constructor
-    pub fn new<N: 'static + MpcNetwork<C>, S: 'static + OfflinePhase<C>>(
+    pub fn new<N: 'static + MpcNetwork<C>, S: 'static + PreprocessingPhase<C>>(
         network: N,
-        beaver_source: S,
+        offline_phase: S,
     ) -> Self {
-        Self::new_with_size_hint(ExecutorSizeHints::default(), network, beaver_source)
+        Self::new_with_size_hint(ExecutorSizeHints::default(), network, offline_phase)
     }
 
     /// Constructor that takes an additional size hint, indicating how much
     /// buffer space the fabric should allocate for results. The size is
     /// given in number of gates
-    pub fn new_with_size_hint<N: 'static + MpcNetwork<C>, S: 'static + OfflinePhase<C>>(
+    pub fn new_with_size_hint<N: 'static + MpcNetwork<C>, S: 'static + PreprocessingPhase<C>>(
         size_hints: ExecutorSizeHints,
         network: N,
-        beaver_source: S,
+        offline_phase: S,
     ) -> Self {
         // Build an executor queue and a fabric around it
         let executor_queue = Arc::new(SegQueue::new());
-        let self_ = Self::new_with_executor(network, beaver_source, executor_queue.clone());
+        let self_ = Self::new_with_executor(network, offline_phase, executor_queue.clone());
 
         // Spawn the executor
         let outbound_queue = self_.inner.outbound_queue.clone();
@@ -455,9 +432,9 @@ impl<C: CurveGroup> MpcFabric<C> {
 
     /// Constructor that takes an additional size hint as well as a queue for
     /// the executor
-    pub fn new_with_executor<N: 'static + MpcNetwork<C>, S: 'static + OfflinePhase<C>>(
+    pub fn new_with_executor<N: 'static + MpcNetwork<C>, S: 'static + PreprocessingPhase<C>>(
         network: N,
-        beaver_source: S,
+        offline_phase: S,
         executor_queue: ExecutorJobQueue<C>,
     ) -> Self {
         // Build communication primitives
@@ -466,14 +443,13 @@ impl<C: CurveGroup> MpcFabric<C> {
 
         // Build a fabric
         let party_id = network.party_id();
-        // TODO: Use offline phase params
-        let mac_key = Scalar::from(party_id);
+        let mac_key = offline_phase.get_mac_key_share();
         let fabric = FabricInner::new(
             party_id,
             mac_key,
             executor_queue.clone(),
             outbound_sender.to_sync(),
-            beaver_source,
+            offline_phase,
         );
 
         // Start a network sender and operator executor
@@ -573,43 +549,29 @@ impl<C: CurveGroup> MpcFabric<C> {
     // | Wire Allocation |
     // -------------------
 
-    /// Allocate a shared value in the fabric
-    fn allocate_shared_value<T: From<ResultValue<C>>>(
-        &self,
-        my_share: ResultValue<C>,
-        their_share: ResultValue<C>,
-    ) -> ResultHandle<C, T> {
-        let id = self.inner.allocate_shared_value(my_share, their_share);
-        ResultHandle::new(id, self.clone())
-    }
-
     /// Share a `Scalar` value with the counterparty
-    ///
-    /// TODO: Input authentication
     pub fn share_scalar<T: Into<Scalar<C>>>(
         &self,
         val: T,
         sender: PartyId,
     ) -> AuthenticatedScalarResult<C> {
-        let scalar: ScalarResult<C> = if self.party_id() == sender {
-            let scalar_val = val.into();
-            let mut rng = thread_rng();
-            let random = Scalar::random(&mut rng);
+        // Sample an input mask from the offline phase
+        let mut offline = self.inner.offline_phase.lock().expect("offline phase poisoned");
+        let (masked_val, shared_mask) = if self.party_id() == sender {
+            let (mask, mask_share) = offline.next_local_input_mask();
+            let masked = Into::<Scalar<C>>::into(val) - mask;
+            let masked_val = self.share_plaintext(masked, sender);
 
-            let (my_share, their_share) = (scalar_val - random, random);
-            self.allocate_shared_value(
-                ResultValue::Scalar(my_share),
-                ResultValue::Scalar(their_share),
-            )
+            (masked_val, mask_share)
         } else {
-            self.receive_value()
+            let mask_share = offline.next_counterparty_input_mask();
+            let masked_val = self.share_plaintext(Scalar::zero(), sender);
+
+            (masked_val, mask_share)
         };
 
-        // TODO: Proper input authentication
-        self.new_gate_op(vec![scalar.id()], |mut args| {
-            let share: Scalar<C> = args.next().unwrap().into();
-            ResultValue::ScalarShare(ScalarShare::new(share, share /* mac */))
-        })
+        // Unmask the value in the MPC circuit
+        self.allocate_scalar_share(shared_mask) + masked_val
     }
 
     /// Share a batch of `Scalar` values with the counterparty
@@ -619,62 +581,41 @@ impl<C: CurveGroup> MpcFabric<C> {
         sender: PartyId,
     ) -> Vec<AuthenticatedScalarResult<C>> {
         let n = vals.len();
-        let shares: BatchScalarResult<C> = if self.party_id() == sender {
-            let vals = vals.into_iter().map(|val| val.into()).collect_vec();
-            let mut rng = thread_rng();
+        let mut offline = self.inner.offline_phase.lock().expect("offline phase poisoned");
+        let (masked_vals, mask_shares) = if self.party_id() == sender {
+            let (masks, mask_shares) = offline.next_local_input_mask_batch(n);
+            let masked = vals.into_iter().zip(masks).map(|(val, mask)| val.into() - mask).collect();
+            let masked_vals = self.batch_share_plaintext(masked, sender);
 
-            let peer_shares = (0..vals.len()).map(|_| Scalar::random(&mut rng)).collect_vec();
-            let my_shares =
-                vals.iter().zip(peer_shares.iter()).map(|(val, share)| val - share).collect_vec();
-
-            self.allocate_shared_value(
-                ResultValue::ScalarBatch(my_shares),
-                ResultValue::ScalarBatch(peer_shares),
-            )
+            (masked_vals, mask_shares)
         } else {
-            self.receive_value()
+            let mask_shares = offline.next_counterparty_input_mask_batch(n);
+            let masked_vals = self.batch_share_plaintext(vec![Scalar::zero(); n], sender);
+
+            (masked_vals, mask_shares)
         };
 
-        // TODO: Proper input authentication
-        self.new_batch_gate_op(vec![shares.id()], n, |mut args| {
-            let shares: Vec<Scalar<C>> = args.next().unwrap().into();
-            let mut res = Vec::with_capacity(shares.len());
-
-            for share in shares.into_iter() {
-                res.push(ResultValue::ScalarShare(ScalarShare::new(share, share /* mac */)));
-            }
-
-            res
-        })
+        let shares = self.allocate_scalar_shares(mask_shares);
+        AuthenticatedScalarResult::batch_add_public(&shares, &masked_vals)
     }
 
     /// Share a `CurvePoint` value with the counterparty
     pub fn share_point(&self, val: CurvePoint<C>, sender: PartyId) -> AuthenticatedPointResult<C> {
-        let point: CurvePointResult<C> = if self.party_id() == sender {
-            // As mentioned in https://eprint.iacr.org/2009/226.pdf
-            // it is okay to sample a random point by sampling a random `Scalar` and
-            // multiplying by the generator in the case that the discrete log of
-            // the output may be leaked with respect to the generator. Leaking
-            // the discrete log (i.e. the random `Scalar`) is okay when it is
-            // used to generate secret shares
-            let mut rng = thread_rng();
-            let random = Scalar::random(&mut rng);
-            let random_point = random * CurvePoint::generator();
+        let mut offline = self.inner.offline_phase.lock().expect("offline phase poisoned");
+        let (masked_point, mask_share) = if self.party_id() == sender {
+            let (mask, mask_share) = offline.next_local_input_mask();
+            let masked = val - mask * CurvePoint::generator();
+            let masked_point = self.share_plaintext(masked, sender);
 
-            let (my_share, their_share) = (val - random_point, random_point);
-            self.allocate_shared_value(
-                ResultValue::Point(my_share),
-                ResultValue::Point(their_share),
-            )
+            (masked_point, mask_share)
         } else {
-            self.receive_value()
+            let mask_share = offline.next_counterparty_input_mask();
+            let masked_point = self.share_plaintext(CurvePoint::generator(), sender);
+
+            (masked_point, mask_share)
         };
 
-        // TODO: Proper input authentication
-        self.new_gate_op(vec![point.id()], |mut args| {
-            let share: CurvePoint<C> = args.next().unwrap().into();
-            ResultValue::PointShare(PointShare::new(share, share /* mac */))
-        })
+        self.allocate_scalar_share(mask_share) * CurvePoint::generator() + masked_point
     }
 
     /// Share a batch of `CurvePoint`s with the counterparty
@@ -684,37 +625,27 @@ impl<C: CurveGroup> MpcFabric<C> {
         sender: PartyId,
     ) -> Vec<AuthenticatedPointResult<C>> {
         let n = vals.len();
-        let shares: BatchCurvePointResult<C> = if self.party_id() == sender {
-            let mut rng = thread_rng();
-            let generator = CurvePoint::generator();
-            let peer_shares = (0..vals.len())
-                .map(|_| {
-                    let discrete_log = Scalar::random(&mut rng);
-                    discrete_log * generator
-                })
-                .collect_vec();
-            let my_shares =
-                vals.iter().zip(peer_shares.iter()).map(|(val, share)| val - share).collect_vec();
+        let mut offline = self.inner.offline_phase.lock().expect("offline phase poisoned");
+        let (masked_vals, mask_shares) = if self.party_id() == sender {
+            let (masks, mask_shares) = offline.next_local_input_mask_batch(n);
+            let mask_times_gen =
+                masks.into_iter().map(|mask| mask * CurvePoint::generator()).collect_vec();
+            let masked =
+                vals.into_iter().zip(mask_times_gen).map(|(val, mask)| val - mask).collect();
+            let masked_vals = self.batch_share_plaintext(masked, sender);
 
-            self.allocate_shared_value(
-                ResultValue::PointBatch(my_shares),
-                ResultValue::PointBatch(peer_shares),
-            )
+            (masked_vals, mask_shares)
         } else {
-            self.receive_value()
+            let mask_shares = offline.next_counterparty_input_mask_batch(n);
+            let masked_vals = self.batch_share_plaintext(vec![CurvePoint::generator(); n], sender);
+
+            (masked_vals, mask_shares)
         };
 
-        // TODO: Proper input authentication
-        self.new_batch_gate_op(vec![shares.id()], n, |mut args| {
-            let shares: Vec<CurvePoint<C>> = args.next().unwrap().into();
-            let mut res = Vec::with_capacity(shares.len());
+        let shares = self.allocate_scalar_shares(mask_shares);
+        let masks = AuthenticatedPointResult::batch_mul_generator(&shares);
 
-            for share in shares.into_iter() {
-                res.push(ResultValue::PointShare(PointShare::new(share, share /* mac */)));
-            }
-
-            res
-        })
+        AuthenticatedPointResult::batch_add_public(&masks, &masked_vals)
     }
 
     /// Allocate a public value in the fabric
@@ -754,38 +685,23 @@ impl<C: CurveGroup> MpcFabric<C> {
             .collect_vec()
     }
 
-    /// Allocate a scalar as a secret share of an already shared value
-    pub fn allocate_preshared_scalar<T: Into<Scalar<C>>>(
-        &self,
-        value: T,
-    ) -> AuthenticatedScalarResult<C> {
-        let allocated = self.allocate_scalar(value);
-
-        // TODO: Proper input authentication
-        self.new_gate_op(vec![allocated.id()], |mut args| {
-            let share: Scalar<C> = args.next().unwrap().into();
-            ResultValue::ScalarShare(ScalarShare::new(share, share /* mac */))
-        })
+    /// Allocate a point secret share in the fabric
+    pub fn allocate_point_share(&self, share: PointShare<C>) -> AuthenticatedPointResult<C> {
+        let id = self.inner.allocate_value(ResultValue::PointShare(share));
+        ResultHandle::new(id, self.clone())
     }
 
-    /// Allocate a batch of scalars as secret shares of already shared values
-    pub fn batch_allocate_preshared_scalar<T: Into<Scalar<C>>>(
+    /// Allocate a batch of point secret shares in the fabric
+    pub fn allocate_point_shares(
         &self,
-        values: Vec<T>,
-    ) -> Vec<AuthenticatedScalarResult<C>> {
-        let values = self.allocate_scalars(values);
-
-        // TODO: Proper input authentication
-        let ids = values.iter().map(|v| v.id()).collect_vec();
-        self.new_batch_gate_op(ids, values.len(), |args| {
-            let shares: Vec<Scalar<C>> = args.into_iter().map(|s| s.into()).collect_vec();
-            let mut res = Vec::new();
-            for share in shares.into_iter() {
-                res.push(ResultValue::ScalarShare(ScalarShare::new(share, share /* mac */)));
-            }
-
-            res
-        })
+        shares: Vec<PointShare<C>>,
+    ) -> Vec<AuthenticatedPointResult<C>> {
+        let result_values = shares.into_iter().map(ResultValue::PointShare).collect_vec();
+        self.inner
+            .allocate_values(result_values)
+            .into_iter()
+            .map(|id| ResultHandle::new(id, self.clone()))
+            .collect_vec()
     }
 
     /// Allocate a public curve point in the fabric
@@ -882,12 +798,19 @@ impl<C: CurveGroup> MpcFabric<C> {
         &self,
         values: Vec<T>,
         sender: PartyId,
-    ) -> ResultHandle<C, Vec<T>>
+    ) -> Vec<ResultHandle<C, T>>
     where
-        T: 'static + From<ResultValue<C>> + Send + Sync,
+        T: 'static + From<ResultValue<C>> + Into<ResultValue<C>> + Send + Sync,
         Vec<T>: Into<NetworkPayload<C>> + From<ResultValue<C>>,
     {
-        self.share_plaintext(values, sender)
+        let n = values.len();
+        let res = self.share_plaintext(values, sender);
+
+        // Split the vec into a result of values
+        self.new_batch_gate_op(vec![res.id()], n, |mut args| {
+            let values: Vec<T> = args.next().unwrap().into();
+            values.into_iter().map(Into::into).collect_vec()
+        })
     }
 
     // -------------------
@@ -947,7 +870,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     }
 
     // -----------------
-    // | Beaver Source |
+    // | Offline Phase |
     // -----------------
 
     /// Sample the next beaver triplet with MACs from the beaver source
@@ -956,7 +879,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     ) -> (AuthenticatedScalarResult<C>, AuthenticatedScalarResult<C>, AuthenticatedScalarResult<C>)
     {
         let (a, b, c) =
-            self.inner.beaver_source.lock().expect("beaver source poisoned").next_triplet();
+            self.inner.offline_phase.lock().expect("beaver source poisoned").next_triplet();
 
         let mut abc = self.allocate_scalar_shares(vec![a, b, c]);
         let c_val = abc.pop().unwrap();
@@ -977,7 +900,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         Vec<AuthenticatedScalarResult<C>>,
     ) {
         let (a_vals, b_vals, c_vals) =
-            self.inner.beaver_source.lock().expect("beaver source poisoned").next_triplet_batch(n);
+            self.inner.offline_phase.lock().expect("beaver source poisoned").next_triplet_batch(n);
 
         // Concatenate and allocate all the values
         let vals = a_vals.into_iter().chain(b_vals).chain(c_vals).collect_vec();
@@ -991,14 +914,14 @@ impl<C: CurveGroup> MpcFabric<C> {
         (a_vals, b_vals, c_vals)
     }
 
-    /// Sample a batch of random shared values from the beaver source and
+    /// Sample a batch of random shared values from the offline phase and
     /// allocate them as `AuthenticatedScalars`
     pub fn random_shared_scalars(&self, n: usize) -> Vec<AuthenticatedScalarResult<C>> {
         let values_raw = self
             .inner
-            .beaver_source
+            .offline_phase
             .lock()
-            .expect("beaver source poisoned")
+            .expect("offline phase poisoned")
             .next_shared_value_batch(n);
 
         self.allocate_scalar_shares(values_raw)
@@ -1008,7 +931,7 @@ impl<C: CurveGroup> MpcFabric<C> {
     pub fn random_inverse_pair(
         &self,
     ) -> (AuthenticatedScalarResult<C>, AuthenticatedScalarResult<C>) {
-        let (l, r) = self.inner.beaver_source.lock().unwrap().next_shared_inverse_pair();
+        let (l, r) = self.inner.offline_phase.lock().unwrap().next_shared_inverse_pair();
         let mut lr = self.allocate_scalar_shares(vec![l, r]);
         let r = lr.pop().unwrap();
         let l = lr.pop().unwrap();
@@ -1022,7 +945,7 @@ impl<C: CurveGroup> MpcFabric<C> {
         n: usize,
     ) -> (Vec<AuthenticatedScalarResult<C>>, Vec<AuthenticatedScalarResult<C>>) {
         let (left, right) =
-            self.inner.beaver_source.lock().unwrap().next_shared_inverse_pair_batch(n);
+            self.inner.offline_phase.lock().unwrap().next_shared_inverse_pair_batch(n);
 
         let left_right = left.into_iter().chain(right).collect_vec();
         let mut allocated_left_right = self.allocate_scalar_shares(left_right);
@@ -1034,21 +957,21 @@ impl<C: CurveGroup> MpcFabric<C> {
         (left, right)
     }
 
-    /// Sample a random shared bit from the beaver source
+    /// Sample a random shared bit from the offline phase
     pub fn random_shared_bit(&self) -> AuthenticatedScalarResult<C> {
         let bit =
-            self.inner.beaver_source.lock().expect("beaver source poisoned").next_shared_bit();
+            self.inner.offline_phase.lock().expect("offline phase poisoned").next_shared_bit();
 
         self.allocate_scalar_share(bit)
     }
 
-    /// Sample a batch of random shared bits from the beaver source
+    /// Sample a batch of random shared bits from the offline phase
     pub fn random_shared_bits(&self, n: usize) -> Vec<AuthenticatedScalarResult<C>> {
         let bits = self
             .inner
-            .beaver_source
+            .offline_phase
             .lock()
-            .expect("beaver source poisoned")
+            .expect("offline phase poisoned")
             .next_shared_bit_batch(n);
 
         self.allocate_scalar_shares(bits)
