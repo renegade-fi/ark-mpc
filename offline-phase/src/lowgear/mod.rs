@@ -2,6 +2,7 @@
 //! keys, authenticating inputs, etc
 
 pub mod commit_reveal;
+pub mod input_masks;
 pub mod inverse_tuples;
 pub mod mac_check;
 pub mod multiplication;
@@ -29,7 +30,7 @@ use rand::thread_rng;
 
 use crate::{
     error::LowGearError,
-    structs::{LowGearParams, LowGearPrep, ValueMacBatch},
+    structs::{InputMasks, LowGearParams, LowGearPrep, ValueMacBatch},
 };
 
 /// A type implementing Lowgear protocol logic
@@ -52,6 +53,12 @@ pub struct LowGear<C: CurveGroup, N: MpcNetwork<C>> {
     pub shared_bits: ValueMacBatch<C>,
     /// The shared random values generated during the offline phase
     pub shared_randomness: ValueMacBatch<C>,
+    /// The input masks generated during the offline phase
+    ///
+    /// An input mask is party specific, that is, each party has a set of input
+    /// values wherein it holds a random value in the cleartext
+    /// and the parties collectively hold a sharing of the value
+    pub input_masks: InputMasks<C>,
     /// A reference to the underlying network connection
     pub network: N,
 }
@@ -75,6 +82,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             inverse_tuples: Default::default(),
             shared_bits: Default::default(),
             shared_randomness: Default::default(),
+            input_masks: Default::default(),
             network,
         }
     }

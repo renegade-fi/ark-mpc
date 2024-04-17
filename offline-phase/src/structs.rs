@@ -4,7 +4,7 @@ use std::ops::{Add, Mul, Sub};
 
 use ark_ec::CurveGroup;
 use ark_mpc::algebra::{Scalar, ScalarShare};
-use ark_mpc::offline_prep::OfflinePhase;
+use ark_mpc::offline_prep::PreprocessingPhase;
 use mp_spdz_rs::fhe::ciphertext::Ciphertext;
 use mp_spdz_rs::fhe::keys::{BGVKeypair, BGVPublicKey};
 use mp_spdz_rs::fhe::params::BGVParams;
@@ -93,7 +93,7 @@ impl<C: CurveGroup> LowGearPrep<C> {
     }
 }
 
-impl<C: CurveGroup> OfflinePhase<C> for LowGearPrep<C> {
+impl<C: CurveGroup> PreprocessingPhase<C> for LowGearPrep<C> {
     fn next_shared_bit(&mut self) -> ScalarShare<C> {
         self.bits.split_off(1).into_inner()[0]
     }
@@ -170,6 +170,11 @@ impl<C: CurveGroup> ValueMacBatch<C> {
     /// Check if the batch is empty
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
+    }
+
+    /// Pop the last value and mac from the batch
+    pub fn pop(&mut self) -> Option<ScalarShare<C>> {
+        self.inner.pop()
     }
 
     /// Append the given batch to this one
@@ -296,6 +301,71 @@ impl<C: CurveGroup> Mul<&[Scalar<C>]> for &ValueMacBatch<C> {
     }
 }
 
+// ---------------
+// | Input Masks |
+// ---------------
+
+/// The input mask values held by the local party
+///
+/// Each party holds a set of random cleartext values used to mask inputs to the
+/// MPC. The other parties collectively hold a sharing of the values
+///
+/// So, this struct holds the local party's cleartext values and the local
+/// party's shares of their own and others' cleartext masks
+#[derive(Clone, Default)]
+pub struct InputMasks<C: CurveGroup> {
+    /// The local party's cleartext mask values
+    pub my_masks: Vec<Scalar<C>>,
+    /// The local party's shares of their own mask values
+    pub my_mask_shares: ValueMacBatch<C>,
+    /// The shares of the cleartext values
+    ///
+    /// Index `i` is a set of shares for party i's masks
+    pub their_masks: ValueMacBatch<C>,
+}
+
+impl<C: CurveGroup> InputMasks<C> {
+    /// Append values to `my_masks`
+    pub fn add_local_masks(&mut self, values: Vec<Scalar<C>>, masks: Vec<ScalarShare<C>>) {
+        assert_eq!(values.len(), masks.len());
+        self.my_masks.extend(values);
+        self.my_mask_shares.append(&mut ValueMacBatch::new(masks));
+    }
+
+    /// Add values to `their_masks`
+    pub fn add_counterparty_masks(&mut self, mut masks: ValueMacBatch<C>) {
+        self.their_masks.append(&mut masks);
+    }
+
+    /// Get the local party's next mask and share of the mask
+    pub fn get_local_mask(&mut self) -> (Scalar<C>, ScalarShare<C>) {
+        assert!(!self.my_masks.is_empty(), "no local masks left");
+        let mask = self.my_masks.pop().unwrap();
+        let mask_share = self.my_mask_shares.pop().unwrap();
+
+        (mask, mask_share)
+    }
+
+    /// Get a batch of local masks and shares of the masks
+    pub fn get_local_mask_batch(&mut self, num_masks: usize) -> (Vec<Scalar<C>>, ValueMacBatch<C>) {
+        let split_idx = self.my_masks.len() - num_masks;
+        let masks = self.my_masks.split_off(split_idx);
+        let mask_shares = self.my_mask_shares.split_off(num_masks);
+
+        (masks, mask_shares)
+    }
+
+    /// Get the local party's share of the counterparty's next mask
+    pub fn get_counterparty_mask(&mut self) -> ScalarShare<C> {
+        self.their_masks.split_off(1).into_inner()[0]
+    }
+
+    /// Get a batch of the local party's shares of the counterparty's masks
+    pub fn get_counterparty_mask_batch(&mut self, num_masks: usize) -> ValueMacBatch<C> {
+        self.their_masks.split_off(num_masks)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use ark_mpc::{
@@ -305,7 +375,8 @@ mod test {
 
     use crate::test_helpers::mock_lowgear_with_triples;
 
-    /// Tests the use of the `LowGear` type as an `OfflinePhase` implementation
+    /// Tests the use of the `LowGear` type as an `PreprocessingPhase`
+    /// implementation
     #[tokio::test]
     async fn test_lowgear_offline_phase() {
         // Setup the mock offline phase
