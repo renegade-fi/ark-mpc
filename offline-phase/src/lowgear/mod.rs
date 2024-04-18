@@ -115,6 +115,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             self.inverse_tuples.clone(),
             self.shared_bits.clone(),
             self.shared_randomness.clone(),
+            self.input_masks.clone(),
             self.triples.clone(),
         ))
     }
