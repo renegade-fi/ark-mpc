@@ -141,6 +141,16 @@ impl<C: CurveGroup> CiphertextVector<C> {
         Self { inner, _phantom: PhantomData }
     }
 
+    /// Create a new `CiphertextVector` from a rust vector of ciphertexts
+    pub fn from_vec(cts: Vec<Ciphertext<C>>, params: &BGVParams<C>) -> Self {
+        let mut self_ = Self::new(cts.len(), params);
+        for (i, ct) in cts.into_iter().enumerate() {
+            self_.set(i, &ct);
+        }
+
+        self_
+    }
+
     /// Get a pinned mutable reference to the inner `CiphertextVector`
     pub fn pin_mut(&mut self) -> Pin<&mut ffi::CiphertextVector> {
         self.inner.pin_mut()

@@ -5,10 +5,20 @@ use std::ops::{Add, Mul, Sub};
 use ark_ec::CurveGroup;
 use ark_mpc::algebra::{Scalar, ScalarShare};
 use ark_mpc::offline_prep::PreprocessingPhase;
+use ark_std::cfg_into_iter;
 use mp_spdz_rs::fhe::ciphertext::Ciphertext;
 use mp_spdz_rs::fhe::keys::{BGVKeypair, BGVPublicKey};
 use mp_spdz_rs::fhe::params::BGVParams;
 use mp_spdz_rs::fhe::plaintext::PlaintextVector;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+/// The threshold for parallelizing addition and subtraction
+#[cfg(feature = "parallel")]
+const ADD_PAR_THRESHOLD: usize = 100;
+/// The threshold for parallelizing multiplication
+#[cfg(feature = "parallel")]
+const MUL_PAR_THRESHOLD: usize = 100;
 
 // ------------------------
 // | Offline Phase Result |
@@ -300,7 +310,15 @@ impl<C: CurveGroup> Add for &ValueMacBatch<C> {
     type Output = ValueMacBatch<C>;
 
     fn add(self, other: Self) -> Self::Output {
-        ValueMacBatch::new(self.inner.iter().zip(other.inner.iter()).map(|(a, b)| a + b).collect())
+        assert_eq!(self.len(), other.len());
+        // If the batch is small, use the sequential implementation
+        let inner = if self.len() < ADD_PAR_THRESHOLD {
+            self.inner.iter().zip(other.inner.iter()).map(|(a, b)| a + b).collect()
+        } else {
+            cfg_into_iter!(0..self.len()).map(|i| self.inner[i] + other.inner[i]).collect()
+        };
+
+        ValueMacBatch::new(inner)
     }
 }
 
@@ -308,7 +326,15 @@ impl<C: CurveGroup> Sub for &ValueMacBatch<C> {
     type Output = ValueMacBatch<C>;
 
     fn sub(self, other: Self) -> Self::Output {
-        ValueMacBatch::new(self.inner.iter().zip(other.inner.iter()).map(|(a, b)| a - b).collect())
+        assert_eq!(self.len(), other.len());
+        // If the batch is small, use the sequential implementation
+        let inner = if self.len() < ADD_PAR_THRESHOLD {
+            self.inner.iter().zip(other.inner.iter()).map(|(a, b)| a - b).collect()
+        } else {
+            cfg_into_iter!(0..self.len()).map(|i| self.inner[i] - other.inner[i]).collect()
+        };
+
+        ValueMacBatch::new(inner)
     }
 }
 
@@ -316,7 +342,14 @@ impl<C: CurveGroup> Mul<Scalar<C>> for &ValueMacBatch<C> {
     type Output = ValueMacBatch<C>;
 
     fn mul(self, other: Scalar<C>) -> Self::Output {
-        ValueMacBatch::new(self.inner.iter().map(|a| a * other).collect())
+        // If the batch is small, use the sequential implementation
+        let inner = if self.len() < MUL_PAR_THRESHOLD {
+            self.inner.iter().map(|a| a * other).collect()
+        } else {
+            cfg_into_iter!(0..self.len()).map(|i| self.inner[i] * other).collect()
+        };
+
+        ValueMacBatch::new(inner)
     }
 }
 
@@ -325,7 +358,14 @@ impl<C: CurveGroup> Mul<&[Scalar<C>]> for &ValueMacBatch<C> {
     type Output = ValueMacBatch<C>;
 
     fn mul(self, other: &[Scalar<C>]) -> Self::Output {
-        ValueMacBatch::new(self.inner.iter().zip(other.iter()).map(|(a, b)| a * *b).collect())
+        // If the batch is small, use the sequential implementation
+        let inner = if self.len() < MUL_PAR_THRESHOLD {
+            self.inner.iter().zip(other.iter()).map(|(a, b)| a * *b).collect()
+        } else {
+            cfg_into_iter!(0..self.len()).map(|i| self.inner[i] * other[i]).collect()
+        };
+
+        ValueMacBatch::new(inner)
     }
 }
 

@@ -3,10 +3,20 @@ name = "ark-mpc-offline"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+parallel = [
+    "ark-ec/parallel",
+    "ark-ff/parallel",
+    "ark-std/parallel",
+    "mp-spdz-rs/parallel",
+    "dep:rayon",
+]
+
 [dependencies]
 # === Crypto + Arithmetic === #
 ark-ec = "0.4"
 ark-ff = "0.4"
+ark-std = "0.4"
 ark-mpc = { path = "../online-phase" }
 
 mp-spdz-rs = { path = "../mp-spdz-rs" }
@@ -17,6 +27,7 @@ futures = "0.3"
 # === Misc Dependencies === #
 itertools = "0.10"
 rand = "0.8"
+rayon = { version = "1.10", optional = true }
 sha3 = { version = "0.10" }
 
 [dev-dependencies]
