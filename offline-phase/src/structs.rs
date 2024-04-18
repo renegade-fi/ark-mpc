@@ -40,6 +40,8 @@ pub struct LowGearPrep<C: CurveGroup> {
     pub bits: ValueMacBatch<C>,
     /// The shared random values
     pub shared_randomness: ValueMacBatch<C>,
+    /// The input masks
+    pub input_masks: InputMasks<C>,
     /// The shared Beaver triplets
     pub triplets: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
 }
@@ -51,9 +53,10 @@ impl<C: CurveGroup> LowGearPrep<C> {
         inverse_pairs: (ValueMacBatch<C>, ValueMacBatch<C>),
         bits: ValueMacBatch<C>,
         shared_randomness: ValueMacBatch<C>,
+        input_masks: InputMasks<C>,
         triplets: (ValueMacBatch<C>, ValueMacBatch<C>, ValueMacBatch<C>),
     ) -> Self {
-        Self { params, inverse_pairs, bits, shared_randomness, triplets }
+        Self { params, inverse_pairs, bits, shared_randomness, input_masks, triplets }
     }
 
     /// Create an empty `LowGearPrep`
@@ -63,6 +66,7 @@ impl<C: CurveGroup> LowGearPrep<C> {
             inverse_pairs: (ValueMacBatch::new(vec![]), ValueMacBatch::new(vec![])),
             bits: ValueMacBatch::new(vec![]),
             shared_randomness: ValueMacBatch::new(vec![]),
+            input_masks: InputMasks::default(),
             triplets: (
                 ValueMacBatch::new(vec![]),
                 ValueMacBatch::new(vec![]),
@@ -94,6 +98,30 @@ impl<C: CurveGroup> LowGearPrep<C> {
 }
 
 impl<C: CurveGroup> PreprocessingPhase<C> for LowGearPrep<C> {
+    fn get_mac_key_share(&self) -> Scalar<C> {
+        self.params.mac_key_share
+    }
+
+    fn next_local_input_mask(&mut self) -> (Scalar<C>, ScalarShare<C>) {
+        self.input_masks.get_local_mask()
+    }
+
+    fn next_local_input_mask_batch(
+        &mut self,
+        num_values: usize,
+    ) -> (Vec<Scalar<C>>, Vec<ScalarShare<C>>) {
+        let (masks, mask_shares) = self.input_masks.get_local_mask_batch(num_values);
+        (masks, mask_shares.into_inner())
+    }
+
+    fn next_counterparty_input_mask(&mut self) -> ScalarShare<C> {
+        self.input_masks.get_counterparty_mask()
+    }
+
+    fn next_counterparty_input_mask_batch(&mut self, num_values: usize) -> Vec<ScalarShare<C>> {
+        self.input_masks.get_counterparty_mask_batch(num_values).into_inner()
+    }
+
     fn next_shared_bit(&mut self) -> ScalarShare<C> {
         self.bits.split_off(1).into_inner()[0]
     }
@@ -380,9 +408,13 @@ mod test {
     #[tokio::test]
     async fn test_lowgear_offline_phase() {
         // Setup the mock offline phase
+        const N: usize = 100;
         let (prep1, prep2) = mock_lowgear_with_triples(
-            100, // num_triples
-            |mut lowgear| async move { lowgear.get_offline_result().unwrap() },
+            N, // num_triples
+            |mut lowgear| async move {
+                lowgear.generate_input_masks(N).await.unwrap();
+                lowgear.get_offline_result().unwrap()
+            },
         )
         .await;
 
@@ -398,7 +430,7 @@ mod test {
                 let b_shared = fabric.share_scalar(b, PARTY1);
 
                 let c = a_shared * b_shared;
-                c.open().await
+                c.open_authenticated().await.unwrap()
             },
             prep1,
             prep2,

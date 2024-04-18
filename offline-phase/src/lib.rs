@@ -189,9 +189,10 @@ pub(crate) mod test_helpers {
         let mut lowgear2 = LowGear::new(net2);
 
         // Setup the lowgear instances
-        let params = &lowgear1.params;
-        let keypair1 = BGVKeypair::gen(params);
-        let keypair2 = BGVKeypair::gen(params);
+        let params1 = &lowgear1.params;
+        let params2 = &lowgear2.params;
+        let keypair1 = BGVKeypair::gen(params1);
+        let keypair2 = BGVKeypair::gen(params2);
 
         let mac_share1 = Scalar::random(&mut rng);
         let mac_share2 = Scalar::random(&mut rng);
@@ -204,9 +205,9 @@ pub(crate) mod test_helpers {
 
         // Set the exchanged values
         lowgear1.other_pk = Some(keypair2.public_key());
-        lowgear1.other_mac_enc = Some(encrypt_all(mac_share2, &keypair2.public_key(), params));
+        lowgear1.other_mac_enc = Some(encrypt_all(mac_share2, &keypair2.public_key(), params1));
         lowgear2.other_pk = Some(keypair1.public_key());
-        lowgear2.other_mac_enc = Some(encrypt_all(mac_share1, &keypair1.public_key(), params));
+        lowgear2.other_mac_enc = Some(encrypt_all(mac_share1, &keypair1.public_key(), params2));
 
         (lowgear1, lowgear2)
     }
