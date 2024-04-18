@@ -273,6 +273,16 @@ impl<C: CurveGroup> PlaintextVector<C> {
     }
 }
 
+impl<C: CurveGroup> From<Vec<Plaintext<C>>> for PlaintextVector<C> {
+    fn from(plaintexts: Vec<Plaintext<C>>) -> Self {
+        let mut pt_vector = Self::empty();
+        for pt in plaintexts {
+            pt_vector.push(&pt);
+        }
+        pt_vector
+    }
+}
+
 // -------------------------------
 // | Plaintext Vector Arithmetic |
 // -------------------------------
@@ -280,8 +290,10 @@ impl<C: CurveGroup> PlaintextVector<C> {
 impl<C: CurveGroup> Add for &PlaintextVector<C> {
     type Output = PlaintextVector<C>;
 
+    #[cfg(not(feature = "parallel"))]
     fn add(self, other: Self) -> Self::Output {
         assert_eq!(self.len(), other.len(), "Vectors must be the same length");
+
         let mut result = PlaintextVector::empty();
         for i in 0..self.len() {
             let element = &self.get(i) + &other.get(i);
@@ -289,11 +301,22 @@ impl<C: CurveGroup> Add for &PlaintextVector<C> {
         }
         result
     }
+
+    #[cfg(feature = "parallel")]
+    fn add(self, other: Self) -> Self::Output {
+        use rayon::iter::{IntoParallelIterator, ParallelIterator};
+        assert_eq!(self.len(), other.len(), "Vectors must be the same length");
+        let res: Vec<Plaintext<C>> =
+            (0..self.len()).into_par_iter().map(|i| &self.get(i) + &other.get(i)).collect();
+
+        PlaintextVector::from(res)
+    }
 }
 
 impl<C: CurveGroup> Sub for &PlaintextVector<C> {
     type Output = PlaintextVector<C>;
 
+    #[cfg(not(feature = "parallel"))]
     fn sub(self, other: Self) -> Self::Output {
         assert_eq!(self.len(), other.len(), "Vectors must be the same length");
         let mut result = PlaintextVector::empty();
@@ -303,11 +326,22 @@ impl<C: CurveGroup> Sub for &PlaintextVector<C> {
         }
         result
     }
+
+    #[cfg(feature = "parallel")]
+    fn sub(self, other: Self) -> Self::Output {
+        use rayon::iter::{IntoParallelIterator, ParallelIterator};
+        assert_eq!(self.len(), other.len(), "Vectors must be the same length");
+        let res: Vec<Plaintext<C>> =
+            (0..self.len()).into_par_iter().map(|i| &self.get(i) - &other.get(i)).collect();
+
+        PlaintextVector::from(res)
+    }
 }
 
 impl<C: CurveGroup> Mul for &PlaintextVector<C> {
     type Output = PlaintextVector<C>;
 
+    #[cfg(not(feature = "parallel"))]
     fn mul(self, other: Self) -> Self::Output {
         assert_eq!(self.len(), other.len(), "Vectors must be the same length");
         let mut result = PlaintextVector::empty();
@@ -316,6 +350,16 @@ impl<C: CurveGroup> Mul for &PlaintextVector<C> {
             result.push(&element);
         }
         result
+    }
+
+    #[cfg(feature = "parallel")]
+    fn mul(self, other: Self) -> Self::Output {
+        use rayon::iter::{IntoParallelIterator, ParallelIterator};
+        assert_eq!(self.len(), other.len(), "Vectors must be the same length");
+        let res: Vec<Plaintext<C>> =
+            (0..self.len()).into_par_iter().map(|i| &self.get(i) * &other.get(i)).collect();
+
+        PlaintextVector::from(res)
     }
 }
 

@@ -51,7 +51,10 @@ pub mod benchmark_helpers {
     use ark_mpc::algebra::Scalar;
     use rand::thread_rng;
 
-    use crate::fhe::{params::BGVParams, plaintext::Plaintext};
+    use crate::fhe::{
+        params::BGVParams,
+        plaintext::{Plaintext, PlaintextVector},
+    };
 
     /// Get a random plaintext filled with random values
     pub fn random_plaintext<C: CurveGroup>(params: &BGVParams<C>) -> Plaintext<C> {
@@ -63,5 +66,18 @@ pub mod benchmark_helpers {
         }
 
         pt
+    }
+
+    /// Get a random vector of plaintexts
+    pub fn random_plaintext_vec<C: CurveGroup>(
+        n: usize,
+        params: &BGVParams<C>,
+    ) -> PlaintextVector<C> {
+        let mut vec = PlaintextVector::empty();
+        for _ in 0..n {
+            vec.push(&random_plaintext(params));
+        }
+
+        vec
     }
 }
