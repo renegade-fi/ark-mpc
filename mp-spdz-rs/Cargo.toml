@@ -4,10 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "dep:rayon"]
 test-helpers = ["dep:rand"]
 
 [[bench]]
 name = "plaintext_ops"
+harness = false
+required-features = ["test-helpers"]
+
+[[bench]]
+name = "plaintext_vec_ops"
 harness = false
 required-features = ["test-helpers"]
 
@@ -19,8 +25,8 @@ required-features = ["test-helpers"]
 [dependencies]
 # === Arithmetic + Crypto === #
 ark-bn254 = "0.4"
-ark-ec = { version = "0.4", features = ["parallel"] }
-ark-ff = { version = "0.4", features = ["parallel"] }
+ark-ec = { version = "0.4" }
+ark-ff = { version = "0.4" }
 ark-mpc = { path = "../online-phase" }
 
 # === Bindings === #
@@ -28,6 +34,7 @@ cxx = "1.0"
 
 # === Misc === #
 rand = { version = "0.8.4", optional = true }
+rayon = { version = "1.10", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 
 [build-dependencies]
