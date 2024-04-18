@@ -1,0 +1,23 @@
+[package]
+name = "ark-mpc-integration"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Cryptography === #
+ark-bn254 = "0.4"
+ark-mpc = { path = "../online-phase", features = ["test_helpers"] }
+
+# === Runtime + Harness === #
+clap = { version = "3.2.8", features = ["derive"] }
+colored = "2"
+env_logger = "0.10"
+futures = "0.3"
+inventory = "0.3"
+tokio = "1.26"
+
+# === Misc === #
+dns-lookup = "1.0"
+itertools = "0.12"
+rand = "0.8"
+tracing = "0.1"

@@ -1,23 +1,28 @@
 services:
   party0:
-    image: integration-test:latest
-    build: .
+    image: ark-mpc-integraton:latest
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile
     environment:
       - RUST_BACKTRACE=1
     ports:
       - "8000:8000"
     command: >
-      cargo test --test integration --features "test_helpers" -- 
+      cargo run --release -- 
         --party 0
         --port1 8000
         --port2 9000
         --docker
     tty: true
   party1:
-    image: integration-test:latest
-    build: .
+    image: ark-mpc-integraton:latest
+    environment:
+      - RUST_BACKTRACE=1
+    ports:
+      - "9000:9000"
     command: >
-      cargo test --test integration --features "test_helpers" -- 
+      cargo run --release -- 
         --party 1
         --port1 9000
         --port2 8000
