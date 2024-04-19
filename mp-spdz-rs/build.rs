@@ -144,10 +144,11 @@ fn find_package_linux(name: &str) -> String {
     match conf {
         Ok(lib) => lib.include_paths[0].to_str().unwrap().to_string(),
         Err(e) => {
-            panic!(
+            println!(
                 "Package not found: {}\nTry running:\n\t `{{apt-get, yum}} install {}`\n",
                 e, name
-            )
+            );
+            "/usr/include".to_string()
         },
     }
 }

@@ -71,8 +71,6 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
 mod tests {
     use crate::test_helpers::{mock_lowgear, mock_lowgear_with_keys};
 
-    use super::*;
-
     /// Tests creating a shared vector of public randomness values
     #[tokio::test]
     async fn test_get_shared_randomness_vec() {
@@ -83,9 +81,7 @@ mod tests {
             assert_eq!(shares.len(), n);
 
             // Send the shares to one another to verify they are the same
-            lowgear.send_network_payload(shares.clone()).await.unwrap();
-            let their_shares: Vec<Scalar<_>> = lowgear.receive_network_payload().await.unwrap();
-
+            let their_shares = lowgear.exchange_network_payload(shares.clone()).await.unwrap();
             assert_eq!(shares, their_shares);
         })
         .await;

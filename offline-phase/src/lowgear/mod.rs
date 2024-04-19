@@ -15,6 +15,7 @@ use ark_ec::CurveGroup;
 use ark_mpc::{
     algebra::Scalar,
     network::{MpcNetwork, NetworkOutbound, NetworkPayload, PartyId},
+    PARTY0,
 };
 use futures::{SinkExt, StreamExt};
 use mp_spdz_rs::{
@@ -190,6 +191,38 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     ) -> Result<T, LowGearError> {
         let msg = self.network.next().await.unwrap().unwrap();
         Ok(msg.payload.into())
+    }
+
+    /// Exchange messages with the counterparty
+    pub async fn exchange_message<T: ToBytes + FromBytesWithParams<C>>(
+        &mut self,
+        message: &T,
+    ) -> Result<T, LowGearError> {
+        // Party 0 sends first then receives
+        if self.party_id() == PARTY0 {
+            self.send_message(message).await?;
+            self.receive_message().await
+        } else {
+            let res = self.receive_message().await;
+            self.send_message(message).await?;
+            res
+        }
+    }
+
+    /// Exchange a network payload with the counterparty
+    pub async fn exchange_network_payload<T: Into<NetworkPayload<C>> + From<NetworkPayload<C>>>(
+        &mut self,
+        payload: T,
+    ) -> Result<T, LowGearError> {
+        // Party 0 sends first then receives
+        if self.party_id() == PARTY0 {
+            self.send_network_payload(payload.into()).await?;
+            self.receive_network_payload().await
+        } else {
+            let res = self.receive_network_payload().await;
+            self.send_network_payload(payload.into()).await?;
+            res
+        }
     }
 }
 

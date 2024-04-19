@@ -3,7 +3,7 @@
 use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
 use itertools::Itertools;
-use mp_spdz_rs::fhe::{ciphertext::Ciphertext, plaintext::Plaintext};
+use mp_spdz_rs::fhe::plaintext::Plaintext;
 use rand::rngs::OsRng;
 
 use crate::{error::LowGearError, structs::ValueMacBatch};
@@ -43,11 +43,8 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         let their_mac = &mac_product + &mac_mask;
 
         // Exchange shares and macs
-        self.send_network_payload(their_share).await?;
-        let my_shares: Vec<Scalar<C>> = self.receive_network_payload().await?;
-
-        self.send_message(&their_mac).await?;
-        let my_counterparty_macs: Ciphertext<C> = self.receive_message().await?;
+        let my_shares = self.exchange_network_payload(their_share).await?;
+        let my_counterparty_macs = self.exchange_message(&their_mac).await?;
         let mut my_macs = self.local_keypair.decrypt(&my_counterparty_macs).to_scalars();
         my_macs.truncate(n);
 
