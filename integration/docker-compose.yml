@@ -5,7 +5,7 @@ services:
       context: ..
       dockerfile: integration/Dockerfile
     environment:
-      - RUST_BACKTRACE=1
+      - RUST_BACKTRACE=full
     ports:
       - "8000:8000"
     command: >
@@ -18,7 +18,7 @@ services:
   party1:
     image: ark-mpc-integraton:latest
     environment:
-      - RUST_BACKTRACE=1
+      - RUST_BACKTRACE=full
     ports:
       - "9000:9000"
     command: >

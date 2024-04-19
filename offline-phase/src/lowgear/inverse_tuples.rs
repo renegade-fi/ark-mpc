@@ -20,6 +20,10 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     pub async fn generate_inverse_tuples(&mut self, n: usize) -> Result<(), LowGearError> {
         // We need `n` triplets to sacrifice for `n` inverse tuples
         assert!(self.num_triples() >= n, "Not enough triplets to generate {n} inverse tuples");
+        if n == 0 {
+            return Ok(());
+        }
+
         let random_values = self.get_authenticated_randomness_vec(2 * n).await?;
         let (lhs, rhs) = random_values.split_at(n);
 

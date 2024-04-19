@@ -24,6 +24,20 @@ const MUL_PAR_THRESHOLD: usize = 100;
 // | Offline Phase Result |
 // ------------------------
 
+/// The parameters to run the offline phase with, determines the number of each
+/// offline phase value to generate
+#[derive(Clone, Default)]
+pub struct OfflineSizingParams {
+    /// The number of inverse pairs
+    pub num_inverse_pairs: usize,
+    /// The number of bits
+    pub num_bits: usize,
+    /// The number of random values
+    pub num_randomness: usize,
+    /// The number of input masks
+    pub num_input_masks: usize,
+}
+
 /// The parameters setup by the offline phase
 #[derive(Clone)]
 pub struct LowGearParams<C: CurveGroup> {

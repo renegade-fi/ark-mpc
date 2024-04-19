@@ -24,7 +24,7 @@ use crate::{
 // -----------
 
 /// Test opening a shared point correctly
-fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_open_authenticated(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point
     let my_val = random_point();
     let shared_val = share_authenticated_point(my_val, PARTY0, test_args);
@@ -38,7 +38,7 @@ fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String
 
 /// Test opening a shared point with a corrupted MAC
 #[allow(non_snake_case)]
-fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_open_authenticated__bad_mac(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point
     let my_val = random_point();
     let mut shared_val = share_authenticated_point(my_val, PARTY0, test_args);
@@ -51,7 +51,7 @@ fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(
 
 /// Test opening a shared point with a corrupted secret share
 #[allow(non_snake_case)]
-fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_open_authenticated__bad_share(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point
     let my_val = random_point();
     let mut shared_val = share_authenticated_point(my_val, PARTY0, test_args);
@@ -67,7 +67,7 @@ fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result
 // --------------
 
 /// Test addition with a public point
-fn test_addition_public_point(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_addition_public_point(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
     let value = random_point();
 
@@ -87,7 +87,7 @@ fn test_addition_public_point(test_args: &IntegrationTestArgs) -> Result<(), Str
 }
 
 /// Test addition between two secret shared points
-fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_add(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point
     let value = random_point();
 
@@ -106,7 +106,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch addition
-fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_add(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
     let my_vals = (0..n).map(|_| random_point()).collect_vec();
@@ -135,7 +135,7 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
 /// Test addition between a batch of `AuthenticatedPointResult`s and
 /// `CurvePoint`s
-fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_add_public(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
     let my_vals = (0..n).map(|_| random_point()).collect_vec();
@@ -162,7 +162,7 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 /// Test subtraction between a shared and a public point
-fn test_sub_public_point(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_sub_public_point(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
     let value = random_point();
 
@@ -182,7 +182,7 @@ fn test_sub_public_point(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 /// Test subtraction between two secret shared points
-fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_sub(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point
     let value = random_point();
 
@@ -201,7 +201,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch subtraction
-fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_sub(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
     let my_vals = (0..n).map(|_| random_point()).collect_vec();
@@ -230,7 +230,7 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
 /// Test addition between a batch of `AuthenticatedPointResult`s and
 /// `CurvePoint`s
-fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_sub_public(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
     let my_vals = (0..n).map(|_| random_point()).collect_vec();
@@ -257,7 +257,7 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 /// Test negation
-fn test_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_negation(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point
     let value = random_point();
 
@@ -275,7 +275,7 @@ fn test_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch negation
-fn test_batch_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_negation(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
     let my_values = (0..n).map(|_| random_point()).collect_vec();
@@ -295,7 +295,7 @@ fn test_batch_negation(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test multiplication with a public scalar
-fn test_multiplication_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_multiplication_public_scalar(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
     let mut rng = thread_rng();
     let point = random_point();
@@ -317,7 +317,7 @@ fn test_multiplication_public_scalar(test_args: &IntegrationTestArgs) -> Result<
 }
 
 /// Test multiplication with a secret shared scalar
-fn test_multiplication(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_multiplication(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
     let mut rng = thread_rng();
     let point = random_point();
@@ -338,7 +338,7 @@ fn test_multiplication(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch multiplication
-fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_mul(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
     let my_vals = (0..n).map(|_| random_point()).collect_vec();
@@ -367,7 +367,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 
 /// Test addition between a batch of `AuthenticatedPointResult`s and
 /// `CurvePoint`s
-fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_mul_public(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let n = 10;
     let fabric = &test_args.fabric;
     let my_vals = (0..n).map(|_| random_point()).collect_vec();

@@ -18,6 +18,9 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
             "can only generate input masks for {} slots",
             self.params.plaintext_slots()
         );
+        if n == 0 {
+            return Ok(());
+        }
 
         // Each party generates their values, shares, and mac shares
         let mut rng = OsRng;
