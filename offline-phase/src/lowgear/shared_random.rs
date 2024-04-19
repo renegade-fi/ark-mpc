@@ -13,6 +13,10 @@ use super::LowGear;
 impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     /// Generate shared randomness to store in the offline phase result
     pub async fn generate_shared_randomness(&mut self, n: usize) -> Result<(), LowGearError> {
+        if n == 0 {
+            return Ok(());
+        }
+
         let random_vals = self.get_authenticated_randomness_vec(n).await?;
         self.shared_randomness = random_vals;
 

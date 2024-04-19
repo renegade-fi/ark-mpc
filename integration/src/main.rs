@@ -1,11 +1,4 @@
-use std::{
-    io::Write,
-    net::SocketAddr,
-    process::exit,
-    sync::{Arc, Mutex, MutexGuard},
-    thread,
-    time::Duration,
-};
+use std::{io::Write, net::SocketAddr, process::exit, thread, time::Duration};
 
 use ark_bn254::G1Projective as Bn254Projective;
 use ark_mpc::{
@@ -54,9 +47,22 @@ struct IntegrationTestArgs {
 
 impl IntegrationTestArgs {
     /// Get a new quic connection to the counterparty
-    pub async fn new_quic_conn(&self) -> QuicTwoPartyNet<TestCurve> {
+    pub async fn new_quic_conn(&mut self) -> QuicTwoPartyNet<TestCurve> {
         let mut net = QuicTwoPartyNet::new(self.party_id, self.local_addr, self.peer_addr);
         net.connect().await.unwrap();
+
+        // Send a hello message to the peer
+        if self.party_id == 0 {
+            let payload = NetworkPayload::Bytes(vec![0u8]);
+            net.send(NetworkOutbound { result_id: 0, payload }).await.unwrap();
+        } else {
+            let _bytes = net.next().await.unwrap();
+        }
+
+        // Increment the ports
+        self.peer_addr.set_port(self.peer_addr.port() + 1);
+        self.local_addr.set_port(self.local_addr.port() + 1);
+
         net
     }
 }
@@ -65,7 +71,7 @@ impl IntegrationTestArgs {
 #[derive(Clone)]
 struct IntegrationTest {
     pub name: &'static str,
-    pub test_fn: fn(&IntegrationTestArgs) -> Result<(), String>,
+    pub test_fn: fn(&mut IntegrationTestArgs) -> Result<(), String>,
 }
 
 // Collect the statically defined tests into an interable
@@ -114,7 +120,6 @@ fn main() {
         // We do this because listening on localhost when running in a container points
         // to the container's loopback interface, not the docker bridge
         let local_addr: SocketAddr = format!("0.0.0.0:{}", args.port1).parse().unwrap();
-        let local_addr2: SocketAddr = format!("0.0.0.0:{}", args.port1 + 1).parse().unwrap();
 
         // If the code is running in a docker compose setup (set by the --docker flag);
         // attempt to lookup the peer via DNS. The compose networking interface
@@ -170,7 +175,7 @@ fn main() {
         local_addr.set_port(local_addr.port() + 1);
         let mut peer_addr = peer_addr;
         peer_addr.set_port(peer_addr.port() + 1);
-        let test_args = IntegrationTestArgs {
+        let mut test_args = IntegrationTestArgs {
             party_id: args.party,
             local_addr,
             peer_addr,
@@ -185,11 +190,12 @@ fn main() {
 
             if args.party == 0 {
                 print!("Running {}... ", test.name);
+                std::io::stdout().flush().unwrap();
             }
 
             // Spawn the test in the runtime and drive it to completion
             let test_clone = test.clone();
-            let res = (test_clone.test_fn)(&test_args);
+            let res = (test_clone.test_fn)(&mut test_args);
 
             all_success &= validate_success(res, args.party);
         }

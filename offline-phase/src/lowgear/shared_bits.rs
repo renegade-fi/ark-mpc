@@ -22,6 +22,10 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     pub async fn generate_shared_bits(&mut self, n: usize) -> Result<(), LowGearError> {
         // This method requires `n` tuples to sacrifice in the multiplication step
         assert!(self.num_triples() >= n, "Not enough triples to generate {} bits", n);
+        if n == 0 {
+            return Ok(());
+        }
+
         let random_vals = self.get_authenticated_randomness_vec(n).await?;
         let squared_vals = self.beaver_mul(&random_vals, &random_vals).await?;
 

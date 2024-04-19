@@ -12,24 +12,17 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     /// Exchange BGV public keys and mac shares with the counterparty
     pub async fn run_key_exchange(&mut self) -> Result<(), LowGearError> {
         // First, share the public key
-        println!("sending key");
         let counterparty_pk: BGVPublicKey<C> =
             self.exchange_message(&self.local_keypair.public_key()).await?;
-        println!("received key");
 
         // Encrypt my mac share under my public key
-        println!("encrypting mac");
         let mut pt = Plaintext::new(&self.params);
         pt.set_all(self.mac_share);
         let ct = self.local_keypair.encrypt_and_prove(&pt);
-        println!("encrypted mac");
 
         // Send and receive
-        println!("sending mac");
         let mut counterparty_mac_pok = self.exchange_message(&ct).await?;
-        println!("received mac");
         let counterparty_mac_enc = counterparty_pk.verify_proof(&mut counterparty_mac_pok);
-        println!("verified mac");
 
         self.other_pk = Some(counterparty_pk);
         // The counterparty's MAC share is the first element of the ciphertext vector,
