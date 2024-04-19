@@ -12,7 +12,7 @@ use crate::{
 // ---------
 
 /// Tests that sharing a value over the fabric works correctly
-fn test_fabric_share_and_open(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_fabric_share_and_open(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party shares their party ID with the counterparty
     let my_party_id = Scalar::from(test_args.party_id);
 

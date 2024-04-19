@@ -24,7 +24,7 @@ use crate::{
 
 /// Tests the authenticated opening of a shared value with no arithmetic done on
 /// it
-fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_open_authenticated(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
     let mut rng = thread_rng();
     let my_val = Scalar::random(&mut rng);
@@ -46,7 +46,7 @@ fn test_open_authenticated(test_args: &IntegrationTestArgs) -> Result<(), String
 
 /// Tests opening with a corrupted MAC
 #[allow(non_snake_case)]
-fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_open_authenticated__bad_mac(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let mut rng = thread_rng();
     let my_val = Scalar::random(&mut rng);
     let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
@@ -61,7 +61,7 @@ fn test_open_authenticated__bad_mac(test_args: &IntegrationTestArgs) -> Result<(
 
 /// Tests opening with a corrupted secret share
 #[allow(non_snake_case)]
-fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_open_authenticated__bad_share(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let mut rng = thread_rng();
     let my_val = Scalar::random(&mut rng);
     let mut party0_value = share_authenticated_scalar(my_val, PARTY0, test_args);
@@ -79,7 +79,7 @@ fn test_open_authenticated__bad_share(test_args: &IntegrationTestArgs) -> Result
 // --------------
 
 /// Test addition with a public value
-fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_add_public_value(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
@@ -103,7 +103,7 @@ fn test_add_public_value(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 /// Test addition between two secret shared values
-fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_add(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
     let mut rng = thread_rng();
     let my_val = Scalar::random(&mut rng);
@@ -126,7 +126,7 @@ fn test_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch addition between two secret shared values
-fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_add(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a batch of values
     let n = 10;
     let fabric = &test_args.fabric;
@@ -156,7 +156,7 @@ fn test_batch_add(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch addition between secret shared and public values
-fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_add_public(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a batch of values, party 1's values are made public
     let n = 10;
     let fabric = &test_args.fabric;
@@ -185,7 +185,7 @@ fn test_batch_add_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 /// Test subtraction between a shared point and a public scalar
-fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_sub_public_scalar(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
@@ -209,7 +209,7 @@ fn test_sub_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
 }
 
 /// Test subtraction between two secret shared values
-fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_sub(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
     let mut rng = thread_rng();
     let my_val = Scalar::random(&mut rng);
@@ -232,7 +232,7 @@ fn test_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch subtraction between two secret shared values
-fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_sub(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a batch of values
     let n = 10;
     let fabric = &test_args.fabric;
@@ -262,7 +262,7 @@ fn test_batch_sub(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch subtraction between secret shared and public values
-fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_sub_public(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a batch of values, party 1's values are made public
     let n = 10;
     let fabric = &test_args.fabric;
@@ -291,7 +291,7 @@ fn test_batch_sub_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 /// Test negation of a value
-fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_neg(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
     let mut rng = thread_rng();
     let my_val = Scalar::random(&mut rng);
@@ -312,7 +312,7 @@ fn test_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test negation of a batch of values
-fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_neg(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Party 0 chooses the values alone for this test
     let n = 10;
     let fabric = &test_args.fabric;
@@ -335,7 +335,7 @@ fn test_batch_neg(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test multiplication between a shared point and a public scalar
-fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_mul_public_scalar(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);
@@ -359,7 +359,7 @@ fn test_mul_public_scalar(test_args: &IntegrationTestArgs) -> Result<(), String>
 }
 
 /// Test multiplication between two secret shared values
-fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_mul(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value
     let mut rng = thread_rng();
     let my_val = Scalar::random(&mut rng);
@@ -382,7 +382,7 @@ fn test_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch multiplication between two secret shared values
-fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_mul(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a batch of values
     let n = 10;
     let fabric = &test_args.fabric;
@@ -412,7 +412,7 @@ fn test_batch_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Test batch addition between secret shared and public values
-fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_batch_mul_public(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a batch of values, party 1's values are made public
     let n = 10;
     let fabric = &test_args.fabric;
@@ -441,7 +441,7 @@ fn test_batch_mul_public(test_args: &IntegrationTestArgs) -> Result<(), String> 
 }
 
 /// Test the case in which we add and then multiply by a public value
-fn test_public_add_then_mul(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_public_add_then_mul(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Each party samples a value, party 1's value is made public
     let mut rng = thread_rng();
     let val = Scalar::random(&mut rng);

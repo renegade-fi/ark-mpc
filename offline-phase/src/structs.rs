@@ -14,15 +14,27 @@ use mp_spdz_rs::fhe::plaintext::PlaintextVector;
 use rayon::prelude::*;
 
 /// The threshold for parallelizing addition and subtraction
-#[cfg(feature = "parallel")]
 const ADD_PAR_THRESHOLD: usize = 100;
 /// The threshold for parallelizing multiplication
-#[cfg(feature = "parallel")]
 const MUL_PAR_THRESHOLD: usize = 100;
 
 // ------------------------
 // | Offline Phase Result |
 // ------------------------
+
+/// The parameters to run the offline phase with, determines the number of each
+/// offline phase value to generate
+#[derive(Clone, Default)]
+pub struct OfflineSizingParams {
+    /// The number of inverse pairs
+    pub num_inverse_pairs: usize,
+    /// The number of bits
+    pub num_bits: usize,
+    /// The number of random values
+    pub num_randomness: usize,
+    /// The number of input masks
+    pub num_input_masks: usize,
+}
 
 /// The parameters setup by the offline phase
 #[derive(Clone)]

@@ -31,7 +31,7 @@ use rand::thread_rng;
 
 use crate::{
     error::LowGearError,
-    structs::{InputMasks, LowGearParams, LowGearPrep, ValueMacBatch},
+    structs::{InputMasks, LowGearParams, LowGearPrep, OfflineSizingParams, ValueMacBatch},
 };
 
 /// A type implementing Lowgear protocol logic
@@ -79,6 +79,23 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
             mac_share,
             other_pk: None,
             other_mac_enc: None,
+            triples: Default::default(),
+            inverse_tuples: Default::default(),
+            shared_bits: Default::default(),
+            shared_randomness: Default::default(),
+            input_masks: Default::default(),
+            network,
+        }
+    }
+
+    /// Create a new lowgear instance from a given set of lowgear params
+    pub fn new_from_params(params: LowGearParams<C>, network: N) -> Self {
+        Self {
+            params: params.bgv_params,
+            local_keypair: params.local_keypair,
+            mac_share: params.mac_key_share,
+            other_pk: Some(params.other_pk),
+            other_mac_enc: Some(params.other_mac_enc),
             triples: Default::default(),
             inverse_tuples: Default::default(),
             shared_bits: Default::default(),
@@ -152,6 +169,34 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
 
         vec
     }
+
+    // -----------------
+    // | Offline Phase |
+    // -----------------
+
+    /// Run the offline phase with the given sizing params
+    pub async fn run_offline_phase(
+        &mut self,
+        params: OfflineSizingParams,
+    ) -> Result<(), LowGearError> {
+        // Generate triplets
+        self.generate_triples().await?;
+        self.generate_inverse_tuples(params.num_inverse_pairs).await?;
+        self.generate_shared_bits(params.num_bits).await?;
+        self.generate_shared_randomness(params.num_randomness).await?;
+        self.generate_input_masks(params.num_input_masks).await?;
+
+        Ok(())
+    }
+
+    /// Shutdown the network
+    pub async fn shutdown(&mut self) -> Result<(), LowGearError> {
+        self.network.close().await.map_err(|e| LowGearError::Network(e.to_string()))
+    }
+
+    // --------------
+    // | Networking |
+    // --------------
 
     /// Send a message to the counterparty
     pub async fn send_message<T: ToBytes>(&mut self, message: &T) -> Result<(), LowGearError> {

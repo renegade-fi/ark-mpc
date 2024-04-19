@@ -19,7 +19,7 @@ use crate::{
 ///
 /// We take the inner product <a, b> where party 0 chooses a, and party 1
 /// chooses b
-fn test_inner_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_inner_product(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample local values
     let n = 100;
     let fabric = &test_args.fabric;
@@ -52,7 +52,7 @@ fn test_inner_product(test_args: &IntegrationTestArgs) -> Result<(), String> {
 /// Tests a multiscalar multiplication
 ///
 /// Party 0 selects all the scalars, party 1 selects the points
-fn test_msm(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_msm(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample local values
     let n = 100;
     let fabric = &test_args.fabric;
@@ -87,7 +87,7 @@ fn test_msm(test_args: &IntegrationTestArgs) -> Result<(), String> {
 }
 
 /// Tests evaluation of a shared polynomial on a public input
-fn test_polynomial_eval(test_args: &IntegrationTestArgs) -> Result<(), String> {
+fn test_polynomial_eval(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.fabric;
     let mut rng = thread_rng();
     let public_modifier = Scalar::random(&mut rng);

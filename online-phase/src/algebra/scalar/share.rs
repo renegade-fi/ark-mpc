@@ -27,7 +27,7 @@ use crate::{
 use super::Scalar;
 
 /// A type holding both a share and a MAC
-#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(serialize = "C: CurveGroup", deserialize = "C: CurveGroup"))]
 pub struct ScalarShare<C: CurveGroup> {
     /// The share
