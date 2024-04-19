@@ -6,7 +6,9 @@ edition = "2021"
 [dependencies]
 # === Cryptography === #
 ark-bn254 = "0.4"
+ark-ec = "0.4"
 ark-mpc = { path = "../online-phase", features = ["test_helpers"] }
+ark-mpc-offline = { path = "../offline-phase", features = ["parallel"] }
 
 # === Runtime + Harness === #
 clap = { version = "3.2.8", features = ["derive"] }

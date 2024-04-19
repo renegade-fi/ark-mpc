@@ -11,7 +11,7 @@ use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
 use ark_std::cfg_into_iter;
 use mp_spdz_rs::fhe::{
-    ciphertext::{Ciphertext, CiphertextPoK, CiphertextVector},
+    ciphertext::{Ciphertext, CiphertextVector},
     plaintext::{Plaintext, PlaintextVector},
 };
 #[cfg(feature = "parallel")]
@@ -72,8 +72,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     ) -> Result<CiphertextVector<C>, LowGearError> {
         // Encrypt `a` and send it to the counterparty
         let my_proof = self.local_keypair.encrypt_and_prove_vector(a);
-        self.send_message(&my_proof).await?;
-        let mut other_proof: CiphertextPoK<C> = self.receive_message().await?;
+        let mut other_proof = self.exchange_message(&my_proof).await?;
 
         let other_pk = self.other_pk.as_ref().expect("setup not run");
         let other_a_enc = other_pk.verify_proof(&mut other_proof);
@@ -214,8 +213,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
         let n = cross_products.len();
 
         // Send and receive cross products to/from the counterparty
-        self.send_message(&cross_products).await?;
-        let other_cross_products: CiphertextVector<C> = self.receive_message().await?;
+        let other_cross_products = self.exchange_message(&cross_products).await?;
 
         // Add each cross product to the local party's share of `c`
         let my_shares: Vec<Plaintext<C>> = cfg_into_iter!(0..n)
@@ -238,11 +236,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
 
 #[cfg(test)]
 mod test {
-    use ark_mpc::{
-        algebra::Scalar,
-        network::{MpcNetwork, NetworkPayload},
-        PARTY0,
-    };
+    use ark_mpc::{algebra::Scalar, network::MpcNetwork, PARTY0};
     use itertools::{izip, Itertools};
     use mp_spdz_rs::fhe::{
         params::BGVParams,
@@ -251,8 +245,6 @@ mod test {
     use rand::{rngs::OsRng, thread_rng};
 
     use crate::{
-        error::LowGearError,
-        lowgear::LowGear,
         structs::ValueMacBatch,
         test_helpers::{mock_lowgear_with_keys, TestCurve},
     };
@@ -332,23 +324,6 @@ mod test {
         vec
     }
 
-    /// Send and receive a payload between two `LowGear` instances
-    async fn send_receive_payload<T, N>(
-        my_val: T,
-        lowgear: &mut LowGear<TestCurve, N>,
-    ) -> Result<T, LowGearError>
-    where
-        T: Into<NetworkPayload<TestCurve>> + From<NetworkPayload<TestCurve>> + Send + 'static,
-        N: MpcNetwork<TestCurve> + Unpin + Send,
-    {
-        lowgear.send_network_payload(my_val).await?;
-        let their_val: T = lowgear.receive_network_payload().await?;
-
-        Ok(their_val)
-    }
-
-    /// Send and receive a message between two `LowGear` instances
-
     /// Verify the macs on a set of values given the opened shares from both
     /// parties
     fn verify_macs(
@@ -388,9 +363,9 @@ mod test {
             // Exchange triples
             let (my_a, my_b, my_c) = lowgear.triples.clone();
 
-            let their_a = send_receive_payload(my_a.values(), &mut lowgear).await.unwrap();
-            let their_b = send_receive_payload(my_b.values(), &mut lowgear).await.unwrap();
-            let their_c = send_receive_payload(my_c.values(), &mut lowgear).await.unwrap();
+            let their_a = lowgear.exchange_network_payload(my_a.values().to_vec()).await.unwrap();
+            let their_b = lowgear.exchange_network_payload(my_b.values().to_vec()).await.unwrap();
+            let their_c = lowgear.exchange_network_payload(my_c.values().to_vec()).await.unwrap();
 
             // Add together all the shares to get the final values
             for (a_1, a_2, b_1, b_2, c_1, c_2) in izip!(
@@ -434,22 +409,21 @@ mod test {
             let c_mac = plaintext_vec_to_scalars(&c_mac);
 
             // Share the scalars, macs, and mac keys with the counterparty then verify
-            let their_a = send_receive_payload(my_a.clone(), &mut lowgear).await.unwrap();
-            let their_b = send_receive_payload(my_b.clone(), &mut lowgear).await.unwrap();
-            let their_c = send_receive_payload(my_c.clone(), &mut lowgear).await.unwrap();
+            let their_a = lowgear.exchange_network_payload(my_a.clone()).await.unwrap();
+            let their_b = lowgear.exchange_network_payload(my_b.clone()).await.unwrap();
+            let their_c = lowgear.exchange_network_payload(my_c.clone()).await.unwrap();
 
-            let their_a_mac = &send_receive_payload(a_mac.clone(), &mut lowgear).await.unwrap();
-            let their_b_mac = &send_receive_payload(b_mac.clone(), &mut lowgear).await.unwrap();
-            let their_c_mac = &send_receive_payload(c_mac.clone(), &mut lowgear).await.unwrap();
+            let their_a_mac = lowgear.exchange_network_payload(a_mac.clone()).await.unwrap();
+            let their_b_mac = lowgear.exchange_network_payload(b_mac.clone()).await.unwrap();
+            let their_c_mac = lowgear.exchange_network_payload(c_mac.clone()).await.unwrap();
 
-            let their_mac_key =
-                send_receive_payload(lowgear.mac_share, &mut lowgear).await.unwrap();
+            let their_mac_key = lowgear.exchange_network_payload(lowgear.mac_share).await.unwrap();
             let mac_key = lowgear.mac_share + their_mac_key;
 
             // Verify the macs
-            verify_macs(&my_a, &their_a, &a_mac, their_a_mac, mac_key);
-            verify_macs(&my_b, &their_b, &b_mac, their_b_mac, mac_key);
-            verify_macs(&my_c, &their_c, &c_mac, their_c_mac, mac_key);
+            verify_macs(&my_a, &their_a, &a_mac, &their_a_mac, mac_key);
+            verify_macs(&my_b, &their_b, &b_mac, &their_b_mac, mac_key);
+            verify_macs(&my_c, &their_c, &c_mac, &their_c_mac, mac_key);
         })
         .await;
     }

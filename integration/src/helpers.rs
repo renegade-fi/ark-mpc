@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use ark_mpc::{
     algebra::{AuthenticatedPointResult, AuthenticatedScalarResult},
     network::{NetworkPayload, PartyId},
-    {MpcFabric, ResultHandle, ResultValue},
+    MpcFabric, ResultHandle, ResultValue,
 };
 use futures::{future::join_all, Future};
 use itertools::Itertools;

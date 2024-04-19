@@ -26,8 +26,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         values: &[Scalar<C>],
     ) -> Result<Vec<Scalar<C>>, LowGearError> {
         // Send the values
-        self.send_network_payload(values.to_vec()).await?;
-        let their_values: Vec<Scalar<C>> = self.receive_network_payload().await?;
+        let their_values = self.exchange_network_payload(values.to_vec()).await?;
         let res = their_values.iter().zip(values.iter()).map(|(a, b)| a + b).collect();
 
         Ok(res)
@@ -50,12 +49,10 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     ) -> Result<Vec<Scalar<C>>, LowGearError> {
         // Hash the values
         let my_comm = Self::commit_scalars(values);
-        self.send_network_payload(my_comm).await?;
-        let their_comm: Scalar<C> = self.receive_network_payload().await?;
+        let their_comm = self.exchange_network_payload(my_comm).await?;
 
         // Reveal the values
-        self.send_network_payload(values.to_vec()).await?;
-        let their_values: Vec<Scalar<C>> = self.receive_network_payload().await?;
+        let their_values = self.exchange_network_payload(values.to_vec()).await?;
 
         // Check the counterparty's commitment
         let expected_comm = Self::commit_scalars(&their_values);

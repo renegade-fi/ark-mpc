@@ -1,4 +1,11 @@
-use std::{io::Write, net::SocketAddr, process::exit, thread, time::Duration};
+use std::{
+    io::Write,
+    net::SocketAddr,
+    process::exit,
+    sync::{Arc, Mutex, MutexGuard},
+    thread,
+    time::Duration,
+};
 
 use ark_bn254::G1Projective as Bn254Projective;
 use ark_mpc::{
@@ -20,6 +27,7 @@ mod authenticated_scalar;
 mod circuits;
 mod fabric;
 mod helpers;
+mod lowgear;
 
 /// The amount of time to sleep after sending a shutdown
 const SHUTDOWN_TIMEOUT_MS: u64 = 3_000; // 3 seconds
@@ -32,10 +40,25 @@ pub type TestCurvePoint = CurvePoint<TestCurve>;
 pub type TestScalar = Scalar<TestCurve>;
 
 /// Integration test arguments, common to all tests
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct IntegrationTestArgs {
+    /// The ID of the local party in the MPC
     party_id: u64,
+    /// The local party's alternate hostport for one-off network connections
+    local_addr: SocketAddr,
+    /// The remote party's alternate hostport for one-off network connections
+    peer_addr: SocketAddr,
+    /// The underlying MPC fabric
     fabric: MpcFabric<TestCurve>,
+}
+
+impl IntegrationTestArgs {
+    /// Get a new quic connection to the counterparty
+    pub async fn new_quic_conn(&self) -> QuicTwoPartyNet<TestCurve> {
+        let mut net = QuicTwoPartyNet::new(self.party_id, self.local_addr, self.peer_addr);
+        net.connect().await.unwrap();
+        net
+    }
 }
 
 /// Integration test format
@@ -91,6 +114,7 @@ fn main() {
         // We do this because listening on localhost when running in a container points
         // to the container's loopback interface, not the docker bridge
         let local_addr: SocketAddr = format!("0.0.0.0:{}", args.port1).parse().unwrap();
+        let local_addr2: SocketAddr = format!("0.0.0.0:{}", args.port1 + 1).parse().unwrap();
 
         // If the code is running in a docker compose setup (set by the --docker flag);
         // attempt to lookup the peer via DNS. The compose networking interface
@@ -109,6 +133,8 @@ fn main() {
                 format!("{}:{}", "127.0.0.1", args.port2).parse().unwrap()
             }
         };
+        let mut peer_addr2 = peer_addr;
+        peer_addr2.set_port(peer_addr.port() + 1);
 
         println!("Lookup successful, found peer at {:?}", peer_addr);
 
@@ -139,7 +165,17 @@ fn main() {
             println!("\n\n{}\n", "Running integration tests...".blue());
         }
 
-        let test_args = IntegrationTestArgs { party_id: args.party, fabric: fabric.clone() };
+        // Setup new ports for tests that require a network connection directly
+        let mut local_addr = local_addr;
+        local_addr.set_port(local_addr.port() + 1);
+        let mut peer_addr = peer_addr;
+        peer_addr.set_port(peer_addr.port() + 1);
+        let test_args = IntegrationTestArgs {
+            party_id: args.party,
+            local_addr,
+            peer_addr,
+            fabric: fabric.clone(),
+        };
         let mut all_success = true;
 
         for test in inventory::iter::<IntegrationTest> {

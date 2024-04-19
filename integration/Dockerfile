@@ -5,6 +5,17 @@ WORKDIR /build
 COPY ./rust-toolchain ./rust-toolchain
 RUN rustup install $(cat rust-toolchain)
 
+RUN apt-get update && apt-get install -y \
+    libsodium-dev \
+    libgmp-dev \
+    libboost-all-dev \
+    libntl-dev \
+    libssl-dev \
+    clang 
+
+ENV PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+ENV CXX=clang++
+
 # Install chef and generate a recipe
 RUN cargo install cargo-chef
 
