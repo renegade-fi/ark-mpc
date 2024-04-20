@@ -10,6 +10,8 @@ use crate::algebra::{Scalar, ScalarShare};
 ///     1. Input authentication and sharing
 ///     2. Shared values from the pre-processing phase
 pub trait PreprocessingPhase<C: CurveGroup>: Send + Sync {
+    /// dummy
+    fn print_use(&self) {}
     // === Input Authentication === //
     /// Get the local party's share of the mac key
     fn get_mac_key_share(&self) -> Scalar<C>;

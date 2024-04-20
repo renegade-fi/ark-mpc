@@ -406,6 +406,11 @@ impl<C: CurveGroup> MpcFabric<C> {
         Self::new_with_size_hint(ExecutorSizeHints::default(), network, offline_phase)
     }
 
+    /// print beaver source use
+    pub fn print_use(&self) {
+        self.inner.offline_phase.lock().expect("offline phase poisoned").print_use();
+    }
+
     /// Constructor that takes an additional size hint, indicating how much
     /// buffer space the fabric should allocate for results. The size is
     /// given in number of gates

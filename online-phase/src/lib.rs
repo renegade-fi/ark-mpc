@@ -54,7 +54,9 @@ pub mod test_helpers {
     use futures::{future, Future};
 
     use crate::{
-        algebra::{AuthenticatedPointResult, AuthenticatedScalarResult, CurvePoint, Scalar},
+        algebra::{
+            AuthenticatedPointResult, AuthenticatedScalarResult, CurvePoint, Scalar, ScalarShare,
+        },
         fabric::ExecutorSizeHints,
         network::{MockNetwork, NoRecvNetwork, UnboundedDuplexStream},
         offline_prep::{PartyIDBeaverSource, PreprocessingPhase},
@@ -96,6 +98,86 @@ pub mod test_helpers {
 
         MpcFabric::new(network, beaver_source)
     }
+    /// A beaver source that counts usage
+    pub struct CountingBeaverSource {
+        /// The underlying beaver source
+        inner: PartyIDBeaverSource,
+        /// The number of triplets that have been requested
+        triplets: u64,
+        /// The number of shared bits that have been requested
+        shared_bits: u64,
+        /// the number of input masks that have been requested
+        input_masks: u64,
+        /// The number of shared values that have been requested
+        shared_values: u64,
+        /// The number of inverse pairs that have been requested
+        inverse_pairs: u64,
+    }
+
+    impl CountingBeaverSource {
+        /// constructor
+        pub fn new(party_id: u64) -> Self {
+            Self {
+                inner: PartyIDBeaverSource::new(party_id),
+                triplets: 0,
+                shared_bits: 0,
+                input_masks: 0,
+                shared_values: 0,
+                inverse_pairs: 0,
+            }
+        }
+    }
+
+    impl PreprocessingPhase<TestCurve> for CountingBeaverSource {
+        fn print_use(&self) {
+            println!("input_masks: {}", self.input_masks);
+            println!("shared_values: {}", self.shared_values);
+            println!("inverse_pairs: {}", self.inverse_pairs);
+            println!("triplets: {}", self.triplets);
+            println!("shared_bits: {}\n\n", self.shared_bits);
+        }
+
+        fn get_mac_key_share(&self) -> Scalar<TestCurve> {
+            self.inner.get_mac_key_share()
+        }
+
+        fn next_local_input_mask(&mut self) -> (Scalar<TestCurve>, ScalarShare<TestCurve>) {
+            self.input_masks += 1;
+            self.inner.next_local_input_mask()
+        }
+
+        fn next_counterparty_input_mask(&mut self) -> ScalarShare<TestCurve> {
+            self.inner.next_counterparty_input_mask()
+        }
+
+        fn next_shared_inverse_pair(&mut self) -> (ScalarShare<TestCurve>, ScalarShare<TestCurve>) {
+            self.inverse_pairs += 1;
+            self.inner.next_shared_inverse_pair()
+        }
+
+        fn next_shared_value(&mut self) -> ScalarShare<TestCurve> {
+            self.shared_values += 1;
+            self.inner.next_shared_value()
+        }
+
+        fn next_triplet(
+            &mut self,
+        ) -> (ScalarShare<TestCurve>, ScalarShare<TestCurve>, ScalarShare<TestCurve>) {
+            self.triplets += 1;
+            self.inner.next_triplet()
+        }
+
+        fn next_shared_bit(&mut self) -> ScalarShare<TestCurve> {
+            self.shared_bits += 1;
+            self.inner.next_shared_bit()
+        }
+    }
+
+    impl Drop for CountingBeaverSource {
+        fn drop(&mut self) {
+            self.print_use();
+        }
+    }
 
     /// Run a mock MPC connected by a duplex stream as the mock network
     ///
@@ -110,8 +192,8 @@ pub mod test_helpers {
     {
         execute_mock_mpc_with_beaver_source(
             f,
-            PartyIDBeaverSource::new(PARTY0),
-            PartyIDBeaverSource::new(PARTY1),
+            CountingBeaverSource::new(PARTY0),
+            CountingBeaverSource::new(PARTY1),
         )
         .await
     }
