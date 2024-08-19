@@ -13,6 +13,7 @@ use std::{
 use ark_ec::CurveGroup;
 use ark_ff::{batch_inversion, FftField, Field, One, PrimeField, Zero};
 use ark_poly::EvaluationDomain;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::UniformRand;
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -168,16 +169,18 @@ impl<C: CurveGroup> Display for Scalar<C> {
 
 impl<C: CurveGroup> Serialize for Scalar<C> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let bytes = self.to_bytes_be();
-        bytes.serialize(serializer)
+        let mut bytes = Vec::with_capacity(n_bytes_field::<C::ScalarField>());
+        self.0.serialize_uncompressed(&mut bytes).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_bytes(&bytes)
     }
 }
 
 impl<'de, C: CurveGroup> Deserialize<'de> for Scalar<C> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let bytes = <Vec<u8>>::deserialize(deserializer)?;
-        let scalar = Scalar::from_be_bytes_mod_order(&bytes);
-        Ok(scalar)
+        let inner = C::ScalarField::deserialize_uncompressed(bytes.as_slice())
+            .map_err(serde::de::Error::custom)?;
+        Ok(Scalar(inner))
     }
 }
 
@@ -719,6 +722,17 @@ mod test {
     use futures::future;
     use itertools::Itertools;
     use rand::{thread_rng, Rng, RngCore};
+
+    /// Tests serialization and deserialization of scalars
+    #[test]
+    fn test_scalar_serialization() {
+        let mut rng = thread_rng();
+        let scalar = Scalar::<TestCurve>::random(&mut rng);
+
+        let bytes = serde_json::to_vec(&scalar).unwrap();
+        let deserialized: Scalar<TestCurve> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(scalar, deserialized);
+    }
 
     /// Tests addition of raw scalars in a circuit
     #[tokio::test]

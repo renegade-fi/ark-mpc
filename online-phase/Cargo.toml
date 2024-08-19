@@ -25,11 +25,10 @@ multithreaded_executor = [
     "dep:bitvec",
 ]
 
-[[test]]
-name = "integration"
-path = "integration/main.rs"
+[[bench]]
+name = "scalar_serialization"
 harness = false
-required-features = ["test_helpers"]
+required-features = ["benchmarks", "test_helpers"]
 
 [[bench]]
 name = "batch_ops"
