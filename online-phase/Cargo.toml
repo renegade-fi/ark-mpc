@@ -86,6 +86,7 @@ ark-serialize = "0.4"
 ark-std = { version = "0.4", features = ["parallel"] }
 digest = "0.10"
 num-bigint = "0.4"
+num-traits = "0.2"
 rand = "0.8"
 sha3 = { version = "0.10" }
 

@@ -17,6 +17,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::UniformRand;
 use itertools::Itertools;
 use num_bigint::BigUint;
+use num_traits::Num;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -136,6 +137,23 @@ impl<C: CurveGroup> Scalar<C> {
         let le_bytes = val.to_bytes_le();
         let inner = C::ScalarField::from_le_bytes_mod_order(&le_bytes);
         Scalar(inner)
+    }
+
+    /// Convert from a decimal string
+    pub fn from_decimal_string(s: &str) -> Result<Self, String> {
+        Self::from_radix_string(s, 10)
+    }
+
+    /// Convert from a hexadecimal string
+    pub fn from_hex_string(s: &str) -> Result<Self, String> {
+        let trimmed = s.trim_start_matches("0x");
+        Self::from_radix_string(trimmed, 16)
+    }
+
+    /// Convert from a string in the given radix
+    fn from_radix_string(s: &str, radix: u32) -> Result<Self, String> {
+        let bigint_val = BigUint::from_str_radix(s, radix).map_err(|e| e.to_string())?;
+        Ok(Self::from_biguint(&bigint_val))
     }
 }
 
