@@ -5,6 +5,7 @@
 // ----------------------------
 
 use std::{
+    cmp::Ordering,
     fmt::{Display, Formatter, Result as FmtResult},
     iter::{Product, Sum},
     ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -698,6 +699,12 @@ impl<C: CurveGroup> From<BigUint> for Scalar<C> {
     }
 }
 
+impl<C: CurveGroup> From<Scalar<C>> for BigUint {
+    fn from(value: Scalar<C>) -> Self {
+        value.0.into()
+    }
+}
+
 // -------------------
 // | Iterator Traits |
 // -------------------
@@ -726,6 +733,18 @@ impl<C: CurveGroup> Product for ScalarResult<C> {
             let res = args.map(Scalar::from).product();
             ResultValue::Scalar(res)
         })
+    }
+}
+
+impl<C: CurveGroup> PartialOrd for Scalar<C> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<C: CurveGroup> Ord for Scalar<C> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
