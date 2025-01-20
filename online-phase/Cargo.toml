@@ -15,9 +15,17 @@ name = "ark_mpc"
 path = "src/lib.rs"
 
 [features]
-benchmarks = []
+default = ["fabric"]
+fabric = ["types", "network"]
+network = ["types"]
+types = ["scalar", "curve", "poly"]
+scalar = []
+curve = []
+poly = []
+
+benchmarks = ["fabric"]
 stats = ["benchmarks"]
-test_helpers = ["ark-bn254"]
+test_helpers = ["ark-bn254", "fabric"]
 multithreaded_executor = [
     "dep:dashmap",
     "dep:identity-hash",

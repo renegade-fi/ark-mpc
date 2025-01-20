@@ -14,7 +14,7 @@ use futures::{Future, FutureExt};
 use itertools::{izip, Itertools};
 
 use crate::{
-    algebra::{macros::*, AuthenticatedPointResult, CurvePoint, CurvePointResult},
+    algebra::{macros::*, AuthenticatedPointResult, CurvePoint, CurvePointResult, ScalarResult},
     commitment::{HashCommitment, HashCommitmentResult},
     error::MpcError,
     fabric::{ResultId, ResultValue},
@@ -22,10 +22,7 @@ use crate::{
     ResultHandle, PARTY0,
 };
 
-use super::{
-    scalar::{BatchScalarResult, Scalar, ScalarResult},
-    ScalarShare,
-};
+use super::{scalar::Scalar, BatchScalarResult, ScalarShare};
 
 // -----------------------------
 // | AuthenticatedScalarResult |

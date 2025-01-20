@@ -9,21 +9,28 @@
 //! Defines an MPC implementation over the a generic Arkworks curve that allows
 //! for out-of-order execution of the underlying MPC circuit
 
-use algebra::{CurvePoint, Scalar};
-use ark_ec::CurveGroup;
-
-use rand::thread_rng;
-
 pub mod algebra;
-pub mod commitment;
 pub mod error;
+
+#[cfg(feature = "fabric")]
+pub mod commitment;
+
+#[cfg(feature = "fabric")]
 pub(crate) mod fabric;
+
+#[cfg(feature = "types")]
 pub mod gadgets;
+
+#[cfg(feature = "types")]
 pub mod offline_prep;
+
 #[cfg(feature = "benchmarks")]
 pub use fabric::*;
-#[cfg(not(feature = "benchmarks"))]
+
+#[cfg(all(not(feature = "benchmarks"), feature = "fabric"))]
 pub use fabric::{ExecutorSizeHints, FabricInner, MpcFabric, ResultHandle, ResultId, ResultValue};
+
+#[cfg(feature = "network")]
 pub mod network;
 
 // -------------
@@ -37,7 +44,11 @@ pub const PARTY1: u64 = 1;
 
 /// Generate a random curve point by multiplying a random scalar with the
 /// curve group generator
-pub fn random_point<C: CurveGroup>() -> CurvePoint<C> {
+#[cfg(feature = "types")]
+pub fn random_point<C: ark_ec::CurveGroup>() -> algebra::CurvePoint<C> {
+    use algebra::{CurvePoint, Scalar};
+    use rand::thread_rng;
+
     let mut rng = thread_rng();
     CurvePoint::generator() * Scalar::random(&mut rng)
 }

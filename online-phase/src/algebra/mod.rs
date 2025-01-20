@@ -1,14 +1,21 @@
 //! Defines algebraic MPC types and operations on them
 
+#[cfg(feature = "curve")]
 mod curve;
-mod macros;
-mod scalar;
+#[cfg(feature = "curve")]
+pub use curve::*;
 
+#[cfg(feature = "poly")]
 mod poly;
+#[cfg(feature = "poly")]
 pub use poly::*;
 
-pub use curve::*;
+#[cfg(feature = "scalar")]
+mod scalar;
+#[cfg(feature = "scalar")]
 pub use scalar::*;
+
+mod macros;
 
 /// Abstracts the process of binary serialization, used for commitments
 pub(crate) trait ToBytes {
