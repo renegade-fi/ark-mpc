@@ -187,7 +187,7 @@ mod test {
     use std::{collections::HashSet, thread};
 
     use itertools::Itertools;
-    use rand::{distributions::uniform::SampleRange, thread_rng, Rng};
+    use rand::{distributions::uniform::SampleRange, rng, Rng};
 
     use crate::{algebra::Scalar, test_helpers::TestCurve, ResultValue};
 
@@ -204,7 +204,7 @@ mod test {
     /// Tests a simple get and set pattern
     #[test]
     fn test_get_and_set() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let buf = test_buffer();
 
         let idx = rng.gen_range(0..DEFAULT_SIZE);
@@ -224,7 +224,7 @@ mod test {
     /// Tests various ways of getting values that are not present
     #[test]
     fn test_missing_value() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let buf = test_buffer();
 
         // A random index not yet set
@@ -242,7 +242,7 @@ mod test {
     /// Tests growing the buffer to multiple shards and then getting all values
     #[test]
     fn test_grow_and_get() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let buf = test_buffer();
 
         const N: usize = DEFAULT_SIZE * 4;
@@ -261,7 +261,7 @@ mod test {
     /// Tests setting a value that requires growing multiple shards
     #[test]
     fn test_grow_multi() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let buf = test_buffer();
 
         // Set a value well outside of the current capacity
@@ -280,7 +280,7 @@ mod test {
     fn test_set_and_get_random() {
         const N: usize = 1000;
         const MAX_IDX: usize = DEFAULT_SIZE * 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let buf = test_buffer();
 
         // Use a hash set to ensure the indices are unique
@@ -301,7 +301,7 @@ mod test {
     /// Tests data coherence between threads
     #[test]
     fn test_multithreaded_coherence() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let buf = test_buffer();
 
         let idx = (2 * DEFAULT_SIZE..3 * DEFAULT_SIZE).sample_single(&mut rng);

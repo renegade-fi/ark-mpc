@@ -49,7 +49,7 @@ pub mod benchmark_helpers {
     //! Helper methods for benchmarks
     use ark_ec::CurveGroup;
     use ark_mpc::algebra::Scalar;
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::fhe::{
         params::BGVParams,
@@ -58,7 +58,7 @@ pub mod benchmark_helpers {
 
     /// Get a random plaintext filled with random values
     pub fn random_plaintext<C: CurveGroup>(params: &BGVParams<C>) -> Plaintext<C> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut pt = Plaintext::new(params);
 
         for i in 0..pt.num_slots() {

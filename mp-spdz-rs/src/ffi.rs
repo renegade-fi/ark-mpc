@@ -186,7 +186,7 @@ unsafe impl Sync for PlaintextVector {}
 #[cfg(test)]
 mod test {
     use cxx::UniquePtr;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{rng, Rng, RngCore};
 
     use super::*;
 
@@ -231,7 +231,7 @@ mod test {
     #[test]
     fn test_bigint_to_from_bytes() {
         const N_BYTES: usize = 32;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let data = rng.gen::<[u8; N_BYTES]>();
 
         // Convert the data to a bigint
@@ -244,7 +244,7 @@ mod test {
     /// Tests addition of a plaintext to a ciphertext
     #[test]
     fn test_plaintext_addition() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, keypair) = setup_fhe(0, 254);
 
         // Add a plaintext to a ciphertext
@@ -266,7 +266,7 @@ mod test {
     /// Tests multiplication of a plaintext to a ciphertext
     #[test]
     fn test_plaintext_multiplication() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, keypair) = setup_fhe(1, 254);
 
         // Multiply a plaintext to a ciphertext
@@ -289,7 +289,7 @@ mod test {
     /// Tests addition of two encrypted values
     #[test]
     fn test_encrypted_addition() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, keypair) = setup_fhe(0, 254);
 
         // Add two ciphertexts, divide by two to avoid overflow
@@ -311,7 +311,7 @@ mod test {
     /// Tests multiplication of two encrypted values
     #[test]
     fn test_encrypted_multiplication() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, keypair) = setup_fhe(1, 254);
 
         // Multiply two ciphertexts; capped bit length to avoid overflow

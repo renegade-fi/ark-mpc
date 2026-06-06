@@ -151,7 +151,7 @@ pub fn prefix_product<C: CurveGroup>(
 mod test {
     use futures::future;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use crate::{
         algebra::{AuthenticatedScalarResult, Scalar},
@@ -164,7 +164,7 @@ mod test {
     #[tokio::test]
     async fn test_prefix_prod() {
         const N: usize = 10;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
 
         let mut expected_res = vec![values[0]];
@@ -224,7 +224,7 @@ mod test {
     #[tokio::test]
     async fn test_xor_batch() {
         const N: usize = 10;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::from(rng.gen_bool(0.5))).collect_vec();
         let b = (0..N).map(|_| Scalar::from(rng.gen_bool(0.5))).collect_vec();
 
@@ -284,7 +284,7 @@ mod test {
     #[tokio::test]
     async fn test_xor_public_batch() {
         const N: usize = 10;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::from(rng.gen_bool(0.5))).collect_vec();
         let b = (0..N).map(|_| Scalar::from(rng.gen_bool(0.5))).collect_vec();
 

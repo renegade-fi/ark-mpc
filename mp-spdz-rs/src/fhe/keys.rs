@@ -250,7 +250,7 @@ impl<C: CurveGroup> FromBytesWithParams<C> for BGVKeypair<C> {
 #[cfg(test)]
 mod test {
     use ark_mpc::algebra::Scalar;
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::fhe::keys::{BGVKeypair, BGVPublicKey, BGVSecretKey};
     use crate::fhe::params::BGVParams;
@@ -299,7 +299,7 @@ mod test {
     /// Tests encrypting and proving a single plaintext
     #[test]
     fn test_encrypt_and_prove_single() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = BGVParams::<TestCurve>::new_no_mults();
         let keypair = BGVKeypair::gen(&params);
 

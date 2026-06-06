@@ -2,7 +2,7 @@
 
 use ark_mpc::{algebra::Scalar, MpcFabric, PARTY0, PARTY1};
 use ark_mpc_offline::{
-    lowgear::{self, LowGear},
+    lowgear::LowGear,
     structs::OfflineSizingParams,
 };
 

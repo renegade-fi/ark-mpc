@@ -2,7 +2,7 @@
 
 use ark_mpc::{algebra::Scalar, test_helpers::TestCurve, GrowableBuffer};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, rng};
 use std::hint::black_box;
 
 // --------------
@@ -56,7 +56,7 @@ pub fn buffer_write__random(c: &mut Criterion) {
         let mut buffer: GrowableBuffer<Scalar<TestCurve>> = GrowableBuffer::new(buffer_size);
         group.throughput(Throughput::Elements(buffer_size as u64));
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut indices: Vec<usize> = (0..buffer_size).collect();
         indices.shuffle(&mut rng);
         group.bench_function(BenchmarkId::from_parameter(buffer_size), |b| {

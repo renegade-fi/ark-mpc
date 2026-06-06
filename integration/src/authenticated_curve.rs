@@ -8,7 +8,7 @@ use ark_mpc::{
     random_point, PARTY0, PARTY1,
 };
 use itertools::Itertools;
-use rand::thread_rng;
+use rand::rng;
 
 use crate::{
     helpers::{
@@ -297,7 +297,7 @@ fn test_batch_negation(test_args: &mut IntegrationTestArgs) -> Result<(), String
 /// Test multiplication with a public scalar
 fn test_multiplication_public_scalar(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let point = random_point();
     let scalar = Scalar::random(&mut rng);
 
@@ -319,7 +319,7 @@ fn test_multiplication_public_scalar(test_args: &mut IntegrationTestArgs) -> Res
 /// Test multiplication with a secret shared scalar
 fn test_multiplication(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample a test point, party 1 will make theirs public
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let point = random_point();
     let scalar = Scalar::random(&mut rng);
 

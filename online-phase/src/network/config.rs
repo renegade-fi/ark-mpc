@@ -2,9 +2,11 @@
 
 use std::{sync::Arc, time::Duration};
 
+use quinn::crypto::rustls::QuicClientConfig;
 use quinn::{ClientConfig, IdleTimeout, ServerConfig, TransportConfig, VarInt};
-use rcgen::RcgenError;
-use rustls::{Certificate, ClientConfig as CryptoClientConfig};
+use rcgen::Error as RcgenError;
+use rustls::ClientConfig as CryptoClientConfig;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
 use crate::error::SetupError;
 use crate::network::cert_verifier::PassThroughCertVerifier;
@@ -34,22 +36,18 @@ pub fn build_configs() -> Result<(ClientConfig, ServerConfig), SetupError> {
     // Generate a self-signed server certificate for the QUIC connection
     let (cert, key) = generate_cert().map_err(|_| SetupError::KeygenError)?;
 
-    // Setup the certificate root
-    let mut roots = rustls::RootCertStore::empty();
-    roots.add(&cert).map_err(|_| SetupError::ServerSetupError)?;
-
-    // Pass the self-signed cert to the client, and disable auth; p2p auth should
-    // happen at a higher layer
-    let mut client_crypto_config = CryptoClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    client_crypto_config
+    // Disable certificate authenticity checks; p2p auth should happen at a
+    // higher layer
+    let client_crypto_config = CryptoClientConfig::builder()
         .dangerous()
-        .set_certificate_verifier(Arc::new(PassThroughCertVerifier::new()));
+        .with_custom_certificate_verifier(Arc::new(PassThroughCertVerifier::new()))
+        .with_no_client_auth();
 
     // 3. Client and server setup
-    let mut client_config = ClientConfig::new(Arc::new(client_crypto_config));
+    let mut client_config = ClientConfig::new(Arc::new(
+        QuicClientConfig::try_from(client_crypto_config)
+            .map_err(|_| SetupError::ServerSetupError)?,
+    ));
     client_config.transport_config(transport.clone());
 
     let mut server_config = ServerConfig::with_single_cert(vec![cert], key)
@@ -61,13 +59,9 @@ pub fn build_configs() -> Result<(ClientConfig, ServerConfig), SetupError> {
 
 /// Generates a self-signed certificate to construct TLS 1.3 connections with
 /// borrowed from https://github.com/maidsafe/qp2p/blob/main/src/config.rs#L317
-fn generate_cert() -> Result<(Certificate, rustls::PrivateKey), RcgenError> {
-    let cert = rcgen::generate_simple_self_signed(vec![SERVER_NAME.to_string()])?;
+fn generate_cert() -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), RcgenError> {
+    let rcgen::CertifiedKey { cert, signing_key } =
+        rcgen::generate_simple_self_signed(vec![SERVER_NAME.to_string()])?;
 
-    let key = cert.serialize_private_key_der();
-    let cert = cert.serialize_der().unwrap();
-
-    let key = rustls::PrivateKey(key);
-    let cert = Certificate(cert);
-    Ok((cert, key))
+    Ok((cert.der().clone(), PrivateKeyDer::from(signing_key)))
 }

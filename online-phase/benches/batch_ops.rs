@@ -10,7 +10,7 @@ use ark_mpc::{
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use futures::future;
 use itertools::Itertools;
-use rand::thread_rng;
+use rand::rng;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 /// A scalar with curve generics defined
@@ -54,7 +54,7 @@ fn bench_batch_mul(c: &mut Criterion) {
             async_bencher.iter_custom(|n_iters| async move {
                 let mut total_time = Duration::default();
                 for _ in 0..n_iters {
-                    let mut rng = thread_rng();
+                    let mut rng = rng();
                     let a = (0..batch_size).map(|_| Scalar::random(&mut rng)).collect_vec();
                     let b = (0..batch_size).map(|_| Scalar::random(&mut rng)).collect_vec();
 

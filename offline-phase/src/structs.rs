@@ -451,7 +451,7 @@ mod test {
     use ark_mpc::{
         algebra::Scalar, test_helpers::execute_mock_mpc_with_beaver_source, PARTY0, PARTY1,
     };
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::test_helpers::mock_lowgear_with_triples;
 
@@ -471,7 +471,7 @@ mod test {
         .await;
 
         // Run a mock mpc using the lowgear offline phase
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
         let expected = a * b;

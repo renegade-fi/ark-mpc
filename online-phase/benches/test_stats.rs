@@ -1,13 +1,13 @@
 //! A simple benchmark for testing that stats collection is properly working
 
 use ark_mpc::{algebra::Scalar, test_helpers::execute_mock_mpc, PARTY0, PARTY1};
-use rand::{distributions::uniform::SampleRange, thread_rng};
+use rand::{distributions::uniform::SampleRange, rng};
 
 #[tokio::main]
 async fn main() {
     // Run the following circuit with the `stats` feature enabled and
     // the stats will be dumped at the end of execution
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let depth = (0usize..=1000).sample_single(&mut rng);
 
     let value1 = Scalar::random(&mut rng);

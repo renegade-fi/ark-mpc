@@ -2,11 +2,11 @@ use std::time::{Duration, Instant};
 
 use ark_mpc::{algebra::Scalar, test_helpers::TestCurve};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use rand::thread_rng;
+use rand::rng;
 
 /// Benchmark the serialization of scalars
 fn bench_scalar_serialization(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut group = c.benchmark_group("scalar_serialization");
     group.throughput(Throughput::Elements(1));
 
@@ -29,7 +29,7 @@ fn bench_scalar_serialization(c: &mut Criterion) {
 
 /// Benchmark the deserialization of scalars
 fn bench_scalar_deserialization(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut group = c.benchmark_group("scalar_serialization");
     group.throughput(Throughput::Elements(1));
 

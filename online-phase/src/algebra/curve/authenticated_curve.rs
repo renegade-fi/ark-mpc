@@ -865,7 +865,7 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{
         algebra::{AuthenticatedPointResult, CurvePoint, Scalar},
@@ -1136,7 +1136,7 @@ mod test {
     /// Tests multiplication with a constant scalar
     #[tokio::test]
     async fn test_mul_constant() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let p = random_point();
         let s = Scalar::random(&mut rng);
         let expected = p * s;
@@ -1155,7 +1155,7 @@ mod test {
     /// Tests multiplication with a public (allocated but not shared) scalar
     #[tokio::test]
     async fn test_mul_public_scalar() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let p = random_point();
         let s = Scalar::random(&mut rng);
         let expected = p * s;
@@ -1175,7 +1175,7 @@ mod test {
     /// Tests multiplication with a shared scalar
     #[tokio::test]
     async fn test_mul_shared_scalar() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let p = random_point();
         let s = Scalar::random(&mut rng);
         let expected = p * s;
@@ -1197,7 +1197,7 @@ mod test {
     #[tokio::test]
     async fn test_batch_mul_public() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| random_point()).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
@@ -1222,7 +1222,7 @@ mod test {
     #[tokio::test]
     async fn test_batch_mul() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| random_point()).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
@@ -1247,7 +1247,7 @@ mod test {
     #[tokio::test]
     async fn test_batch_mul_generator() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let expected_res = a.iter().map(|x| x * CurvePoint::<TestCurve>::generator()).collect_vec();
 
@@ -1273,7 +1273,7 @@ mod test {
     #[tokio::test]
     async fn test_msm() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| random_point()).collect_vec();
         let expected_res = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum();

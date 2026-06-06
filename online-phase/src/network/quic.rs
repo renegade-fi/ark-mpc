@@ -267,7 +267,6 @@ where
             .as_mut()
             .unwrap()
             .finish()
-            .await
             .map_err(|_| MpcNetworkError::ConnectionTeardownError)
     }
 }

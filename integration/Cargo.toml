@@ -5,21 +5,21 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography === #
-ark-bn254 = "0.4"
-ark-ec = "0.4"
+ark-bn254 = "0.6"
+ark-ec = "0.6"
 ark-mpc = { path = "../online-phase", features = ["test_helpers"] }
 ark-mpc-offline = { path = "../offline-phase", features = ["parallel"] }
 
 # === Runtime + Harness === #
-clap = { version = "3.2.8", features = ["derive"] }
-colored = "2"
-env_logger = "0.10"
+clap = { version = "4.6.1", features = ["derive"] }
+colored = "3"
+env_logger = "0.11"
 futures = "0.3"
 inventory = "0.3"
-tokio = "1.26"
+tokio = "1.52"
 
 # === Misc === #
-dns-lookup = "1.0"
-itertools = "0.12"
-rand = "0.8"
+dns-lookup = "3.0"
+itertools = "0.14"
+rand = "0.10"
 tracing = "0.1"

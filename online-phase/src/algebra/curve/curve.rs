@@ -155,9 +155,9 @@ where
         let f2 = Self::hash_to_field(&buf[n_bytes / 2..]);
 
         // Map to curve
-        let mapper = SWUMap::<C::Config>::new()?;
-        let p1 = mapper.map_to_curve(f1)?;
-        let p2 = mapper.map_to_curve(f2)?;
+        SWUMap::<C::Config>::check_parameters()?;
+        let p1 = SWUMap::<C::Config>::map_to_curve(f1)?;
+        let p2 = SWUMap::<C::Config>::map_to_curve(f2)?;
 
         // Clear the cofactor
         let p1_clear = p1.clear_cofactor();
@@ -751,7 +751,7 @@ impl<C: CurveGroup> CurvePointResult<C> {
 
 #[cfg(test)]
 mod test {
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{test_helpers::mock_fabric, test_helpers::TestCurve};
 
@@ -763,7 +763,7 @@ mod test {
     /// Generate a random point, by multiplying the basepoint with a random
     /// scalar
     pub fn random_point() -> TestCurvePoint {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let scalar = Scalar::random(&mut rng);
         let point = TestCurvePoint::generator() * scalar;
         point * scalar
@@ -792,7 +792,7 @@ mod test {
     async fn test_scalar_mul() {
         let fabric = mock_fabric();
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let s1 = Scalar::<TestCurve>::random(&mut rng);
         let p1 = random_point();
 

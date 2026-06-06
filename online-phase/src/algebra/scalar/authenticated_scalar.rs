@@ -1115,7 +1115,7 @@ mod tests {
     use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
     use futures::future;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{rng, Rng, RngCore};
 
     use crate::{
         algebra::{poly_test_helpers::TestPolyField, scalar::Scalar, AuthenticatedScalarResult},
@@ -1130,7 +1130,7 @@ mod tests {
     /// Tests addition with a constant value
     #[tokio::test]
     async fn test_add_constant() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1149,7 +1149,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_add_constant() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
@@ -1174,7 +1174,7 @@ mod tests {
     /// Tests addition with a public value    
     #[tokio::test]
     async fn test_add_public() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1194,7 +1194,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_add_public() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
@@ -1220,7 +1220,7 @@ mod tests {
     /// Tests adding two shared values
     #[tokio::test]
     async fn test_add() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1239,7 +1239,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_add() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
@@ -1266,7 +1266,7 @@ mod tests {
     #[tokio::test]
     async fn test_sum() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let expected_res = values.iter().cloned().sum();
@@ -1292,7 +1292,7 @@ mod tests {
     /// Test subtraction with a constant value
     #[tokio::test]
     async fn test_sub_constant() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1310,7 +1310,7 @@ mod tests {
     /// Tests subtraction with a public value
     #[tokio::test]
     async fn test_sub_public() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1330,7 +1330,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_sub_public() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
 
@@ -1355,7 +1355,7 @@ mod tests {
     /// Test subtraction across non-commutative types
     #[tokio::test]
     async fn test_sub() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let value1 = Scalar::random(&mut rng);
         let value2 = Scalar::random(&mut rng);
 
@@ -1386,7 +1386,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_sub() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
 
@@ -1415,7 +1415,7 @@ mod tests {
     /// Tests negation of a shared value
     #[tokio::test]
     async fn test_negation() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let value = Scalar::random(&mut rng);
 
         let (res, _) = execute_mock_mpc(|fabric| async move {
@@ -1433,7 +1433,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_negation() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
 
         let expected_res = values.iter().map(|v| -v).collect_vec();
@@ -1459,7 +1459,7 @@ mod tests {
     /// Tests multiplication between a constant and a shared value
     #[tokio::test]
     async fn test_mul_constant() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1477,7 +1477,7 @@ mod tests {
     /// Tests multiplication between a public and a shared value
     #[tokio::test]
     async fn test_mul_public() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1496,7 +1496,7 @@ mod tests {
     /// Tests multiplication between two shared values
     #[tokio::test]
     async fn test_mul() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -1515,7 +1515,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_mul_constant() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
 
@@ -1544,7 +1544,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_mul_public() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
 
@@ -1571,7 +1571,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_mul() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
 
@@ -1600,7 +1600,7 @@ mod tests {
     /// Tests division between a shared and public scalar
     #[tokio::test]
     async fn test_public_division() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let value1 = Scalar::random(&mut rng);
         let value2 = Scalar::random(&mut rng);
 
@@ -1620,7 +1620,7 @@ mod tests {
     /// Tests division between two authenticated values
     #[tokio::test]
     async fn test_division() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let value1 = Scalar::random(&mut rng);
         let value2 = Scalar::random(&mut rng);
 
@@ -1641,7 +1641,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_div() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let a_values = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let b_values = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
@@ -1692,7 +1692,7 @@ mod tests {
     async fn test_batch_inverse() {
         const N: usize = 10;
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let values = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let expected_res = values.iter().map(|v| v.inverse()).collect_vec();
 
@@ -1721,7 +1721,7 @@ mod tests {
     /// Tests exponentiation
     #[tokio::test]
     async fn test_pow() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let exp = rng.next_u64();
         let value = Scalar::<TestCurve>::random(&mut rng);
 
@@ -1740,7 +1740,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fft() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let n: usize = rng.gen_range(0..100);
         let domain_size = rng.gen_range(n..10 * n);
 
@@ -1782,7 +1782,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ifft() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let n: usize = rng.gen_range(0..100);
         let domain_size = rng.gen_range(n..10 * n);
 

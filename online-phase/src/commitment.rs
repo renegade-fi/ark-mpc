@@ -3,7 +3,7 @@
 
 use ark_ec::CurveGroup;
 use itertools::Itertools;
-use rand::thread_rng;
+use rand::rng;
 use sha3::{Digest, Sha3_256};
 
 use crate::{
@@ -64,7 +64,7 @@ impl<C: CurveGroup, T: From<ResultValue<C>> + ToBytes> HashCommitmentResult<C, T
         assert!(!values.is_empty(), "Cannot commit to an empty set of values");
         let fabric = &values[0].fabric;
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let blinder = Scalar::random(&mut rng);
         let ids = values.iter().map(|v| v.id()).collect_vec();
 
@@ -93,7 +93,7 @@ impl<C: CurveGroup, T: From<ResultValue<C>> + ToBytes> HashCommitmentResult<C, T
 mod test {
     use futures::future;
     use itertools::Itertools;
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{
         algebra::{CurvePoint, Scalar, ToBytes},
@@ -118,7 +118,7 @@ mod test {
     /// Tests committing and verifying a scalar
     #[tokio::test]
     async fn test_scalar_commit() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let value = Scalar::<TestCurve>::random(&mut rng);
 
         let (res, _) = execute_mock_mpc(|fabric| async move {
@@ -136,7 +136,7 @@ mod test {
     #[tokio::test]
     async fn test_scalar_batch_commit() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let values = (0..N).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
 
         let (res, _) = execute_mock_mpc(|fabric| {
@@ -156,7 +156,7 @@ mod test {
     /// Tests committing and verifying a curve point
     #[tokio::test]
     async fn test_point_commit() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let value = CurvePoint::<TestCurve>::generator() * Scalar::<TestCurve>::random(&mut rng);
 
         let (res, _) = execute_mock_mpc(|fabric| async move {
@@ -174,7 +174,7 @@ mod test {
     #[tokio::test]
     async fn test_point_batch_commit() {
         const N: usize = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let values = (0..N)
             .map(|_| CurvePoint::<TestCurve>::generator() * Scalar::<TestCurve>::random(&mut rng))
             .collect_vec();
@@ -196,7 +196,7 @@ mod test {
     /// Tests an invalid commitment
     #[tokio::test]
     async fn test_invalid_commit() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let value = Scalar::<TestCurve>::random(&mut rng);
 
         let (res, _) = execute_mock_mpc(|fabric| async move {

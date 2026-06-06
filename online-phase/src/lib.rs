@@ -47,9 +47,9 @@ pub const PARTY1: u64 = 1;
 #[cfg(feature = "types")]
 pub fn random_point<C: ark_ec::CurveGroup>() -> algebra::CurvePoint<C> {
     use algebra::{CurvePoint, Scalar};
-    use rand::thread_rng;
+    use rand::rng;
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
     CurvePoint::generator() * Scalar::random(&mut rng)
 }
 

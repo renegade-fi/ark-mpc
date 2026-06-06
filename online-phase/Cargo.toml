@@ -82,48 +82,48 @@ required-features = ["benchmarks", "stats", "test_helpers"]
 async-trait = "0.1"
 crossbeam = "0.8"
 futures = "0.3"
-kanal = "0.1.0-pre8"
-tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
+kanal = "0.1.1"
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread"] }
 
 # == Arithemtic + Crypto == #
-ark-bn254 = { version = "0.4", optional = true }
-ark-ec = { version = "0.4", features = ["parallel"] }
-ark-ff = { version = "0.4", features = ["parallel"] }
-ark-poly = { version = "0.4", features = ["std", "parallel"] }
-ark-serialize = "0.4"
-ark-std = { version = "0.4", features = ["parallel"] }
-digest = "0.10"
+ark-bn254 = { version = "0.6", optional = true }
+ark-ec = { version = "0.6", features = ["parallel"] }
+ark-ff = { version = "0.6", features = ["parallel"] }
+ark-poly = { version = "0.6", features = ["std", "parallel"] }
+ark-serialize = "0.6"
+ark-std = { version = "0.6", features = ["parallel"] }
+digest = "0.11"
 num-bigint = "0.4"
 num-traits = "0.2"
-rand = "0.8"
-sha3 = { version = "0.10" }
+rand = "0.10"
+sha3 = { version = "0.12" }
 
-# == Networking + Messaging == # 
-rcgen = "0.9"
-rustls = { version = "0.20", features = ["dangerous_configuration"] }
+# == Networking + Messaging == #
+rcgen = "0.14"
+rustls = { version = "0.23", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-quinn = { version = "0.9", features = ["tls-rustls", "native-certs"] }
+quinn = { version = "0.11", features = [] }
 
 # == Multithreaded Executor == #
 bitvec = { version = "1.0", optional = true }
-dashmap = { version = "5.5", optional = true }
+dashmap = { version = "6.2", optional = true }
 identity-hash = { version = "0.1", optional = true }
-rayon = { version = "1.8", optional = true }
+rayon = { version = "1.12", optional = true }
 
 # == Misc == #
-bytes = "1.2"
-itertools = "0.10"
-rustc-hash = "1.1"
+bytes = "1.11"
+itertools = "0.14"
+rustc-hash = "2.1"
 tracing = { version = "0.1", features = ["log"] }
-zeroize = "1.3"
+zeroize = "1.8"
 
 [dev-dependencies]
-clap = { version = "3.2.8", features = ["derive"] }
-colored = "2"
-criterion = { version = "0.5", features = ["async", "async_tokio"] }
+clap = { version = "4.6.1", features = ["derive"] }
+colored = "3"
+criterion = { version = "0.8", features = ["async", "async_tokio"] }
 cpuprofiler = "0.0.4"
-dns-lookup = "1.0"
-env_logger = "0.10"
+dns-lookup = "3.0"
+env_logger = "0.11"
 gperftools = { version = "0.2", features = ["heap"] }
 inventory = "0.3"

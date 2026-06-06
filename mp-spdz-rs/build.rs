@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use std::path::Path;
 
 // Build entrypoint
 fn main() {
@@ -48,13 +49,11 @@ fn main() {
     link_lib("gmpxx");
 
     add_link_path("boost");
-    link_lib("boost_system");
-    link_lib("boost_filesystem");
-    link_lib("boost_iostreams");
-    if get_host_vendor() == "apple" {
-        println!("cargo:rustc-link-arg=-lboost_thread-mt");
-    } else {
-        println!("cargo:rustc-link-arg=-lboost_thread");
+    link_boost_lib("boost_system", false);
+    link_boost_lib("boost_filesystem", true);
+    link_boost_lib("boost_iostreams", true);
+    if !link_boost_lib("boost_thread-mt", false) {
+        link_boost_lib("boost_thread", true);
     }
 
     // Link in realtime extensions if running on linux
@@ -88,6 +87,34 @@ fn add_link_path(lib: &str) {
 /// Link a library into the object
 fn link_lib(lib: &str) {
     println!("cargo:rustc-link-lib=static={lib}");
+}
+
+/// Link a boost library, preferring static when available and otherwise
+/// falling back to dynamic.
+///
+/// Returns true when the library was found and linked.
+fn link_boost_lib(lib: &str, required: bool) -> bool {
+    let lib_path = find_lib_path("boost");
+
+    let static_path = format!("{lib_path}/lib{lib}.a");
+    if Path::new(&static_path).exists() {
+        println!("cargo:rustc-link-lib=static={lib}");
+        return true;
+    }
+
+    let dylib_ext = if get_host_vendor() == "apple" { "dylib" } else { "so" };
+    let dylib_path = format!("{lib_path}/lib{lib}.{dylib_ext}");
+    if Path::new(&dylib_path).exists() {
+        println!("cargo:rustc-link-lib=dylib={lib}");
+        return true;
+    }
+
+    if required {
+        panic!("required boost library `{lib}` not found in `{lib_path}`");
+    }
+
+    println!("cargo:warning=optional boost library `{lib}` not found in `{lib_path}`, skipping");
+    false
 }
 
 /// Find the include location for a package

@@ -80,7 +80,7 @@ pub mod poly_test_helpers {
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
     use ark_std::UniformRand;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use crate::{algebra::Scalar, network::PartyId, test_helpers::TestCurve, MpcFabric};
 
@@ -91,7 +91,7 @@ pub mod poly_test_helpers {
 
     /// Generate a random polynomial given a degree bound
     pub fn random_poly(degree_bound: usize) -> DensePolynomial<TestPolyField> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         // Sample a random degree below the bound
         let degree = rng.gen_range(1..degree_bound);

@@ -242,7 +242,7 @@ mod test {
         params::BGVParams,
         plaintext::{Plaintext, PlaintextVector},
     };
-    use rand::{rngs::OsRng, thread_rng};
+    use rand::{rngs::OsRng, rng};
 
     use crate::{
         structs::ValueMacBatch,
@@ -262,7 +262,7 @@ mod test {
     fn create_shares(
         values: &[Scalar<TestCurve>],
     ) -> (Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>) {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut shares1 = Vec::new();
         let mut shares2 = Vec::new();
 

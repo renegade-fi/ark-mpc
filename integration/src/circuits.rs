@@ -5,7 +5,7 @@ use ark_mpc::{
     random_point, PARTY0, PARTY1,
 };
 use itertools::Itertools;
-use rand::thread_rng;
+use rand::rng;
 
 use crate::{
     helpers::{
@@ -23,7 +23,7 @@ fn test_inner_product(test_args: &mut IntegrationTestArgs) -> Result<(), String>
     // Sample local values
     let n = 100;
     let fabric = &test_args.fabric;
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let my_vals = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
 
@@ -56,7 +56,7 @@ fn test_msm(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     // Sample local values
     let n = 100;
     let fabric = &test_args.fabric;
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let my_scalars = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
     let my_points = (0..n).map(|_| random_point()).collect_vec();
@@ -89,14 +89,14 @@ fn test_msm(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
 /// Tests evaluation of a shared polynomial on a public input
 fn test_polynomial_eval(test_args: &mut IntegrationTestArgs) -> Result<(), String> {
     let fabric = &test_args.fabric;
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let public_modifier = Scalar::random(&mut rng);
     let public_modifier =
         share_plaintext_value(fabric.allocate_scalar(public_modifier), PARTY0, fabric);
 
     // Party 0 and party 1 choose a public input
     let fabric = &test_args.fabric;
-    let my_x = fabric.allocate_scalar(Scalar::random(&mut thread_rng()));
+    let my_x = fabric.allocate_scalar(Scalar::random(&mut rng));
     let x = fabric.exchange_value(my_x.clone()) + my_x;
     let x_res = await_result(x.clone());
 

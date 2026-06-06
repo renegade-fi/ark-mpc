@@ -36,14 +36,14 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
 mod test {
     use ark_mpc::{algebra::Scalar, network::MpcNetwork, PARTY0};
     use mp_spdz_rs::fhe::ciphertext::Ciphertext;
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::test_helpers::{encrypt_val, mock_lowgear, plaintext_val, TestCurve};
 
     /// Tests the setup phase, i.e. that encrypted values are correctly shared
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_key_exchange() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let val1 = Scalar::<TestCurve>::random(&mut rng);
         let val2 = Scalar::<TestCurve>::random(&mut rng);
 

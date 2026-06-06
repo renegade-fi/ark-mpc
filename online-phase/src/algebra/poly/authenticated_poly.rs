@@ -577,7 +577,7 @@ impl_borrow_variants!(AuthenticatedDensePoly<C>, Div, div, /, AuthenticatedDense
 #[cfg(test)]
 mod test {
     use ark_poly::Polynomial;
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{
         algebra::{
@@ -594,7 +594,7 @@ mod test {
     /// Test evaluating a polynomial at a given point
     #[tokio::test]
     async fn test_eval() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let poly = random_poly(DEGREE_BOUND);
         let point = Scalar::random(&mut rng);
 
@@ -823,7 +823,7 @@ mod test {
     /// Tests multiplying by a public constant scalar
     #[tokio::test]
     async fn test_scalar_mul_constant() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let poly = random_poly(DEGREE_BOUND);
         let scaling_factor = Scalar::random(&mut rng);
 
@@ -845,7 +845,7 @@ mod test {
     /// Tests multiplying by a public result
     #[tokio::test]
     async fn test_scalar_mul_public() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let poly = random_poly(DEGREE_BOUND);
         let scaling_factor = Scalar::random(&mut rng);
 
@@ -869,7 +869,7 @@ mod test {
     /// Tests multiplying by a shared scalar
     #[tokio::test]
     async fn test_scalar_mul() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let poly = random_poly(DEGREE_BOUND);
         let scaling_factor = Scalar::random(&mut rng);
 

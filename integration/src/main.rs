@@ -93,7 +93,7 @@ struct Args {
     #[clap(short, long, value_parser)]
     test: Option<String>,
     /// Whether running in docker or not, used for peer lookup
-    #[clap(long, takes_value = false, value_parser)]
+    #[clap(long)]
     docker: bool,
 }
 
@@ -129,11 +129,14 @@ fn main() {
         let peer_addr: SocketAddr = {
             if args.docker {
                 let other_host_alias = format!("party{}", if args.party == 1 { 0 } else { 1 });
-                let hosts = lookup_host(other_host_alias.as_str()).unwrap();
+                let hosts = lookup_host(other_host_alias.as_str())
+                    .unwrap()
+                    .collect::<Vec<_>>();
 
                 println!("Lookup successful for {}... found hosts: {:?}", other_host_alias, hosts);
 
-                format!("{}:{}", hosts[0], args.port2).parse().unwrap()
+                let peer_host = hosts.first().expect("DNS lookup returned no hosts");
+                format!("{}:{}", peer_host, args.port2).parse().unwrap()
             } else {
                 format!("{}:{}", "127.0.0.1", args.port2).parse().unwrap()
             }

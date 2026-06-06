@@ -8,14 +8,14 @@ use ark_mpc::{
 };
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itertools::Itertools;
-use rand::thread_rng;
+use rand::rng;
 
 /// The maximum power of two to scale the MSM benchmark to
 const MAX_POWER_OF_TWO: usize = 16; // 2^16 = 65536
 
 /// Measures the raw throughput of a native MSM
 pub fn bench_native_msm(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let mut group = c.benchmark_group("native_msm");
     for n_elems in (0..MAX_POWER_OF_TWO).map(|i| 1 << i) {

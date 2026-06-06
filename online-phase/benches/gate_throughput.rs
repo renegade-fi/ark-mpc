@@ -9,7 +9,7 @@ use criterion::{
     criterion_group, criterion_main, profiler::Profiler as CriterionProfiler, BenchmarkId,
     Criterion, Throughput,
 };
-use rand::{rngs::OsRng, thread_rng};
+use rand::{rngs::OsRng, rng};
 use tokio::runtime::Builder as RuntimeBuilder;
 
 // -----------
@@ -54,7 +54,7 @@ pub fn mock_fabric(size_hint: usize) -> MpcFabric<TestCurve> {
 
 /// Measures the raw throughput of scalar addition
 pub fn scalar_addition(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut res = Scalar::<TestCurve>::random(&mut rng);
 
     let mut group = c.benchmark_group("raw_scalar_addition");

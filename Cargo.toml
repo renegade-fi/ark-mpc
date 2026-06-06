@@ -1,5 +1,6 @@
 [workspace]
 members = ["integration", "mp-spdz-rs", "offline-phase", "online-phase"]
+resolver = "3"
 
 [profile.bench]
 opt-level = 3

@@ -365,7 +365,7 @@ impl<C: CurveGroup> Mul for &PlaintextVector<C> {
 
 #[cfg(test)]
 mod tests {
-    use rand::thread_rng;
+    use rand::rng;
 
     use super::*;
     use crate::{compare_bytes, TestCurve};
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_add() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = get_params();
         let val1: Scalar<TestCurve> = Scalar::random(&mut rng);
         let val2: Scalar<TestCurve> = Scalar::random(&mut rng);
@@ -406,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_sub() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = get_params();
         let val1: Scalar<TestCurve> = Scalar::random(&mut rng);
         let val2: Scalar<TestCurve> = Scalar::random(&mut rng);
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_mul() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = get_params();
         let val1: Scalar<TestCurve> = Scalar::random(&mut rng);
         let val2: Scalar<TestCurve> = Scalar::random(&mut rng);

@@ -34,7 +34,7 @@ pub(crate) mod test_helpers {
         params::BGVParams,
         plaintext::Plaintext,
     };
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{lowgear::LowGear, structs::ValueMacBatch};
 
@@ -84,7 +84,7 @@ pub(crate) mod test_helpers {
     pub fn generate_triples(
         n: usize,
     ) -> (Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>) {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let b = (0..n).map(|_| Scalar::<TestCurve>::random(&mut rng)).collect_vec();
         let c = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect_vec();
@@ -108,7 +108,7 @@ pub(crate) mod test_helpers {
     pub fn generate_secret_shares(
         values: &[Scalar<TestCurve>],
     ) -> (Vec<Scalar<TestCurve>>, Vec<Scalar<TestCurve>>) {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut shares1 = Vec::with_capacity(values.len());
         let mut shares2 = Vec::with_capacity(values.len());
         for value in values {
@@ -184,7 +184,7 @@ pub(crate) mod test_helpers {
         net2: MockNetwork<TestCurve>,
     ) -> (LowGear<TestCurve, MockNetwork<TestCurve>>, LowGear<TestCurve, MockNetwork<TestCurve>>)
     {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut lowgear1 = LowGear::new(net1);
         let mut lowgear2 = LowGear::new(net2);
 

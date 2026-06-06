@@ -243,7 +243,7 @@ impl<C: CurveGroup> CiphertextPoK<C> {
 #[cfg(test)]
 mod test {
     use ark_mpc::algebra::Scalar;
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::fhe::{keys::BGVKeypair, params::BGVParams, plaintext::Plaintext};
     use crate::{compare_bytes, FromBytesWithParams, TestCurve, ToBytes};
@@ -282,7 +282,7 @@ mod test {
     /// Tests serialization and deserialization of a ciphertext
     #[test]
     fn test_serde() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, keypair) = setup_fhe();
         let plaintext = plaintext_int(Scalar::random(&mut rng), &params);
         let ciphertext = keypair.encrypt(&plaintext);
@@ -296,7 +296,7 @@ mod test {
     /// Tests addition of a ciphertext with a plaintext
     #[test]
     fn test_ciphertext_plaintext_addition() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, mut keypair) = setup_fhe();
 
         // Add a ciphertext with a plaintext
@@ -319,7 +319,7 @@ mod test {
     /// Tests multiplication of a ciphertext with a plaintext
     #[test]
     fn test_ciphertext_plaintext_multiplication() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, mut keypair) = setup_fhe();
 
         // Multiply a ciphertext with a plaintext
@@ -342,7 +342,7 @@ mod test {
     /// Tests addition of two ciphertexts
     #[test]
     fn test_ciphertext_ciphertext_addition() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, mut keypair) = setup_fhe();
 
         // Add two ciphertexts
@@ -365,7 +365,7 @@ mod test {
     /// Tests multiplication of two ciphertexts
     #[test]
     fn test_ciphertext_ciphertext_multiplication() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let (params, mut keypair) = setup_fhe();
 
         // Multiply two ciphertexts

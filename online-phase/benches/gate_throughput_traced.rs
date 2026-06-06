@@ -10,7 +10,7 @@ use ark_mpc::{
 use clap::Parser;
 use cpuprofiler::PROFILER;
 use gperftools::HEAP_PROFILER;
-use rand::thread_rng;
+use rand::rng;
 
 // -----------
 // | Helpers |
@@ -82,7 +82,7 @@ async fn main() {
     let allocation_time = start_time.elapsed();
 
     start_cpu_profiler(args.cpu_profiled);
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let base = Scalar::random(&mut rng);
     let base_res = fabric.allocate_scalar(base);
 

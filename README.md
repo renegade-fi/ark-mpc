@@ -22,7 +22,7 @@ use ark_mpc::{
     PARTY0, PARTY1,
 };
 use ark_curve25519::EdwardsProjective as Curve25519Projective;
-use rand::thread_rng;
+use rand::rng;
 
 type Curve = Curve25519Projective;
 
@@ -36,7 +36,7 @@ async fn main() {
     let network = QuicTwoPartyNet::new(PARTY0, local_addr, peer_addr);
 
     // MPC circuit
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let my_val = Scalar::<Curve>::random(&mut rng);
     let fabric = MpcFabric::new(network, beaver);
 

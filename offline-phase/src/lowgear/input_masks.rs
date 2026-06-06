@@ -4,7 +4,7 @@ use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
 use itertools::Itertools;
 use mp_spdz_rs::fhe::plaintext::Plaintext;
-use rand::rngs::OsRng;
+use rand::rng;
 
 use crate::{error::LowGearError, structs::ValueMacBatch};
 
@@ -23,7 +23,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         }
 
         // Each party generates their values, shares, and mac shares
-        let mut rng = OsRng;
+        let mut rng = rng();
         let my_values = (0..n).map(|_| Scalar::<C>::random(&mut rng)).collect_vec();
         let my_share = (0..n).map(|_| Scalar::<C>::random(&mut rng)).collect_vec();
 

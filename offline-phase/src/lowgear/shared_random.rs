@@ -4,7 +4,7 @@ use ark_ec::CurveGroup;
 use ark_mpc::{algebra::Scalar, network::MpcNetwork};
 use itertools::Itertools;
 use mp_spdz_rs::fhe::plaintext::PlaintextVector;
-use rand::rngs::OsRng;
+use rand::rng;
 
 use crate::{error::LowGearError, structs::ValueMacBatch};
 
@@ -40,7 +40,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
         n: usize,
     ) -> Result<Vec<Scalar<C>>, LowGearError> {
         // Generate local random values
-        let mut rng = OsRng;
+        let mut rng = rng();
         let my_shares = (0..n).map(|_| Scalar::random(&mut rng)).collect_vec();
         let their_shares = self.commit_reveal(&my_shares).await?;
 
@@ -59,7 +59,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin + Send> LowGear<C, N> {
     ) -> Result<ValueMacBatch<C>, LowGearError> {
         // Each party generates shares locally with the represented value implicitly
         // defined as the sum of the shares
-        let mut rng = OsRng;
+        let mut rng = rng();
         let my_shares = (0..n).map(|_| Scalar::<C>::random(&mut rng)).collect_vec();
 
         let pt_vec = PlaintextVector::from_scalars(&my_shares, &self.params);

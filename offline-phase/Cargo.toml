@@ -14,9 +14,9 @@ parallel = [
 
 [dependencies]
 # === Crypto + Arithmetic === #
-ark-ec = "0.4"
-ark-ff = "0.4"
-ark-std = "0.4"
+ark-ec = "0.6"
+ark-ff = "0.6"
+ark-std = "0.6"
 ark-mpc = { path = "../online-phase" }
 
 mp-spdz-rs = { path = "../mp-spdz-rs" }
@@ -25,12 +25,12 @@ mp-spdz-rs = { path = "../mp-spdz-rs" }
 futures = "0.3"
 
 # === Misc Dependencies === #
-itertools = "0.10"
-rand = "0.8"
-rayon = { version = "1.10", optional = true }
-sha3 = { version = "0.10" }
+itertools = "0.14"
+rand = "0.10"
+rayon = { version = "1.12", optional = true }
+sha3 = { version = "0.12" }
 
 [dev-dependencies]
-ark-bn254 = "0.4"
+ark-bn254 = "0.6"
 ark-mpc = { path = "../online-phase", features = ["test_helpers"] }
 tokio = { version = "1", features = ["full"] }

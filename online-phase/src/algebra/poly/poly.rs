@@ -380,7 +380,7 @@ pub(crate) mod test {
     use ark_ff::{One, Zero};
     use ark_poly::Polynomial;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use crate::{
         algebra::{
@@ -573,7 +573,7 @@ pub(crate) mod test {
     async fn test_scalar_mul_constant() {
         let poly = random_poly(DEGREE_BOUND);
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let scaling_factor = Scalar::random(&mut rng);
 
         let expected_res = &poly * scaling_factor.inner();
@@ -596,7 +596,7 @@ pub(crate) mod test {
     async fn test_scalar_mul() {
         let poly = random_poly(DEGREE_BOUND);
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let scaling_factor = Scalar::random(&mut rng);
 
         let expected_res = &poly * scaling_factor.inner();
@@ -620,7 +620,7 @@ pub(crate) mod test {
     async fn test_scalar_mul_shared() {
         let poly = random_poly(DEGREE_BOUND);
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let scaling_factor = Scalar::random(&mut rng);
 
         let expected_res = &poly * scaling_factor.inner();
@@ -645,7 +645,7 @@ pub(crate) mod test {
     async fn test_eval() {
         let poly = random_poly(DEGREE_BOUND);
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let eval_point = Scalar::random(&mut rng);
 
         let expected_eval = poly.evaluate(&eval_point.inner());
@@ -669,7 +669,7 @@ pub(crate) mod test {
     async fn test_mod_inv() {
         let poly = random_poly(DEGREE_BOUND);
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let t = rng.gen_range(1..(DEGREE_BOUND * 2));
 
         let (res, _) = execute_mock_mpc(|fabric| {

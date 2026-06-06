@@ -47,7 +47,7 @@ impl ResultMask {
 
 #[cfg(test)]
 mod result_mask_test {
-    use rand::{distributions::uniform::SampleRange, thread_rng};
+    use rand::{distributions::uniform::SampleRange, rng};
 
     use super::ResultMask;
 
@@ -57,7 +57,7 @@ mod result_mask_test {
     /// Tests getting a value that has not been set yet
     #[test]
     fn test_unset_value() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mask = ResultMask::new(DEFAULT_SIZE);
 
         // Not set
@@ -75,7 +75,7 @@ mod result_mask_test {
     /// Tests a simple set and get pattern
     #[test]
     fn test_set_value() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut mask = ResultMask::new(DEFAULT_SIZE);
 
         // Get the value before it is set
@@ -90,7 +90,7 @@ mod result_mask_test {
     /// Tests growing the buffer by setting a value
     #[test]
     fn test_grow_and_get() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut mask = ResultMask::new(DEFAULT_SIZE);
 
         // Get the value well out of range before it is set

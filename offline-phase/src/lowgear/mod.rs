@@ -27,7 +27,7 @@ use mp_spdz_rs::{
     },
     FromBytesWithParams, ToBytes,
 };
-use rand::thread_rng;
+use rand::rng;
 
 use crate::{
     error::LowGearError,
@@ -68,7 +68,7 @@ impl<C: CurveGroup, N: MpcNetwork<C> + Unpin> LowGear<C, N> {
     /// Create a new LowGear instance
     #[allow(clippy::new_without_default)]
     pub fn new(network: N) -> Self {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = BGVParams::new_no_mults();
         let local_keypair = BGVKeypair::gen(&params);
         let mac_share = Scalar::random(&mut rng);

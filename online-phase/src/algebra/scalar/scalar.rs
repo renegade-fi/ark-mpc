@@ -18,7 +18,7 @@ use ark_std::UniformRand;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Num;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng as RandCryptoRng, Rng as RandRng};
 use serde::{Deserialize, Serialize};
 
 use crate::algebra::{ToBytes, macros::*};
@@ -35,6 +35,31 @@ pub const fn n_bytes_field<F: PrimeField>() -> usize {
     let n_bits = F::MODULUS_BIT_SIZE as usize;
     (n_bits + 7) / 8
 }
+
+/// Adapter from `rand 0.10` RNG traits to the `rand 0.8` traits expected by
+/// arkworks.
+struct ArkRandAdapter<'a, R>(&'a mut R);
+
+impl<R: RandRng + RandCryptoRng> ark_std::rand::RngCore for ArkRandAdapter<'_, R> {
+    fn next_u32(&mut self) -> u32 {
+        self.0.next_u32()
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0.next_u64()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.0.fill_bytes(dest);
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), ark_std::rand::Error> {
+        self.0.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl<R: RandRng + RandCryptoRng> ark_std::rand::CryptoRng for ArkRandAdapter<'_, R> {}
 
 // ---------------------
 // | Scalar Definition |
@@ -75,8 +100,9 @@ impl<C: CurveGroup> Scalar<C> {
     }
 
     /// Sample a random field element
-    pub fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
-        Self(C::ScalarField::rand(rng))
+    pub fn random<R: RandRng + RandCryptoRng>(rng: &mut R) -> Self {
+        let mut adapter = ArkRandAdapter(rng);
+        Self(C::ScalarField::rand(&mut adapter))
     }
 
     /// Compute the multiplicative inverse of the scalar in its field
@@ -381,12 +407,12 @@ mod test {
     use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
     use futures::future;
     use itertools::Itertools;
-    use rand::{Rng, RngCore, thread_rng};
+    use rand::{Rng, RngCore, rng};
 
     /// Tests serialization and deserialization of scalars
     #[test]
     fn test_scalar_serialization() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let scalar = Scalar::<TestCurve>::random(&mut rng);
 
         let bytes = serde_json::to_vec(&scalar).unwrap();
@@ -397,7 +423,7 @@ mod test {
     /// Tests addition of raw scalars in a circuit
     #[tokio::test]
     async fn test_scalar_add() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -418,7 +444,7 @@ mod test {
     #[tokio::test]
     async fn test_batch_add_constant() {
         const N: usize = 1000;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
@@ -442,7 +468,7 @@ mod test {
     /// Tests subtraction of raw scalars in the circuit
     #[tokio::test]
     async fn test_scalar_sub() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -464,7 +490,7 @@ mod test {
     #[tokio::test]
     async fn test_batch_sub_constant() {
         const N: usize = 1000;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
@@ -488,7 +514,7 @@ mod test {
     /// Tests negation of raw scalars in a circuit
     #[tokio::test]
     async fn test_scalar_neg() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
 
         let expected_res = -a;
@@ -507,7 +533,7 @@ mod test {
     /// Tests multiplication of raw scalars in a circuit
     #[tokio::test]
     async fn test_scalar_mul() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let a = Scalar::random(&mut rng);
         let b = Scalar::random(&mut rng);
 
@@ -528,7 +554,7 @@ mod test {
     #[tokio::test]
     async fn test_batch_mul_constant() {
         const N: usize = 1000;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let a = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
         let b = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
@@ -552,7 +578,7 @@ mod test {
     /// Tests exponentiation or raw scalars in a circuit
     #[tokio::test]
     async fn test_exp() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let base = Scalar::<TestCurve>::random(&mut rng);
         let exp = rng.next_u64();
 
@@ -571,7 +597,7 @@ mod test {
     /// Tests fft of scalars allocated in a circuit
     #[tokio::test]
     async fn test_circuit_fft() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let n: usize = rng.gen_range(1..=100);
         let domain_size = rng.gen_range(n..10 * n);
 
@@ -603,7 +629,7 @@ mod test {
     /// Tests the ifft of scalars allocated in a circuit
     #[tokio::test]
     async fn test_circuit_ifft() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let n: usize = rng.gen_range(1..=100);
         let domain_size = rng.gen_range(n..10 * n);
 
